@@ -5,12 +5,12 @@ No automated verification of underlying news claims is implied.
 
 from __future__ import annotations
 
-import sqlite3
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from tris_market_event_intelligence.claim_extraction import extract_claims
 from tris_market_event_intelligence.claim_store import ClaimProcessor
 from tris_market_event_intelligence.collector import utc_now
 
@@ -138,7 +138,8 @@ class ClaimReviewManager:
                     existing[4], existing[5],
                 )
             claim = db.execute(
-                "SELECT status FROM article_event_claims WHERE id=?", (claim_id,)
+                "SELECT status, classification, source FROM article_event_claims WHERE id=?",
+                (claim_id,)
             ).fetchone()
             if claim is None:
                 raise ValueError("Claim ID not found")
@@ -161,6 +162,17 @@ class ClaimReviewManager:
                         and not hostname.endswith("." + expected_host))
                 ):
                     raise ValueError("Primary evidence requires a known official source and URL")
+                # Prevent a valid but unrelated official article from being used
+                # to certify a different class of news claim.
+                supported = extract_claims(source, title, summary)
+                if not any(
+                    evidence_quote in item.evidence
+                    and item.classification == claim[1]
+                    and item.claim_kind == "REPORTED"
+                    and item.polarity == "AFFIRMED"
+                    for item in supported
+                ):
+                    raise ValueError("Primary evidence does not corroborate the claim type")
             previous = db.execute(
                 "SELECT revision, status FROM claim_review_history "
                 "WHERE claim_id=? ORDER BY revision DESC LIMIT 1",
