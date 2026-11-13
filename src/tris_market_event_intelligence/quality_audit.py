@@ -6,7 +6,6 @@ review artifacts and must not be uploaded to public CI.
 from __future__ import annotations
 
 import csv
-import hashlib
 import random
 import sqlite3
 from collections import defaultdict
