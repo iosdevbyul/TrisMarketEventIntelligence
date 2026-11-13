@@ -53,7 +53,7 @@ def run_probe(client: httpx.Client | None = None) -> dict[str, object]:
                     )
                 ]
                 failures = [
-                    {"source": name, "error_type": error}
+                    {"source": name, "error_type": error.split(":", 1)[0]}
                     for name, error in db.execute(
                         "SELECT source, last_error FROM fetch_state "
                         "WHERE last_error IS NOT NULL ORDER BY source"
