@@ -52,7 +52,7 @@ def test_native_schema_includes_all_pydantic_length_bounds() -> None:
     quote = item["properties"]["evidence_excerpt"]
     assert quote["minLength"] == 8
     assert quote["maxLength"] == 1000
-    assert item["properties"]["drivers"]["minItems"] == 1
+    assert item["properties"]["drivers"]["minItems"] == 0
     assert item["properties"]["drivers"]["maxItems"] == 6
     assert item["properties"]["entities"]["maxItems"] == 8
 
@@ -139,3 +139,69 @@ def test_evidence_mismatch_still_cannot_be_saved_as_hypothesis() -> None:
         provider(handler).analyze(event())
     assert error.value.code == "EVIDENCE_MISMATCH"
     assert len(calls) == 2
+
+def test_empty_drivers_are_allowed_without_inventing_factors() -> None:
+    """The optional explanation list must not force ungrounded financial drivers."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        result = json.loads(hypothesis(
+            "If the reported price rise is confirmed, markets could react."
+        ))
+        result["impacts"][0]["drivers"] = []
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps(result)},
+        })
+
+    output = provider(handler).analyze(event())
+    assert output.impacts[0].drivers == []
+    assert len(calls) == 1
+
+
+def test_empty_drivers_do_not_bypass_source_evidence_validation() -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        result = json.loads(hypothesis(
+            "This explanation describes a possible effect only."
+        ))
+        result["impacts"][0]["drivers"] = []
+        result["impacts"][0]["evidence_excerpt"] = "fabricated unseen quote"
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps(result)},
+        })
+
+    with pytest.raises(ImpactAnalysisError) as error:
+        provider(handler).analyze(event())
+    assert error.value.code == "EVIDENCE_MISMATCH"
+    assert len(calls) == 2
+
+
+def test_missing_drivers_field_still_rejected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        result = json.loads(hypothesis(
+            "Reported inflation might affect prices if confirmed."
+        ))
+        del result["impacts"][0]["drivers"]
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps(result)},
+        })
+
+    with pytest.raises(ImpactAnalysisError) as error:
+        provider(handler).analyze(event())
+    assert error.value.code == "SCHEMA_MISSING_DRIVERS"
+
+
+def test_empty_rationale_is_still_rejected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        result = json.loads(hypothesis(""))
+        result["impacts"][0]["drivers"] = []
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps(result)},
+        })
+
+    with pytest.raises(ImpactAnalysisError) as error:
+        provider(handler).analyze(event())
+    assert error.value.code == "SCHEMA_STRING_TOO_SHORT_RATIONALE"

@@ -88,7 +88,7 @@ class Impact(BaseModel):
     rationale: str = Field(min_length=10, max_length=2000)
     evidence_excerpt: str = Field(min_length=8, max_length=1000)
     uncertainty: str
-    drivers: list[str] = Field(min_length=1, max_length=6)
+    drivers: list[str] = Field(min_length=0, max_length=6)
     entities: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("market")
@@ -225,7 +225,7 @@ def ollama_native_schema(event: EventInput) -> dict[str, object]:
         "uncertainty": {"type": "string", "enum": (
             ["LOW", "MEDIUM", "HIGH"] if event.status == "VERIFIED" else ["HIGH"]
         )},
-        "drivers": {"type": "array", "minItems": 1, "maxItems": 6,
+        "drivers": {"type": "array", "minItems": 0, "maxItems": 6,
                     "items": {"type": "string", "minLength": 1, "maxLength": 200}},
         "entities": {"type": "array", "maxItems": 8,
                      "items": {"type": "string", "minLength": 1, "maxLength": 120}},
