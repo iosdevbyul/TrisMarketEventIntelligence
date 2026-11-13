@@ -8,7 +8,6 @@ from pathlib import Path
 from tris_market_event_intelligence.operational_diagnostics import diagnose
 from tris_market_event_intelligence.operational_recovery import assess_recovery, recent_runs
 
-
 NOW = datetime(2026, 11, 14, tzinfo=UTC)
 
 
