@@ -132,8 +132,8 @@ class ImpactProcessor:
             except (ValueError, sqlite3.Error, KeyError, IndexError, TypeError) as exc:
                 self._record_error(event.event_id, exc)
                 failed += 1
-            except Exception as exc:
-                # Unexpected provider/transport failures must not mark work complete.
+            except Exception as exc:  # noqa: BLE001
+                # Isolate arbitrary pluggable provider failures; never checkpoint them.
                 self._record_error(event.event_id, exc)
                 failed += 1
         return AnalysisStats(processed=processed, impacts=impacts, failed=failed)
