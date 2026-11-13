@@ -12,6 +12,7 @@ from tris_market_event_intelligence.event_store import EventProcessor
 from tris_market_event_intelligence.impact import (
     PROMPT_VERSION,
     EventInput,
+    ImpactAnalysisError,
     ImpactProvider,
     is_eligible,
     validate_result,
@@ -127,7 +128,9 @@ class ImpactProcessor:
                 result = validate_result(event, self.provider.analyze(event))
                 keys = [(i.market, i.sector, i.horizon) for i in result.impacts]
                 if len(keys) != len(set(keys)):
-                    raise ValueError("Duplicate market/sector/horizon impact keys")
+                    raise ImpactAnalysisError(
+                        "DUPLICATE_IMPACT_KEYS", "Duplicate market/sector/horizon impact keys"
+                    )
                 now = utc_now()
                 with self.store.store.connect() as db:
                     for impact in result.impacts:
@@ -179,7 +182,8 @@ class ImpactProcessor:
                     attempts=impact_errors.attempts+1
                 """,
                 (event_id, self.provider.model_id, PROMPT_VERSION,
-                 type(error).__name__, utc_now()),
+                 error.code if isinstance(error, ImpactAnalysisError)
+                 else type(error).__name__, utc_now()),
             )
 
     def list_impacts(self) -> list[dict[str, object]]:
