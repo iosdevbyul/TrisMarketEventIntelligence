@@ -111,6 +111,13 @@ def run_probe(client: httpx.Client | None = None) -> dict[str, object]:
                         "GROUP BY classification ORDER BY classification"
                     )
                 ]
+                claims_by_source = [
+                    {"source": name, "claims": count}
+                    for name, count in db.execute(
+                        "SELECT source, COUNT(*) FROM article_event_claims "
+                        "GROUP BY source ORDER BY source"
+                    )
+                ]
                 failures = [
                     {"source": name, "error_type": error.split(":", 1)[0]}
                     for name, error in db.execute(
@@ -134,6 +141,7 @@ def run_probe(client: httpx.Client | None = None) -> dict[str, object]:
                 "portal_robots_preflight": portal_policy,
                 "claims": asdict(claims),
                 "claims_per_category": claim_counts,
+                "claims_per_source": claims_by_source,
                 "source_errors": failures,
                 "story_groups": asdict(stories),
                 "benchmark_observed": coverage["observed"],
