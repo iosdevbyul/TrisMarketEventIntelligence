@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-
-import httpx
 from dataclasses import dataclass
 from pathlib import Path
+
+import httpx
 
 from tris_market_event_intelligence.collector import utc_now
 from tris_market_event_intelligence.event_store import EventProcessor
