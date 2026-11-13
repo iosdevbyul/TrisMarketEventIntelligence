@@ -13,8 +13,8 @@ from tris_market_event_intelligence.impact import (
     PROMPT_VERSION,
     EventInput,
     ImpactProvider,
-    validate_result,
     is_eligible,
+    validate_result,
 )
 
 
