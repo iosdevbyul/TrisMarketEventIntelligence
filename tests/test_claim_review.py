@@ -89,10 +89,10 @@ def test_confirmation_requires_official_primary_evidence(tmp_path: Path) -> None
     path = tmp_path / "review.sqlite3"
     claim, denial_article, official_article = _fixture(path)
     manager = ClaimReviewManager(path)
-    common = dict(
-        claim_id=claim, status="CONFIRMED", evidence_kind="PRIMARY_DOCUMENT",
-        reason="I personally reviewed this original statement", expected_revision=0,
-    )
+    common = {
+        "claim_id": claim, "status": "CONFIRMED", "evidence_kind": "PRIMARY_DOCUMENT",
+        "reason": "I personally reviewed this original statement", "expected_revision": 0,
+    }
     with pytest.raises(ValueError, match="official"):
         manager.record(
             **common, evidence_article_id=denial_article,
@@ -122,12 +122,12 @@ def test_evidence_quote_and_revision_conflicts(tmp_path: Path) -> None:
     path = tmp_path / "review.sqlite3"
     claim, denial_article, _ = _fixture(path)
     manager = ClaimReviewManager(path)
-    kwargs = dict(
-        claim_id=claim, status="DISPUTED", evidence_article_id=denial_article,
-        evidence_quote="NVIDIA denies CEO resignation",
-        evidence_kind="DENIAL", reason="News publisher has published a denial",
-        expected_revision=0, operation_id="retry-key",
-    )
+    kwargs = {
+        "claim_id": claim, "status": "DISPUTED", "evidence_article_id": denial_article,
+        "evidence_quote": "NVIDIA denies CEO resignation",
+        "evidence_kind": "DENIAL", "reason": "News publisher has published a denial",
+        "expected_revision": 0, "operation_id": "retry-key",
+    }
     with pytest.raises(ValueError, match="verbatim"):
         manager.record(**{**kwargs, "evidence_quote": "invented citation"})
     first = manager.record(**kwargs)
