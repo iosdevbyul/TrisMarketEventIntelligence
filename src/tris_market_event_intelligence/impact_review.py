@@ -156,7 +156,8 @@ def score_impact_review(db_path: Path, sheet: Path) -> dict[str, object]:
     for row, identifier in zip(entries, ids, strict=True):
         source = by_id[identifier]
         if row["snapshot_sha256"] != _snapshot(source) or any(
-            row[field] != str(source[field]) for field in SNAPSHOT_FIELDS
+            row[field] != ("" if source[field] is None else str(source[field]))
+            for field in SNAPSHOT_FIELDS
         ):
             raise ValueError("Review sheet no longer matches original immutable analysis")
         expected_flag = rationale_quality_code(str(source["rationale"])) or "NONE"
