@@ -17,7 +17,7 @@ _DANGLING_KOREAN = re.compile(
 )
 _DANGLING_ENGLISH = re.compile(
     r"\b(?:and|or|but|because|although|whereas|while|if|"
-    r"which|that|with|from|into|of|for|to)\s*$",
+    r"which|that|with|from|into|of|for|to|on)\s*$",
     re.IGNORECASE,
 )
 
