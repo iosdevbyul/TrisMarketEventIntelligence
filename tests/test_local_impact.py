@@ -83,7 +83,7 @@ def test_local_chat_completions_provider_uses_evidence_and_status() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url) == "http://127.0.0.1:11434/v1/chat/completions"
         payload = json.loads(request.content)
-        message = json.loads(payload["messages"][1]["content"])
+        message = json.loads(payload["messages"][2]["content"])
         assert message["status"] == "UNVERIFIED"
         assert message["claim_kind"] == "REPORTED"
         assert message["tags"] == ["LEADERSHIP"]
