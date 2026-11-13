@@ -53,3 +53,35 @@ collector, mutate the DB, invoke AI, enable network port forwarding or modify
 DonghakStockVision. As with all loopback servers, other local processes may
 access it; local binding is not authentication. Device-specific sleep/wake,
 reboot and cross-process read/write behavior require on-Mac verification.
+
+## Phase 6-E concurrent SQLite access contract
+
+The collector retains exclusive application-level flock protection for writes,
+and the local API independently opens the same SQLite database using
+`mode=ro` and `PRAGMA query_only=ON`. Each API read connection is explicitly
+closed, rather than relying on the SQLite context manager's transaction-only
+cleanup.
+
+Offline cross-connection regression tests verify that uncommitted writer
+transactions are never visible to API readers, committed claims appear on the
+next request, and independent cursor pagination remains ordered and idempotent.
+No new API route, changed cursor semantics, schema migration, background task,
+service change, or data copy is introduced.
+
+Manual on-Mac checks after upgrading code:
+
+```sh
+market-event-doctor
+curl -fsS http://127.0.0.1:8100/ready/claims
+curl -fsS 'http://127.0.0.1:8100/api/v1/event-claims?after_id=0&limit=5'
+```
+
+Because the API LaunchAgent runs a persistent Python process, restart that
+**separate** service after installing updated code to apply this release:
+
+```sh
+launchctl kickstart -k "gui/$(id -u)/com.tris.market-event-intelligence-api"
+```
+
+This does not restart the 30-minute collector. OS sleep/reboot behavior and
+multiple real scheduled cycles remain on-device verification tasks.
