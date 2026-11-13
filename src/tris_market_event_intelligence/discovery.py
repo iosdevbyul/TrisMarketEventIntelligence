@@ -47,7 +47,7 @@ def _json_payload(data: bytes) -> dict[str, object]:
         raise ValueError("Discovery response exceeds 2MB")
     obj = json.loads(data)
     if not isinstance(obj, dict):
-        raise ValueError("Expected JSON object")
+        raise TypeError("Expected JSON object")
     return obj
 
 
@@ -80,7 +80,7 @@ def _public_url(value: object) -> str | None:
 def parse_naver(data: bytes, detected_at: str) -> list[Article]:
     items = _json_payload(data).get("items", [])
     if not isinstance(items, list):
-        raise ValueError("Invalid Naver items")
+        raise TypeError("Invalid Naver items")
     output = []
     for item in items[:100]:
         if not isinstance(item, dict):
@@ -100,7 +100,7 @@ def parse_naver(data: bytes, detected_at: str) -> list[Article]:
 def parse_gdelt(data: bytes, detected_at: str) -> list[Article]:
     items = _json_payload(data).get("articles", [])
     if not isinstance(items, list):
-        raise ValueError("Invalid GDELT articles")
+        raise TypeError("Invalid GDELT articles")
     output = []
     for item in items[:250]:
         if not isinstance(item, dict):
@@ -188,7 +188,7 @@ class SearchDiscovery:
                 )
                 inserted += count
                 returned += len(articles)
-            except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+            except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 # Never record exception text: some HTTP exceptions include URLs/query values.
                 self.store.record_error(source, type(exc).__name__, now)
                 errors += 1
