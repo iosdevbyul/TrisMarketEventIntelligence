@@ -17,10 +17,10 @@ def test_probe_records_real_collection_metrics_without_claiming_mac_success() ->
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as client:
         result = run_probe(client)
-    assert result["rss_success"] == 6
-    assert result["rss_total"] == 6
-    assert result["articles"] == 7
-    assert result["claims"]["claims"] >= 7
+    assert result["rss_success"] == 10
+    assert result["rss_total"] == 10
+    assert result["articles"] == 11
+    assert result["claims"]["claims"] >= 11
     assert result["benchmark_observed"] == 0
     assert len(result["portal_robots_preflight"]) == 3
     assert not result["gate_6_ready"]

@@ -21,7 +21,8 @@ from tris_market_event_intelligence.story_index import StoryIndex
 BENCHMARK = Path(__file__).resolve().parents[2] / "benchmarks/2026-11-13-headlines.json"
 RSS_IDS = (
     "fed_monetary", "bls_ppi", "bls_latest",
-    "fed_all", "bbc_business", "bbc_technology",
+    "fed_all", "bbc_business", "bbc_technology", "bbc_world",
+    "bok_all", "bok_statistics", "bok_corrections",
 )
 
 
