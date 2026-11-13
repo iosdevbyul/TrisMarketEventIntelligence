@@ -69,44 +69,70 @@ def run_cycle(
                 "new_articles": 0, "new_claims": 0,
                 "quality_validated": False, "mac_runtime_verified": False,
             }
-        store = NewsStore(db_path)
-        store.initialize()
-        before = store.stats()["articles"]
-        # Network failures on one source must not abort claim processing.
-        results = OfficialNewsCollector(
-            store, client=client,
-            feeds={name: DEFAULT_FEEDS[name] for name in selected_sources},
-        ).collect_once()
-        claims = ClaimProcessor(db_path)
-        stories = StoryIndex(db_path)
-        claim_total = grouped_total = 0
-        while True:
-            batch = claims.process_pending()
-            claim_total += batch.claims
-            if batch.processed < 1000:
-                break
-        while True:
-            batch = stories.index_pending()
-            grouped_total += batch.indexed
-            if batch.indexed < 1000:
-                break
-        ok = sum(x["status"] in {"ok", "not_modified"} for x in results.values())
-        status = "failed" if ok == 0 else "healthy" if ok == len(results) else "degraded"
-        outcome: dict[str, object] = {
-            "status": status,
-            "finished_at": utc_now(),
-            "source_results": results,
-            "successful_sources": ok,
-            "total_sources": len(results),
-            "new_articles": store.stats()["articles"] - before,
-            "new_claims": claim_total,
-            "indexed_articles": grouped_total,
-            # Must remain false until on-device validation and human audit.
-            "quality_validated": False,
-            "mac_runtime_verified": False,
-            "ai_used": False,
-            "scraping_used": False,
-        }
+        started_at = utc_now()
+        try:
+            store = NewsStore(db_path)
+            store.initialize()
+            before = store.stats()["articles"]
+            # Network failures on one source must not abort claim processing.
+            results = OfficialNewsCollector(
+                store, client=client,
+                feeds={name: DEFAULT_FEEDS[name] for name in selected_sources},
+            ).collect_once()
+            claims = ClaimProcessor(db_path)
+            stories = StoryIndex(db_path)
+            claim_total = grouped_total = 0
+            while True:
+                batch = claims.process_pending()
+                claim_total += batch.claims
+                if batch.processed < 1000:
+                    break
+            while True:
+                batch = stories.index_pending()
+                grouped_total += batch.indexed
+                if batch.indexed < 1000:
+                    break
+            ok = sum(x["status"] in {"ok", "not_modified"} for x in results.values())
+            status = "failed" if ok == 0 else "healthy" if ok == len(results) else "degraded"
+            outcome: dict[str, object] = {
+                "status": status,
+                "finished_at": utc_now(),
+                "source_results": results,
+                "successful_sources": ok,
+                "total_sources": len(results),
+                "new_articles": store.stats()["articles"] - before,
+                "new_claims": claim_total,
+                "indexed_articles": grouped_total,
+                # Must remain false until on-device validation and human audit.
+                "quality_validated": False,
+                "mac_runtime_verified": False,
+                "ai_used": False,
+                "scraping_used": False,
+            }
+    
+        except Exception as exc:
+            # Do not leave a stale healthy checkpoint after an unexpected failure.
+            # Exception messages can contain URLs, secrets or article contents:
+            # persist only a bounded exception class and never an exception string.
+            outcome = {
+                "status": "failed",
+                "started_at": started_at,
+                "finished_at": utc_now(),
+                "error_code": type(exc).__name__,
+                "source_results": {},
+                "successful_sources": 0,
+                "total_sources": len(selected_sources),
+                "new_articles": 0,
+                "new_claims": 0,
+                "indexed_articles": 0,
+                "quality_validated": False,
+                "mac_runtime_verified": False,
+                "ai_used": False,
+                "scraping_used": False,
+            }
+            if status_path:
+                _write_status(status_path, outcome)
+            return outcome
         if status_path:
             _write_status(status_path, outcome)
         return outcome
