@@ -4,8 +4,12 @@ import httpx
 import pytest
 
 from tris_market_event_intelligence.impact import (
-    EventInput, Impact, ImpactAnalysisError, ImpactResult,
-    OpenAICompatibleProvider, validate_result,
+    EventInput,
+    Impact,
+    ImpactAnalysisError,
+    ImpactResult,
+    OpenAICompatibleProvider,
+    validate_result,
 )
 
 EVENT = EventInput(
