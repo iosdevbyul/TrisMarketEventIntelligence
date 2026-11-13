@@ -61,3 +61,22 @@ for the SQLite main file, WAL, SHM and journal. Its size warning checks the
 combined footprint. File sizes are a best-effort snapshot during concurrent
 writes, and exclude the separate JSONL history, logs and filesystem overhead.
 No data deletion, SQLite checkpoint, VACUUM or system service modification.
+
+## Phase 6-C failure streak and recovery assessment
+
+`market-event-doctor` now reads recent, completed JSONL cycle records to report
+`checks.recovery` and an explicit failure streak. Three successive
+`failed` cycles produce an error; fewer failures or an ongoing degraded streak
+produce a warning. A fresh `healthy` entry after a recorded outage reports
+`reason: recovered`, without deleting prior errors. The threshold is configurable:
+
+```sh
+market-event-doctor --failure-threshold 3
+```
+
+Missing history is `history_not_recorded_yet`, not fabricated proof of health.
+The bounded reader examines up to 100 most recent complete records and 256 KiB.
+A partial trailing line after an interrupted write is excluded. This is monitoring,
+not an automatic retry loop: launchd still attempts the next normal 30-minute
+cycle. HTTP 403 and rate limiting remain non-bypassable. Sleep/wake/reboot
+recurrence is still subject to on-device testing.

@@ -7,6 +7,9 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from tris_market_event_intelligence.operational_history import history_path_for
+from tris_market_event_intelligence.operational_recovery import assess_recovery
+
 
 def diagnose(
     db_path: Path,
@@ -15,9 +18,10 @@ def diagnose(
     now: datetime | None = None,
     stale_after_minutes: int = 90,
     warning_bytes: int = 512 * 1024 * 1024,
+    failure_threshold: int = 3,
 ) -> dict[str, object]:
     """Report evidence only; no network, schema initialization, or DB writes."""
-    if stale_after_minutes < 1 or warning_bytes < 1:
+    if stale_after_minutes < 1 or warning_bytes < 1 or failure_threshold < 1:
         raise ValueError("Thresholds must be positive")
     now = now or datetime.now(UTC)
     if now.tzinfo is None or now.utcoffset() is None:
@@ -81,12 +85,16 @@ def diagnose(
             "level": level, "reason": reason, "bytes": size,
             "total_storage_bytes": total_storage_bytes, "file_bytes": file_bytes,
         }
+    checks["recovery"] = assess_recovery(
+        history_path_for(status_path), failure_threshold=failure_threshold
+    )
     levels = {value["level"] for value in checks.values()}
     overall = "error" if "error" in levels else "warning" if "warning" in levels else "ok"
     return {
         "status": overall, "checks": checks,
         "stale_after_minutes": stale_after_minutes,
         "warning_bytes": warning_bytes,
+        "failure_threshold": failure_threshold,
         "network_requests": 0, "modified_database": False,
     }
 
@@ -98,12 +106,14 @@ def main() -> None:
     parser.add_argument("--status", type=Path, default=base / "last-run.json")
     parser.add_argument("--stale-after-minutes", type=int, default=90)
     parser.add_argument("--warning-mb", type=int, default=512)
+    parser.add_argument("--failure-threshold", type=int, default=3)
     args = parser.parse_args()
     try:
         result = diagnose(
             args.db.expanduser(), args.status.expanduser(),
             stale_after_minutes=args.stale_after_minutes,
             warning_bytes=args.warning_mb * 1024 * 1024,
+            failure_threshold=args.failure_threshold,
         )
     except ValueError as exc:
         parser.error(str(exc))
