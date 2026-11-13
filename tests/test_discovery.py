@@ -61,7 +61,7 @@ def test_optional_naver_and_source_error_isolation(tmp_path: Path) -> None:
     )
     result = discovery.collect_once()
     assert result["naver_news"].inserted == 1
-    assert result["gdelt_doc"].status == "error"
+    assert result["gdelt_doc"].status == "rate_limited"
     assert discovery.collect_once()["naver_news"].inserted == 0
     assert store.stats()["articles"] == 1
     with store.connect() as db:
