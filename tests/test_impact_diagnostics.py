@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,18 +43,18 @@ def test_read_only_errors_are_sanitized_and_limited(tmp_path: Path) -> None:
             ],
         )
     before = db.read_bytes()
-    with patch("sys.argv", [
-        "market-event-analyze", "--db", str(db), "--show-errors", "--error-limit", "1",
-    ]), patch.dict("os.environ", {"MARKET_EVENT_LLM_MODEL": ""}):
-        with patch(
-            "tris_market_event_intelligence.impact_cli.OpenAICompatibleProvider",
-        ) as model:
-            from io import StringIO
-            from contextlib import redirect_stdout
-            output = StringIO()
-            with redirect_stdout(output):
-                cli_main()
-            model.assert_not_called()
+    output = StringIO()
+    with (
+        patch("sys.argv", [
+            "market-event-analyze", "--db", str(db), "--show-errors",
+            "--error-limit", "1",
+        ]),
+        patch.dict("os.environ", {"MARKET_EVENT_LLM_MODEL": ""}),
+        patch("tris_market_event_intelligence.impact_cli.OpenAICompatibleProvider") as model,
+        redirect_stdout(output),
+    ):
+        cli_main()
+        model.assert_not_called()
     payload = json.loads(output.getvalue())
     assert payload["status"] == "ok"
     assert payload["errors"] == [{
