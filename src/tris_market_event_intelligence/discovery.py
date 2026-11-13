@@ -22,11 +22,9 @@ MAX_RESPONSE_BYTES = 2_000_000
 
 # Broad categories are searches, not a guarantee of news coverage.
 NAVER_TOPICS = (
-    "경제 금융 증시",
-    "반도체 AI 기업",
-    "금리 환율 물가 고용",
-    "기업 실적 CEO 인수합병",
-    "관세 무역 규제 에너지",
+    "증시", "환율", "금리", "물가", "고용",
+    "반도체", "인공지능", "기업 실적", "인수합병",
+    "수출 규제", "국제 분쟁", "에너지",
 )
 GDELT_TOPICS = (
     '(inflation OR "interest rates" OR unemployment OR tariffs)',
