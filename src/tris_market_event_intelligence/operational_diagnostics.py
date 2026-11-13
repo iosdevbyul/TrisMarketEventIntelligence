@@ -53,7 +53,14 @@ def diagnose(
             }
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             checks["last_run"] = {"level": "error", "reason": "invalid_status_json"}
-    file_bytes = {}\n    for suffix in ("", "-wal", "-shm", "-journal"):\n        path = db_path if not suffix else db_path.with_name(db_path.name + suffix)\n        file_bytes["main" if not suffix else suffix[1:]] = (\n            path.stat().st_size if path.is_file() else 0\n        )\n    total_storage_bytes = sum(file_bytes.values())\n    if not db_path.is_file():
+    file_bytes = {}
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        path = db_path if not suffix else db_path.with_name(db_path.name + suffix)
+        file_bytes["main" if not suffix else suffix[1:]] = (
+            path.stat().st_size if path.is_file() else 0
+        )
+    total_storage_bytes = sum(file_bytes.values())
+    if not db_path.is_file():
         checks["database"] = {"level": "error", "reason": "missing_database"}
     else:
         size = db_path.stat().st_size
@@ -71,7 +78,8 @@ def diagnose(
         except sqlite3.Error:
             level, reason = "error", "database_unreadable"
         checks["database"] = {
-            "level": level, "reason": reason, "bytes": size,\n            "total_storage_bytes": total_storage_bytes, "file_bytes": file_bytes,
+            "level": level, "reason": reason, "bytes": size,
+            "total_storage_bytes": total_storage_bytes, "file_bytes": file_bytes,
         }
     levels = {value["level"] for value in checks.values()}
     overall = "error" if "error" in levels else "warning" if "warning" in levels else "ok"
