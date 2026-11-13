@@ -42,7 +42,7 @@ def test_failed_cycle_is_preserved_in_history(tmp_path: Path) -> None:
     record = json.loads((tmp_path / "run-history.jsonl").read_text().splitlines()[0])
     assert outcome["status"] == "failed"
     assert record["status"] == "failed"
-    assert record["source_statuses"]["fed_all"] == "HTTP_403"
+    assert record["source_statuses"]["fed_all"] == "error"
 
 
 def test_doctor_includes_real_wal_and_shm_footprint(tmp_path: Path) -> None:
