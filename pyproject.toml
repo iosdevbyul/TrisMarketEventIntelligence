@@ -26,6 +26,7 @@ market-event-api = "tris_market_event_intelligence.__main__:main"
 market-event-collect = "tris_market_event_intelligence.collect_cli:main"
 market-event-extract = "tris_market_event_intelligence.events_cli:main"
 market-event-analyze = "tris_market_event_intelligence.impact_cli:main"
+market-event-discover = "tris_market_event_intelligence.discovery_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
