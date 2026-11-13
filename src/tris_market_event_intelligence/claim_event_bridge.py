@@ -7,7 +7,6 @@ claim state, evidence and provenance, including multiple claims per article.
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,37 +73,36 @@ class ClaimEventBridge:
                 raise ValueError("Unsupported source claim status")
             version = f"{BRIDGE_VERSION}:{claim_id}"
             now = utc_now()
-            with self.events.store.connect() as db:
-                with db:
-                    cursor = db.execute(
-                        """INSERT OR IGNORE INTO economic_events (
-                            article_id, extractor_version, classification, status,
-                            direction, change_basis_points, evidence, source, source_url,
-                            published_at, detected_at, processed_at, capture_sha256
-                        ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)""",
-                        (article_id, version, classification, status, evidence, source,
-                         url, published, detected, now, sha),
-                    )
-                    if cursor.rowcount:
-                        event_id = cursor.lastrowid
-                        db.execute(
-                            """INSERT INTO event_metadata (
-                                event_id, claim_kind, tags_json, verification_note
-                            ) VALUES (?, ?, ?, ?)""",
-                            (event_id, kind, json.dumps([tag], ensure_ascii=False), note),
-                        )
-                        created += 1
-                    else:
-                        event_id = db.execute(
-                            "SELECT id FROM economic_events "
-                            "WHERE article_id=? AND extractor_version=?",
-                            (article_id, version),
-                        ).fetchone()[0]
+            with self.events.store.connect() as db, db:
+                cursor = db.execute(
+                    """INSERT OR IGNORE INTO economic_events (
+                        article_id, extractor_version, classification, status,
+                        direction, change_basis_points, evidence, source, source_url,
+                        published_at, detected_at, processed_at, capture_sha256
+                    ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)""",
+                    (article_id, version, classification, status, evidence, source,
+                     url, published, detected, now, sha),
+                )
+                if cursor.rowcount:
+                    event_id = cursor.lastrowid
                     db.execute(
-                        "INSERT OR IGNORE INTO claim_event_links "
-                        "(claim_id, event_id, bridge_version, linked_at) "
-                        "VALUES (?, ?, ?, ?)",
-                        (claim_id, event_id, BRIDGE_VERSION, now),
+                        """INSERT INTO event_metadata (
+                            event_id, claim_kind, tags_json, verification_note
+                        ) VALUES (?, ?, ?, ?)""",
+                        (event_id, kind, json.dumps([tag], ensure_ascii=False), note),
                     )
+                    created += 1
+                else:
+                    event_id = db.execute(
+                        "SELECT id FROM economic_events "
+                        "WHERE article_id=? AND extractor_version=?",
+                        (article_id, version),
+                    ).fetchone()[0]
+                db.execute(
+                    "INSERT OR IGNORE INTO claim_event_links "
+                    "(claim_id, event_id, bridge_version, linked_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (claim_id, event_id, BRIDGE_VERSION, now),
+                )
             processed += 1
         return BridgeStats(processed, created)
