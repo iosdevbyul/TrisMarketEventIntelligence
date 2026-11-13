@@ -62,8 +62,11 @@ class EventReader:
                 SELECT i.id, i.event_id, i.model_id, i.prompt_version, i.market,
                        i.sector, i.direction, i.horizon, i.rationale,
                        i.evidence_excerpt, i.uncertainty, i.drivers_json,
-                       i.generated_at
+                       i.generated_at, i.entities_json, e.status AS event_status,
+                       m.claim_kind
                 FROM market_impacts i
+                JOIN economic_events e ON e.id = i.event_id
+                LEFT JOIN event_metadata m ON m.event_id = e.id
                 WHERE i.id > ?
                 ORDER BY i.id ASC LIMIT ?
                 """,
@@ -74,6 +77,9 @@ class EventReader:
         for row in rows[:limit]:
             entry = dict(row)
             entry["drivers"] = json.loads(entry.pop("drivers_json"))
+            entry["entities"] = json.loads(entry.pop("entities_json"))
+            entry["eventStatus"] = entry.pop("event_status")
+            entry["claimKind"] = entry.pop("claim_kind")
             items.append(entry)
         return {
             "schemaVersion": "1.0",

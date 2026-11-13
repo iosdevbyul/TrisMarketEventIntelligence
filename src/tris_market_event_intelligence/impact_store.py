@@ -14,6 +14,7 @@ from tris_market_event_intelligence.impact import (
     EventInput,
     ImpactProvider,
     validate_result,
+    is_eligible,
 )
 
 
@@ -56,6 +57,7 @@ class ImpactProcessor:
                     uncertainty TEXT NOT NULL,
                     drivers_json TEXT NOT NULL,
                     generated_at TEXT NOT NULL,
+                    entities_json TEXT NOT NULL DEFAULT '[]',
                     UNIQUE(event_id, model_id, prompt_version, market, sector, horizon)
                 );
                 CREATE TABLE IF NOT EXISTS impact_errors (
@@ -69,6 +71,13 @@ class ImpactProcessor:
                 );
                 """
             )
+            if "entities_json" not in {
+                row[1] for row in db.execute("PRAGMA table_info(market_impacts)")
+            }:
+                db.execute(
+                    "ALTER TABLE market_impacts ADD COLUMN entities_json "
+                    "TEXT NOT NULL DEFAULT '[]'"
+                )
 
     def process_pending(self, batch_size: int = 100) -> AnalysisStats:
         if not 1 <= batch_size <= 1000:
@@ -81,9 +90,14 @@ class ImpactProcessor:
                 """
                 SELECT e.id, e.classification, e.status, e.direction,
                        e.change_basis_points, e.evidence, e.source, e.source_url,
-                       e.detected_at
+                       e.detected_at, m.claim_kind, m.verification_note, m.tags_json
                 FROM economic_events e
-                WHERE e.status='VERIFIED' AND e.classification='MONETARY_POLICY'
+                LEFT JOIN event_metadata m ON m.event_id = e.id
+                WHERE e.classification IN (
+                    'MONETARY_POLICY', 'ECONOMIC_INDICATOR', 'EARNINGS',
+                    'CORPORATE_EVENT', 'REGULATION', 'GEOPOLITICAL', 'SUPPLY_CHAIN',
+                    'INDUSTRY', 'SERVICE_INCIDENT', 'MARKET_MOVEMENT'
+                )
                   AND NOT EXISTS (
                     SELECT 1 FROM impact_runs r
                     WHERE r.event_id=e.id AND r.model_id=? AND r.prompt_version=?
@@ -95,7 +109,12 @@ class ImpactProcessor:
 
         processed = impacts = failed = 0
         for record in rows:
-            event = EventInput(*record)
+            event = EventInput(
+                *record[:9], record[9], record[10],
+                tuple(json.loads(record[11])) if record[11] else (),
+            )
+            if not is_eligible(event):
+                continue
             try:
                 result = validate_result(event, self.provider.analyze(event))
                 keys = [(i.market, i.sector, i.horizon) for i in result.impacts]
@@ -109,13 +128,13 @@ class ImpactProcessor:
                             INSERT INTO market_impacts (
                                 event_id, model_id, prompt_version, market, sector,
                                 direction, horizon, rationale, evidence_excerpt,
-                                uncertainty, drivers_json, generated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                uncertainty, drivers_json, generated_at, entities_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             (event.event_id, self.provider.model_id, PROMPT_VERSION,
                              impact.market, impact.sector, impact.direction, impact.horizon,
                              impact.rationale, impact.evidence_excerpt, impact.uncertainty,
-                             json.dumps(impact.drivers, ensure_ascii=False), now),
+                             json.dumps(impact.drivers, ensure_ascii=False), now,\n                             json.dumps(impact.entities, ensure_ascii=False)),
                         )
                     db.execute(
                         "INSERT INTO impact_runs VALUES (?, ?, ?, ?, ?)",
