@@ -9,6 +9,7 @@ from tris_market_event_intelligence.api import create_app
 from tris_market_event_intelligence.claim_extraction import extract_claims
 from tris_market_event_intelligence.claim_store import ClaimProcessor
 from tris_market_event_intelligence.collector import NewsStore, parse_rss
+from tris_market_event_intelligence.event_store import EventProcessor
 
 
 def test_two_distinct_events_in_one_article() -> None:
@@ -112,6 +113,7 @@ def test_old_event_api_stays_independent(tmp_path: Path) -> None:
     assert TestClient(create_app(db)).get("/api/v1/event-claims").status_code == 503
     processor = ClaimProcessor(db)
     processor.initialize()
+    EventProcessor(db).initialize()
     with TestClient(create_app(db)) as client:
         assert client.get("/api/v1/event-claims").json()["items"] == []
         assert client.get("/api/v1/events").status_code == 200
