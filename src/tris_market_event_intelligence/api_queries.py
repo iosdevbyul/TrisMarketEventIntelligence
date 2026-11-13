@@ -28,17 +28,26 @@ class EventReader:
             # All values bound; IDs are stable per database instance.
             rows = db.execute(
                 """
-                SELECT id, article_id, extractor_version, classification, status,
-                       direction, change_basis_points, evidence, source, source_url,
-                       published_at, detected_at, processed_at, capture_sha256
-                FROM economic_events
-                WHERE id > ? AND (? IS NULL OR status = ?)
-                ORDER BY id ASC LIMIT ?
+                SELECT e.id, e.article_id, e.extractor_version, e.classification, e.status,
+                       e.direction, e.change_basis_points, e.evidence, e.source, e.source_url,
+                       e.published_at, e.detected_at, e.processed_at, e.capture_sha256,
+                       m.claim_kind, m.tags_json, m.verification_note
+                FROM economic_events e
+                LEFT JOIN event_metadata m ON m.event_id = e.id
+                WHERE e.id > ? AND (? IS NULL OR e.status = ?)
+                ORDER BY e.id ASC LIMIT ?
                 """,
                 (after_id, status, status, limit + 1),
             ).fetchall()
         has_more = len(rows) > limit
-        items = [dict(r) for r in rows[:limit]]
+        items = []
+        for row in rows[:limit]:
+            item = dict(row)
+            item["claimKind"] = item.pop("claim_kind")
+            tags = item.pop("tags_json")
+            item["tags"] = json.loads(tags) if tags else []
+            item["verificationNote"] = item.pop("verification_note")
+            items.append(item)
         return {
             "schemaVersion": "1.0",
             "items": items,

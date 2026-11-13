@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from tris_market_event_intelligence.collector import NewsStore, utc_now
-from tris_market_event_intelligence.events import EXTRACTOR_VERSION, extract_policy_event
+from tris_market_event_intelligence.multi_events import (
+    EXTRACTOR_VERSION,
+    extract_news_event,
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,12 @@ class EventProcessor:
                     capture_sha256 TEXT NOT NULL,
                     UNIQUE(article_id, extractor_version)
                 );
+                CREATE TABLE IF NOT EXISTS event_metadata (
+                    event_id INTEGER PRIMARY KEY REFERENCES economic_events(id),
+                    claim_kind TEXT NOT NULL,
+                    tags_json TEXT NOT NULL,
+                    verification_note TEXT NOT NULL
+                );
                 """
             )
 
@@ -76,7 +86,8 @@ class EventProcessor:
                 (EXTRACTOR_VERSION, batch_size),
             ).fetchall()
             for article_id, source, url, title, summary, published, detected, sha in rows:
-                event = extract_policy_event(source, title, summary)
+                classification = extract_news_event(source, title, summary)
+                event = classification.event if classification else None
                 now = utc_now()
                 # Per-article transaction ensures a processing checkpoint cannot
                 # advance if writing the corresponding event fails.
@@ -94,6 +105,15 @@ class EventProcessor:
                              event.status, event.direction, event.change_basis_points,
                              event.evidence, source, url, published, detected, now, sha),
                         )
+                        if cursor.rowcount and classification is not None:
+                            db.execute(
+                                """INSERT INTO event_metadata (
+                                    event_id, claim_kind, tags_json, verification_note
+                                ) VALUES (?, ?, ?, ?)""",
+                                (cursor.lastrowid, classification.claim_kind,
+                                 json.dumps(classification.tags, ensure_ascii=False),
+                                 classification.verification_note),
+                            )
                         created += cursor.rowcount
                         if event.status == "VERIFIED" and cursor.rowcount:
                             verified += 1
