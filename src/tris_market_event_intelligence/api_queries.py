@@ -77,6 +77,53 @@ class EventReader:
             "hasMore": has_more,
         }
 
+    def claim_assessments(self, *, after_id: int, limit: int) -> dict[str, object]:
+        """Read-only claim projection with latest human review (when present)."""
+        from tris_market_event_intelligence.claim_assessment import assess_claim
+
+        with closing(self._connection()) as db:
+            claims = db.execute(
+                """SELECT id, classification, status, claim_kind, polarity,
+                          temporal_context FROM article_event_claims
+                   WHERE id > ? ORDER BY id LIMIT ?""",
+                (after_id, limit + 1),
+            ).fetchall()
+            visible = claims[:limit]
+            reviews = {}
+            if visible and db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='claim_review_history'"
+            ).fetchone():
+                ids = [row["id"] for row in visible]
+                placeholders = ",".join("?" for _ in ids)
+                matches = db.execute(
+                    f"""SELECT r.claim_id, r.status, r.revision
+                        FROM claim_review_history r
+                        WHERE r.claim_id IN ({placeholders})
+                          AND r.revision = (
+                            SELECT MAX(h.revision) FROM claim_review_history h
+                            WHERE h.claim_id = r.claim_id
+                          )""", ids,
+                ).fetchall()
+                reviews = {row["claim_id"]: row for row in matches}
+        items = []
+        for claim in visible:
+            review = reviews.get(claim["id"])
+            items.append(assess_claim(
+                claim_id=claim["id"], classification=claim["classification"],
+                status=claim["status"], claim_kind=claim["claim_kind"],
+                polarity=claim["polarity"],
+                temporal_context=claim["temporal_context"],
+                review_status=review["status"] if review else None,
+                revision=review["revision"] if review else 0,
+            ))
+        return {
+            "schemaVersion": "1.0", "assessmentVersion": "review-triage-v1",
+            "items": items,
+            "nextCursor": items[-1]["claim_id"] if items else after_id,
+            "hasMore": len(claims) > limit,
+        }
+
     def latest_claim_reviews(self, *, after_id: int, limit: int) -> dict[str, object]:
         # Latest review per claim, with claim-ID cursor (not history revision ID).
         with closing(self._connection()) as db:
