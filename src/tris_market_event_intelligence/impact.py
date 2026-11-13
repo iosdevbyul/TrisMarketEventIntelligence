@@ -122,8 +122,7 @@ class OpenAICompatibleProvider:
     def __init__(
         self, *, base_url: str, api_key: str, model: str, client: httpx.Client | None = None
     ) -> None:
-        if not (base_url.startswith("https://") or base_url.startswith("http://127.0.0.1:")
-                or base_url.startswith("http://localhost:")):
+        if not base_url.startswith(("https://", "http://127.0.0.1:", "http://localhost:")):
             raise ValueError("Provider endpoint must use HTTPS or loopback HTTP")
         if not model.strip() or not api_key.strip():
             raise ValueError("A model identifier and API key are required")
