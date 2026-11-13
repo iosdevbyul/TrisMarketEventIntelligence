@@ -10,7 +10,9 @@ from contextlib import closing
 from pathlib import Path
 
 from tris_market_event_intelligence.impact import (
-    PROMPT_VERSION, EventInput, is_eligible,
+    PROMPT_VERSION,
+    EventInput,
+    is_eligible,
 )
 
 
