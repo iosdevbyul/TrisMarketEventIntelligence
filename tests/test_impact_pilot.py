@@ -1,0 +1,104 @@
+"""Manual pilot selection should be predictable, bounded and safe."""
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from tris_market_event_intelligence.impact import EventInput, ImpactResult
+from tris_market_event_intelligence.impact_pilot import pilot_candidates
+from tris_market_event_intelligence.impact_store import ImpactProcessor
+
+
+class EmptyModel:
+    model_id = "gemma2:latest"
+
+    def __init__(self):
+        self.calls = []
+
+    def analyze(self, event: EventInput) -> ImpactResult:
+        self.calls.append(event.event_id)
+        return ImpactResult(impacts=[])
+
+
+def database(db: Path) -> None:
+    # Use the production event schema, but avoid remote collection.
+    from tris_market_event_intelligence.event_store import EventProcessor
+
+    EventProcessor(db).initialize()
+    model = EmptyModel()
+    ImpactProcessor(db, model).initialize()
+    with sqlite3.connect(db) as conn:
+        for event_id, category, status, kind in [
+            (1, "INDUSTRY", "UNVERIFIED", "REPORTED"),
+            (2, "INDUSTRY", "UNVERIFIED", "REPORTED"),
+            (3, "EARNINGS", "UNVERIFIED", "REPORTED"),
+            (4, "GEOPOLITICAL", "UNVERIFIED", "REPORTED"),
+            (5, "INDUSTRY", "UNVERIFIED", "FORECAST"),
+            (6, "MONETARY_POLICY", "CANDIDATE", "REPORTED"),
+            (7, "SUPPLY_CHAIN", "UNVERIFIED", "REPORTED"),
+        ]:
+            conn.execute(
+                """INSERT INTO economic_events (
+                    id, article_id, extractor_version, classification, status,
+                    evidence, source, source_url, detected_at, processed_at,
+                    capture_sha256
+                ) VALUES (?, ?, 'fixture', ?, ?, 'some recorded evidence',
+                          'fixture', 'https://example.org', 'now', 'now', 'sha')""",
+                (event_id, event_id, category, status),
+            )
+            conn.execute(
+                "INSERT INTO event_metadata VALUES (?, ?, '[]', 'not verified')",
+                (event_id, kind),
+            )
+        conn.execute(
+            """INSERT INTO impact_runs VALUES
+               (2, 'gemma2:latest', 'market-impact-v7', 'now', 'NO_HYPOTHESIS')"""
+        )
+        conn.execute(
+            """INSERT INTO impact_errors VALUES
+               (1, 'gemma2:latest', 'market-impact-v7',
+                'RATIONALE_INCOMPLETE', 'now', 1)"""
+        )
+
+
+def test_diverse_fresh_candidates_avoid_failed_and_completed(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    report = pilot_candidates(db, model_id="gemma2:latest")
+    assert [r["event_id"] for r in report["candidates"]] == [3, 4, 7]
+    assert report["eligible_events"] == 5
+    assert report["already_checkpointed_events"] == 1
+    assert report["fresh_pending_events"] == 3
+    assert report["pending_with_prior_failure"] == 1
+    assert report["quality_verified"] is False
+
+
+def test_explicit_selection_cannot_run_unrequested_events(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    model = EmptyModel()
+    processor = ImpactProcessor(db, model)
+    assert processor.process_pending(event_ids=(3, 7), batch_size=2).processed == 2
+    assert model.calls == [3, 7]
+    with pytest.raises(ValueError, match="already checkpointed"):
+        processor.process_pending(event_ids=(3,), batch_size=1)
+
+
+def test_invalid_or_ineligible_selection_rejected_before_inference(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    model = EmptyModel()
+    processor = ImpactProcessor(db, model)
+    for ids in [(5,), (6,), (99,), (2,), (1, 1), (1, 3, 4, 7)]:
+        with pytest.raises(ValueError):
+            processor.process_pending(event_ids=ids, batch_size=3)
+    assert model.calls == []
+
+
+def test_missing_db_and_limits(tmp_path: Path) -> None:
+    db = tmp_path / "missing.sqlite3"
+    assert pilot_candidates(db, model_id="gemma2:latest")["status"] == "database_missing"
+    assert not db.exists()
+    for limit in (0, 4):
+        with pytest.raises(ValueError, match="limit"):
+            pilot_candidates(db, model_id="gemma2:latest", limit=limit)
