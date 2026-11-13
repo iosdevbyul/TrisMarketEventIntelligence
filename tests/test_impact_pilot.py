@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from tris_market_event_intelligence.impact import EventInput, ImpactResult
 from tris_market_event_intelligence.impact_pilot import pilot_candidates
 from tris_market_event_intelligence.impact_store import ImpactProcessor
-from tris_market_event_intelligence.impact import EventInput, ImpactResult
 
 
 class EmptyModel:
