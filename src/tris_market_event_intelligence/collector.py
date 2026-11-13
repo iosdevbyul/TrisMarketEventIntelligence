@@ -17,10 +17,9 @@ import httpx
 
 MAX_FEED_BYTES = 2_000_000
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
-FEEDS = {
-    "fed_monetary": "https://www.federalreserve.gov/feeds/press_monetary.xml",
-    "bok_monetary": "https://www.bok.or.kr/portal/bbs/P0000559/news.rss?menuNo=200690",
-}
+from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS, validate_feeds
+
+FEEDS = DEFAULT_FEEDS
 
 
 def utc_now() -> str:
@@ -246,7 +245,7 @@ class OfficialNewsCollector:
     ) -> None:
         self.store = store
         self.client = client
-        self.feeds = feeds if feeds is not None else FEEDS
+        self.feeds = validate_feeds(feeds if feeds is not None else FEEDS)
 
     def collect_once(self) -> dict[str, dict[str, str | int]]:
         self.store.initialize()
@@ -290,10 +289,12 @@ class OfficialNewsCollector:
         return outcome
 
 
-def run_collector(db_path: Path, interval_seconds: int, once: bool) -> None:
+def run_collector(
+    db_path: Path, interval_seconds: int, once: bool, feeds: dict[str, str] | None = None
+) -> None:
     if interval_seconds < 30:
         raise ValueError("interval_seconds must be at least 30")
-    collector = OfficialNewsCollector(NewsStore(db_path))
+    collector = OfficialNewsCollector(NewsStore(db_path), feeds=feeds)
     while True:
         print(json.dumps(collector.collect_once(), ensure_ascii=False), flush=True)
         if once:
