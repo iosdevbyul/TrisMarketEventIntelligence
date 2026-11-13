@@ -8,7 +8,7 @@ import sqlite3
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -24,7 +24,7 @@ FEEDS = {
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass(frozen=True)
@@ -50,12 +50,12 @@ def _parse_date(value: str) -> str | None:
         parsed = parsedate_to_datetime(value)
     except (TypeError, ValueError, IndexError):
         try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(value)
         except ValueError:
             return None
     if parsed.tzinfo is None:
         return None
-    return parsed.astimezone(timezone.utc).isoformat()
+    return parsed.astimezone(UTC).isoformat()
 
 
 def parse_rss(source: str, data: bytes, detected_at: str) -> list[Article]:
@@ -83,7 +83,7 @@ def parse_rss(source: str, data: bytes, detected_at: str) -> list[Article]:
         )
     ns = {"a": "http://www.w3.org/2005/Atom"}
     for item in root.findall(".//a:entry", ns):
-        title = _text(item, "a:title" .replace("a:", "{http://www.w3.org/2005/Atom}"))
+        title = _text(item, "{http://www.w3.org/2005/Atom}title")
         identifier = _text(item, "{http://www.w3.org/2005/Atom}id")
         link = item.find("a:link[@rel='alternate']", ns)
         if link is None:
