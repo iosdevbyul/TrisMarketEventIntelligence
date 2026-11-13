@@ -19,6 +19,7 @@ MAX_FEED_BYTES = 2_000_000
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS, validate_feeds
 
+
 def safe_error_code(error: Exception) -> str:
     """Expose HTTP status without leaking query URLs or credentials."""
     if isinstance(error, httpx.HTTPStatusError):
