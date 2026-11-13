@@ -53,7 +53,7 @@ def diagnose(
             }
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             checks["last_run"] = {"level": "error", "reason": "invalid_status_json"}
-    if not db_path.is_file():
+    file_bytes = {}\n    for suffix in ("", "-wal", "-shm", "-journal"):\n        path = db_path if not suffix else db_path.with_name(db_path.name + suffix)\n        file_bytes["main" if not suffix else suffix[1:]] = (\n            path.stat().st_size if path.is_file() else 0\n        )\n    total_storage_bytes = sum(file_bytes.values())\n    if not db_path.is_file():
         checks["database"] = {"level": "error", "reason": "missing_database"}
     else:
         size = db_path.stat().st_size
@@ -64,14 +64,14 @@ def diagnose(
                 integrity = db.execute("PRAGMA quick_check").fetchone()
                 if not integrity or integrity[0] != "ok":
                     level, reason = "error", "integrity_failed"
-                elif size >= warning_bytes:
+                elif total_storage_bytes >= warning_bytes:
                     level, reason = "warning", "database_large"
                 else:
                     level, reason = "ok", "database_valid"
         except sqlite3.Error:
             level, reason = "error", "database_unreadable"
         checks["database"] = {
-            "level": level, "reason": reason, "bytes": size,
+            "level": level, "reason": reason, "bytes": size,\n            "total_storage_bytes": total_storage_bytes, "file_bytes": file_bytes,
         }
     levels = {value["level"] for value in checks.values()}
     overall = "error" if "error" in levels else "warning" if "warning" in levels else "ok"
