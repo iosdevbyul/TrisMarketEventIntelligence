@@ -9,7 +9,6 @@ import pytest
 from tris_market_event_intelligence.launchd_config import launchd_configuration
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
-
 FEED = b"""<rss><channel><item><guid>x</guid>
 <title>Producer Price Index PPI released</title>
 <link>https://example.org/ppi</link>
