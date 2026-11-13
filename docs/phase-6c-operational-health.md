@@ -41,3 +41,23 @@ Limitations: forced termination/SIGKILL, full disks, and failure to write status
 can still prevent a checkpoint. The doctor flags stale status but cannot prove
 why it is stale. File size warning excludes SQLite WAL and journal sidecars and
 should not be treated as total disk use. No automatic deletion is implemented.
+
+## Completed cycle history and complete SQLite footprint
+
+Each completed cycle with `--status` appends a private JSON line to
+`run-history.jsonl` beside the latest status file, preserving historical
+success/failure and safe source status codes, timestamps and counters. No
+article titles, credentials, source URLs or exception messages are recorded.
+The existing flock prevents concurrent writers for the same DB, and the ledger
+is fsynced. A force-terminated process may still leave an incomplete final line.
+No history rotation, deletion or rewriting is implemented.
+
+```sh
+tail -n 10 "$HOME/Library/Application Support/TrisMarketEventIntelligence/run-history.jsonl"
+```
+
+`market-event-doctor` now includes `total_storage_bytes` and `file_bytes`
+for the SQLite main file, WAL, SHM and journal. Its size warning checks the
+combined footprint. File sizes are a best-effort snapshot during concurrent
+writes, and exclude the separate JSONL history, logs and filesystem overhead.
+No data deletion, SQLite checkpoint, VACUUM or system service modification.

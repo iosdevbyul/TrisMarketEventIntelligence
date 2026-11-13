@@ -14,6 +14,7 @@ import httpx
 
 from tris_market_event_intelligence.claim_store import ClaimProcessor
 from tris_market_event_intelligence.collector import NewsStore, OfficialNewsCollector, utc_now
+from tris_market_event_intelligence.operational_history import history_path_for, record_cycle
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS
 from tris_market_event_intelligence.story_index import StoryIndex
 
@@ -96,6 +97,7 @@ def run_cycle(
             status = "failed" if ok == 0 else "healthy" if ok == len(results) else "degraded"
             outcome: dict[str, object] = {
                 "status": status,
+                "started_at": started_at,
                 "finished_at": utc_now(),
                 "source_results": results,
                 "successful_sources": ok,
@@ -132,7 +134,9 @@ def run_cycle(
             }
             if status_path:
                 _write_status(status_path, outcome)
+                record_cycle(history_path_for(status_path), outcome)
             return outcome
         if status_path:
             _write_status(status_path, outcome)
+            record_cycle(history_path_for(status_path), outcome)
         return outcome
