@@ -52,6 +52,7 @@ ATTRIBUTED = re.compile(r"(?i)\b(?:reportedly|according to sources|sources say)\
 OFFICIAL_CATEGORIES = {
     "bls_cpi": {"ECONOMIC_INDICATOR"},
     "bls_ppi": {"ECONOMIC_INDICATOR"},
+    "bls_latest": {"ECONOMIC_INDICATOR"},
     "bls_employment": {"ECONOMIC_INDICATOR"},
     "sec_press": {"REGULATION", "CORPORATE_EVENT"},
     "fed_all": {"MONETARY_POLICY", "REGULATION"},

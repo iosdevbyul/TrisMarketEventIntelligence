@@ -68,7 +68,7 @@ def test_optional_naver_and_source_error_isolation(tmp_path: Path) -> None:
         assert db.execute("SELECT COUNT(*) FROM captures").fetchone()[0] == 1
         assert db.execute(
             "SELECT last_error FROM fetch_state WHERE source='gdelt_doc'"
-        ).fetchone()[0] == "HTTPStatusError"
+        ).fetchone()[0] == "HTTP_429"
     assert len(calls) == 4
 
 

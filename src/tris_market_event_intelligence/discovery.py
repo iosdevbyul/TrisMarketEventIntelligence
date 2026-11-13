@@ -13,7 +13,12 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from tris_market_event_intelligence.collector import Article, NewsStore, utc_now
+from tris_market_event_intelligence.collector import (
+    Article,
+    NewsStore,
+    safe_error_code,
+    utc_now,
+)
 from tris_market_event_intelligence.events import clean_text
 
 NAVER_URL = "https://openapi.naver.com/v1/search/news.json"
@@ -188,7 +193,7 @@ class SearchDiscovery:
                 returned += len(articles)
             except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 # Never record exception text: some HTTP exceptions include URLs/query values.
-                self.store.record_error(source, type(exc).__name__, now)
+                self.store.record_error(source, safe_error_code(exc), now)
                 errors += 1
         status = "ok" if not errors else "partial_error" if errors < len(topics) else "error"
         return SourceResult(status, inserted, returned)
