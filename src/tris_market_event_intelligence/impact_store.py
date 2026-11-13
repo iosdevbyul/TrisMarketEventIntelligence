@@ -98,6 +98,14 @@ class ImpactProcessor:
                     'CORPORATE_EVENT', 'REGULATION', 'GEOPOLITICAL', 'SUPPLY_CHAIN',
                     'INDUSTRY', 'SERVICE_INCIDENT', 'MARKET_MOVEMENT'
                 )
+                  AND (
+                    (e.status='VERIFIED' AND e.classification='MONETARY_POLICY')
+                    OR (
+                        e.status IN ('CANDIDATE','UNVERIFIED')
+                        AND e.classification!='MONETARY_POLICY'
+                        AND m.claim_kind='REPORTED'
+                    )
+                  )
                   AND NOT EXISTS (
                     SELECT 1 FROM impact_runs r
                     WHERE r.event_id=e.id AND r.model_id=? AND r.prompt_version=?
