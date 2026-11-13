@@ -6,6 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+
 class EventReader:
     """Independent monotonically increasing cursors avoid late-analysis data loss."""
 
