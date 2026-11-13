@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-PROMPT_VERSION = "market-impact-v3"
+PROMPT_VERSION = "market-impact-v4"
 
 
 class ImpactAnalysisError(ValueError):
@@ -189,12 +189,51 @@ def validate_result(event: EventInput, result: ImpactResult) -> ImpactResult:
     return result
 
 
+def structured_impact_schema(event: EventInput) -> dict[str, object]:
+    """Constrain local generation using a fresh copy of the Pydantic schema."""
+    schema = ImpactResult.model_json_schema()
+    props = schema["$defs"]["Impact"]["properties"]
+    props["market"]["enum"] = ["US", "KR", "GLOBAL"]
+    props["sector"]["enum"] = [
+        "TECH", "FINANCIALS", "BROAD_MARKET", "FX", "SEMICONDUCTORS",
+        "ENERGY", "DEFENSE", "INDUSTRIALS", "CONSUMER", "TRANSPORT",
+        "CLOUD", "HEALTHCARE",
+    ]
+    props["direction"]["enum"] = ["POSITIVE", "NEGATIVE", "MIXED", "UNCERTAIN"]
+    props["horizon"]["enum"] = ["SHORT_TERM", "MEDIUM_TERM"]
+    props["uncertainty"]["enum"] = (
+        ["LOW", "MEDIUM", "HIGH"] if event.status == "VERIFIED" else ["HIGH"]
+    )
+    return schema
+
+
+def schema_error_code(error: ValidationError) -> str:
+    """Store only whitelisted schema field and error type, never model text."""
+    first = error.errors(include_input=False, include_context=False)[0]
+    allowed_fields = {
+        "impacts", "market", "sector", "direction", "horizon", "rationale",
+        "evidence_excerpt", "uncertainty", "drivers", "entities",
+    }
+    field = next(
+        (part for part in reversed(first["loc"])
+         if isinstance(part, str) and part in allowed_fields),
+        "root",
+    )
+    allowed_types = {
+        "missing", "json_invalid", "string_type", "list_type",
+        "literal_error", "extra_forbidden", "string_too_short",
+        "string_too_long", "too_short", "too_long", "value_error",
+    }
+    error_type = first["type"] if first["type"] in allowed_types else "invalid"
+    return f"SCHEMA_{error_type.upper()}_{field.upper()}"
+
+
 class OpenAICompatibleProvider:
     """Chat Completions JSON provider; send metadata only, never raw capture bodies."""
 
     def __init__(
         self, *, base_url: str, api_key: str, model: str, client: httpx.Client | None = None,
-        timeout_seconds: int = 90,
+        timeout_seconds: int = 90, structured_output: bool = False,
     ) -> None:
         if not base_url.startswith(("https://", "http://127.0.0.1:", "http://localhost:")):
             raise ValueError("Provider endpoint must use HTTPS or loopback HTTP")
@@ -203,6 +242,7 @@ class OpenAICompatibleProvider:
         if not 1 <= timeout_seconds <= 900:
             raise ValueError("timeout_seconds must be between 1 and 900")
         self._timeout_seconds = timeout_seconds
+        self._structured_output = structured_output
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
@@ -218,7 +258,17 @@ class OpenAICompatibleProvider:
         payload = {
             "model": self._model,
             "temperature": 0,
-            "response_format": {"type": "json_object"},
+            "response_format": (
+                {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "market_impacts",
+                        "strict": True,
+                        "schema": structured_impact_schema(event),
+                    },
+                }
+                if self._structured_output else {"type": "json_object"}
+            ),
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "system", "content": event_specific_instructions(event)},
@@ -265,7 +315,12 @@ class OpenAICompatibleProvider:
                 raise ImpactAnalysisError(
                     "PROVIDER_CONTENT_INVALID", "Provider response is missing or oversized"
                 )
-            parsed = ImpactResult.model_validate_json(content)
+            try:
+                parsed = ImpactResult.model_validate_json(content)
+            except ValidationError as exc:
+                raise ImpactAnalysisError(
+                    schema_error_code(exc), "Model response violates the impact schema"
+                ) from exc
             return validate_result(event, parsed)
         finally:
             if owned:
