@@ -7,6 +7,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
+
 from tris_market_event_intelligence.collector import utc_now
 from tris_market_event_intelligence.event_store import EventProcessor
 from tris_market_event_intelligence.impact import (
@@ -183,7 +185,11 @@ class ImpactProcessor:
                 """,
                 (event_id, self.provider.model_id, PROMPT_VERSION,
                  error.code if isinstance(error, ImpactAnalysisError)
-                 else type(error).__name__, utc_now()),
+                 else (
+                     f"HTTP_{error.response.status_code}"
+                     if isinstance(error, httpx.HTTPStatusError)
+                     else type(error).__name__
+                 ), utc_now()),
             )
 
     def list_impacts(self) -> list[dict[str, object]]:

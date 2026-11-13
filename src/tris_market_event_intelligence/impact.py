@@ -9,7 +9,7 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-PROMPT_VERSION = "market-impact-v4"
+PROMPT_VERSION = "market-impact-v5"
 
 
 class ImpactAnalysisError(ValueError):
@@ -207,6 +207,41 @@ def structured_impact_schema(event: EventInput) -> dict[str, object]:
     return schema
 
 
+def ollama_native_schema(event: EventInput) -> dict[str, object]:
+    """A flat schema for Ollama's native format field; no $ref or $defs."""
+    properties: dict[str, object] = {
+        "market": {"type": "string", "enum": ["US", "KR", "GLOBAL"]},
+        "sector": {"type": "string", "enum": [
+            "TECH", "FINANCIALS", "BROAD_MARKET", "FX", "SEMICONDUCTORS",
+            "ENERGY", "DEFENSE", "INDUSTRIALS", "CONSUMER", "TRANSPORT",
+            "CLOUD", "HEALTHCARE",
+        ]},
+        "direction": {"type": "string", "enum": [
+            "POSITIVE", "NEGATIVE", "MIXED", "UNCERTAIN",
+        ]},
+        "horizon": {"type": "string", "enum": ["SHORT_TERM", "MEDIUM_TERM"]},
+        "rationale": {"type": "string"},
+        "evidence_excerpt": {"type": "string"},
+        "uncertainty": {"type": "string", "enum": (
+            ["LOW", "MEDIUM", "HIGH"] if event.status == "VERIFIED" else ["HIGH"]
+        )},
+        "drivers": {"type": "array", "items": {"type": "string"}},
+        "entities": {"type": "array", "items": {"type": "string"}},
+    }
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": ["impacts"],
+        "properties": {"impacts": {
+            "type": "array",
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "properties": properties,
+                "required": list(properties),
+            },
+        }},
+    }
+
+
 def schema_error_code(error: ValidationError) -> str:
     """Store only whitelisted schema field and error type, never model text."""
     first = error.errors(include_input=False, include_context=False)[0]
@@ -234,6 +269,7 @@ class OpenAICompatibleProvider:
     def __init__(
         self, *, base_url: str, api_key: str, model: str, client: httpx.Client | None = None,
         timeout_seconds: int = 90, structured_output: bool = False,
+        native_ollama: bool = False,
     ) -> None:
         if not base_url.startswith(("https://", "http://127.0.0.1:", "http://localhost:")):
             raise ValueError("Provider endpoint must use HTTPS or loopback HTTP")
@@ -243,6 +279,7 @@ class OpenAICompatibleProvider:
             raise ValueError("timeout_seconds must be between 1 and 900")
         self._timeout_seconds = timeout_seconds
         self._structured_output = structured_output
+        self._native_ollama = native_ollama
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
@@ -290,14 +327,36 @@ class OpenAICompatibleProvider:
                 }, ensure_ascii=False)},
             ],
         }
+        if self._native_ollama:
+            # Native Ollama uses "format", not OpenAI's "response_format".
+            payload.pop("response_format")
+            payload["stream"] = False
+            payload["format"] = ollama_native_schema(event)
+            payload["options"] = {"temperature": 0}
+            payload.pop("temperature")
+            endpoint = "http://127.0.0.1:11434/api/chat"
+        else:
+            endpoint = f"{self._base_url}/chat/completions"
+
         owned = self._client is None
-        client = self._client or httpx.Client(timeout=httpx.Timeout(self._timeout_seconds), trust_env=False)
+        client = self._client or httpx.Client(
+            timeout=httpx.Timeout(self._timeout_seconds), trust_env=False
+        )
         try:
             response = client.post(
-                f"{self._base_url}/chat/completions",
+                endpoint,
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json=payload,
             )
+            # Unsupported schema grammar may cause 400/422 on older Ollama.
+            # Retry at most once in native JSON mode, retaining every guard.
+            if self._native_ollama and response.status_code in {400, 422}:
+                payload["format"] = "json"
+                response = client.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json=payload,
+                )
             response.raise_for_status()
             try:
                 data = response.json()
@@ -306,7 +365,10 @@ class OpenAICompatibleProvider:
                     "PROVIDER_JSON_INVALID", "Provider response is not valid JSON"
                 ) from exc
             try:
-                content = data["choices"][0]["message"]["content"]
+                content = (
+                    data["message"]["content"] if self._native_ollama
+                    else data["choices"][0]["message"]["content"]
+                )
             except (KeyError, IndexError, TypeError) as exc:
                 raise ImpactAnalysisError(
                     "PROVIDER_RESPONSE_SHAPE", "Provider response has no message content"

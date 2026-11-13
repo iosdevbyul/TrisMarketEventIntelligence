@@ -35,7 +35,7 @@ def sample() -> ImpactResult:
 
 
 def test_schema_is_versioned_and_source_specific() -> None:
-    assert PROMPT_VERSION == "market-impact-v4"
+    assert PROMPT_VERSION == "market-impact-v5"
     unknown = structured_impact_schema(event())
     known = structured_impact_schema(event("VERIFIED"))
     props = unknown["$defs"]["Impact"]["properties"]
