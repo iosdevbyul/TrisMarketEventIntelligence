@@ -30,6 +30,7 @@ market-event-discover = "tris_market_event_intelligence.discovery_cli:main"
 market-event-claims = "tris_market_event_intelligence.claims_cli:main"
 market-event-scrape = "tris_market_event_intelligence.scrape_cli:main"
 market-event-review = "tris_market_event_intelligence.review_cli:main"
+market-event-evaluate = "tris_market_event_intelligence.evaluate_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
