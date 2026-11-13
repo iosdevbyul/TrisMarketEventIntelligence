@@ -82,12 +82,26 @@ class ImpactProcessor:
                     "TEXT NOT NULL DEFAULT '[]'"
                 )
 
-    def process_pending(self, batch_size: int = 100) -> AnalysisStats:
+    def process_pending(
+        self, batch_size: int = 100, *, event_ids: tuple[int, ...] | None = None,
+    ) -> AnalysisStats:
         if not 1 <= batch_size <= 1000:
             raise ValueError("batch_size must be 1..1000")
         if not self.provider.model_id.strip():
             raise ValueError("Provider requires a stable model_id")
+        if event_ids is not None:
+            if (
+                not 1 <= len(event_ids) <= 3
+                or len(set(event_ids)) != len(event_ids)
+                or any(type(event_id) is not int or event_id < 1 for event_id in event_ids)
+                or batch_size < len(event_ids)
+            ):
+                raise ValueError("Select 1..3 unique positive event IDs within batch size")
         self.initialize()
+        selection_sql = (
+            " AND e.id IN (" + ",".join("?" for _ in event_ids) + ")"
+            if event_ids is not None else ""
+        )
         with self.store.store.connect() as db:
             rows = db.execute(
                 """
@@ -113,10 +127,13 @@ class ImpactProcessor:
                     SELECT 1 FROM impact_runs r
                     WHERE r.event_id=e.id AND r.model_id=? AND r.prompt_version=?
                   )
+                {selection_sql}
                 ORDER BY e.id LIMIT ?
-                """,
-                (self.provider.model_id, PROMPT_VERSION, batch_size),
+                """.format(selection_sql=selection_sql),
+                (self.provider.model_id, PROMPT_VERSION, *(event_ids or ()), batch_size),
             ).fetchall()
+        if event_ids is not None and {row[0] for row in rows} != set(event_ids):
+            raise ValueError("Selected event is missing, ineligible, or already checkpointed")
 
         processed = impacts = failed = 0
         for record in rows:
