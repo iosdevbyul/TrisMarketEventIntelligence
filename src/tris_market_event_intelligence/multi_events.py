@@ -34,15 +34,15 @@ ADDITIONAL_PATTERNS = (
     ("REGULATION", "FINANCIAL_POLICY",
      r"(?i)\bcapital markets? reforms?\b"),
     ("REGULATION", "MAP_DATA_POLICY",
-     r"(?i)\b(?:map data exports?|high-precision map data|"
-     r"security requirements for high-precision map data)\b"),
+     (r"(?i)\b(?:map data exports?|high-precision map data|"
+     r"security requirements for high-precision map data)\b")),
     ("SERVICE_INCIDENT", "OUTAGE",
      r"(?i)\b(?:Microsoft 365|Office 365)\b.{0,55}\b(?:outage|disruption)\b"),
     ("GEOPOLITICAL", "CONFLICT",
      r"(?i)\b(?:Iranian attack drones?|strike on (?:a |the )?(?:US|U\.S\.) radar)\b"),
     ("MARKET_MOVEMENT", "EQUITIES",
-     r"(?i)\bKOSPI\b.{0,65}\b(?:surrenders?|slides?|reverses?)\b|"
-     r"\btech stocks\b.{0,55}\b(?:taking a beating|selloff|slide|fall|drop)\b"),
+     (r"(?i)\bKOSPI\b.{0,65}\b(?:surrenders?|slides?|reverses?)\b|"
+     r"\btech stocks\b.{0,55}\b(?:taking a beating|selloff|slide|fall|drop)\b")),
     ("SUPPLY_CHAIN", "SEMICONDUCTOR",
      r"(?i)\b(?:supply|shipment|pledge)\b.{0,65}\b(?:GPUs?|semiconductors?|chips?)\b"),
 )
