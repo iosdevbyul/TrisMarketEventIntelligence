@@ -80,7 +80,8 @@ def test_explicit_selection_cannot_run_unrequested_events(tmp_path: Path) -> Non
     processor = ImpactProcessor(db, model)
     assert processor.process_pending(event_ids=(3, 7), batch_size=2).processed == 2
     assert model.calls == [3, 7]
-    assert processor.process_pending(event_ids=(3,), batch_size=1).processed == 0
+    with pytest.raises(ValueError, match="already checkpointed"):
+        processor.process_pending(event_ids=(3,), batch_size=1)
 
 
 def test_invalid_or_ineligible_selection_rejected_before_inference(tmp_path: Path) -> None:
