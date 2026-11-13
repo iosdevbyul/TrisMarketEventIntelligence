@@ -14,7 +14,7 @@ NOW = datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
 def _fixture(tmp_path: Path, *, status: str = "healthy", age: int = 10) -> tuple[Path, Path]:
     db_path = tmp_path / "news.sqlite3"
     with sqlite3.connect(db_path) as db:
-        db.execute("CREATE TABLE sample (id INTEGER)")
+        db.execute("CREATE TABLE IF NOT EXISTS sample (id INTEGER)")
     path = tmp_path / "last-run.json"
     path.write_text(json.dumps({
         "status": status,
