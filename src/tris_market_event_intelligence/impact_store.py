@@ -89,14 +89,13 @@ class ImpactProcessor:
             raise ValueError("batch_size must be 1..1000")
         if not self.provider.model_id.strip():
             raise ValueError("Provider requires a stable model_id")
-        if event_ids is not None:
-            if (
-                not 1 <= len(event_ids) <= 3
-                or len(set(event_ids)) != len(event_ids)
-                or any(type(event_id) is not int or event_id < 1 for event_id in event_ids)
-                or batch_size < len(event_ids)
-            ):
-                raise ValueError("Select 1..3 unique positive event IDs within batch size")
+        if event_ids is not None and (
+            not 1 <= len(event_ids) <= 3
+            or len(set(event_ids)) != len(event_ids)
+            or any(type(event_id) is not int or event_id < 1 for event_id in event_ids)
+            or batch_size < len(event_ids)
+        ):
+            raise ValueError("Select 1..3 unique positive event IDs within batch size")
         self.initialize()
         selection_sql = (
             " AND e.id IN (" + ",".join("?" for _ in event_ids) + ")"
@@ -104,7 +103,7 @@ class ImpactProcessor:
         )
         with self.store.store.connect() as db:
             rows = db.execute(
-                """
+                f"""
                 SELECT e.id, e.classification, e.status, e.direction,
                        e.change_basis_points, e.evidence, e.source, e.source_url,
                        e.detected_at, m.claim_kind, m.verification_note, m.tags_json
@@ -129,7 +128,7 @@ class ImpactProcessor:
                   )
                 {selection_sql}
                 ORDER BY e.id LIMIT ?
-                """.format(selection_sql=selection_sql),
+                """,
                 (self.provider.model_id, PROMPT_VERSION, *(event_ids or ()), batch_size),
             ).fetchall()
         if event_ids is not None and {row[0] for row in rows} != set(event_ids):
