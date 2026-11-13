@@ -55,6 +55,27 @@ class EventReader:
             "hasMore": has_more,
         }
 
+    def claims(self, *, after_id: int, limit: int) -> dict[str, object]:
+        with self._connection() as db:
+            rows = db.execute(
+                """
+                SELECT id, article_id, extractor_version, ordinal, classification,
+                       tag, claim_kind, polarity, temporal_context, status, evidence,
+                       verification_note, source, source_url, published_at,
+                       detected_at, processed_at, capture_sha256
+                FROM article_event_claims WHERE id > ?
+                ORDER BY id ASC LIMIT ?
+                """,
+                (after_id, limit + 1),
+            ).fetchall()
+        has_more = len(rows) > limit
+        items = [dict(row) for row in rows[:limit]]
+        return {
+            "schemaVersion": "1.0", "items": items,
+            "nextCursor": items[-1]["id"] if items else after_id,
+            "hasMore": has_more,
+        }
+
     def analyses(self, *, after_id: int, limit: int) -> dict[str, object]:
         with self._connection() as db:
             rows = db.execute(
