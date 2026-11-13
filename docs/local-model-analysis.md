@@ -283,3 +283,22 @@ A **single** future Mac pilot should be considered only when ready to
 verify deployment; no repeated ad-hoc prompts or model reinstalls are
 necessary. If a run fails again, inspect the version-specific stored error,
 not a new prompt revision.
+
+## Phase 7-B: optional evidence-independent driver list
+
+The real Intel Mac v6 pilot rejected an otherwise uninspected model response
+with `SCHEMA_TOO_SHORT_DRIVERS`. This means `drivers=[]`, not that the
+source quote, rationale or market hypothesis has been established as valid.
+
+The `drivers` field remains a required array, but may contain **zero to six**
+nonempty short phrases. An empty list means the model did not identify
+separate causal factors. The system never manufactures drivers to satisfy a
+minimum count. The original source quotation, rationale minimum length,
+entity matching, uncertainty guard, market/sector validation, and strict
+storage rules all remain unchanged. An invalid quote or fabricated rationale
+still fails; empty drivers cannot convert it into success.
+
+This targeted correction retains `market-impact-v6`: the real device has
+no accepted v6 records and the failed event remains retryable. Do not
+interpret CI mock output as real Gemma 2 validation, or automatically begin
+processing more than one event.
