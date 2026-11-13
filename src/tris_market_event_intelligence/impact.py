@@ -9,7 +9,9 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-PROMPT_VERSION = "market-impact-v6"
+from tris_market_event_intelligence.impact_quality import rationale_quality_code
+
+PROMPT_VERSION = "market-impact-v7"
 
 
 class ImpactAnalysisError(ValueError):
@@ -180,6 +182,9 @@ def validate_result(event: EventInput, result: ImpactResult) -> ImpactResult:
     if not is_eligible(event):
         raise ImpactAnalysisError("INELIGIBLE_EVENT", "Only eligible reported or rule-verified events may be analyzed")
     for impact in result.impacts:
+        quality_code = rationale_quality_code(impact.rationale)
+        if quality_code:
+            raise ImpactAnalysisError(quality_code, "Rationale ends with an unfinished clause")
         if impact.evidence_excerpt not in event.evidence:
             raise ImpactAnalysisError("EVIDENCE_MISMATCH", "Impact references evidence absent from the original event")
         if any(entity not in event.evidence for entity in impact.entities):
