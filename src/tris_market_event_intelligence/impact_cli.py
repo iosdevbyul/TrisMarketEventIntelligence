@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.impact import OpenAICompatibleProvider
+from tris_market_event_intelligence.impact_diagnostics import inspect_errors
 from tris_market_event_intelligence.impact_store import ImpactProcessor
 
 
@@ -21,7 +22,19 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--provider", choices=("local", "remote"), default="local")
     parser.add_argument("--list-local-models", action="store_true")
+    parser.add_argument("--show-errors", action="store_true",
+                        help="Read saved analysis failures without invoking a model")
+    parser.add_argument("--error-limit", type=int, default=10)
     args = parser.parse_args()
+    if args.show_errors:
+        try:
+            result = inspect_errors(args.db.expanduser(), limit=args.error_limit)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(result, ensure_ascii=False))
+        if result['status'] in {'database_missing', 'database_unreadable'}:
+            raise SystemExit(2)
+        return
     if args.list_local_models:
         try:
             response = httpx.get("http://127.0.0.1:11434/api/tags", timeout=5, trust_env=False)

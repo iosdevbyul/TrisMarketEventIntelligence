@@ -82,3 +82,28 @@ Ollama runs only when `market-event-analyze` is invoked. It is not added to
 the 30-minute collector LaunchAgent or started as a public service. CI replaces
 Ollama with a stub and therefore cannot establish real Mac memory, inference
 speed or model validity.
+
+
+## Troubleshooting actual model inference failures
+
+A `market-event-analyze --provider local --batch-size 1` result of
+`{"processed":0,"impacts":0,"failed":1}` means one selected event failed to
+complete. Empty `/api/v1/analysis-runs` and `/api/v1/impacts` are expected
+because failed events never become successful checkpoints.
+
+Inspect the safe, previously stored error class **without loading the model
+again or modifying SQLite**:
+
+```sh
+market-event-analyze --show-errors
+```
+
+The report includes event ID, model name, prompt version, exception class,
+last attempt timestamp and attempt count only; it does not contain full
+provider responses or user text. `ReadTimeout` suggests the 90-second
+request timeout, `ValidationError` suggests malformed/contract-invalid
+JSON, `HTTPStatusError` suggests an Ollama HTTP rejection, and `ValueError`
+can mean unsupported evidence or incomplete response. Exception type alone
+is not definitive; preserve the failed row for subsequent controlled diagnosis.
+
+Do not rerun the whole backlog until a one-event pilot succeeds.
