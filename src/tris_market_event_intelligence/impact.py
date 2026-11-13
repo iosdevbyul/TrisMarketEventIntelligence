@@ -166,12 +166,16 @@ class OpenAICompatibleProvider:
     """Chat Completions JSON provider; send metadata only, never raw capture bodies."""
 
     def __init__(
-        self, *, base_url: str, api_key: str, model: str, client: httpx.Client | None = None
+        self, *, base_url: str, api_key: str, model: str, client: httpx.Client | None = None,
+        timeout_seconds: int = 90,
     ) -> None:
         if not base_url.startswith(("https://", "http://127.0.0.1:", "http://localhost:")):
             raise ValueError("Provider endpoint must use HTTPS or loopback HTTP")
         if not model.strip() or not api_key.strip():
             raise ValueError("A model identifier and API key are required")
+        if not 1 <= timeout_seconds <= 900:
+            raise ValueError("timeout_seconds must be between 1 and 900")
+        self._timeout_seconds = timeout_seconds
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
@@ -206,7 +210,7 @@ class OpenAICompatibleProvider:
             ],
         }
         owned = self._client is None
-        client = self._client or httpx.Client(timeout=90, trust_env=False)
+        client = self._client or httpx.Client(timeout=httpx.Timeout(self._timeout_seconds), trust_env=False)
         try:
             response = client.post(
                 f"{self._base_url}/chat/completions",

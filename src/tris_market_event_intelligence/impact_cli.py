@@ -25,6 +25,10 @@ def main() -> None:
     parser.add_argument("--show-errors", action="store_true",
                         help="Read saved analysis failures without invoking a model")
     parser.add_argument("--error-limit", type=int, default=10)
+    parser.add_argument(
+        "--timeout-seconds", type=int, default=None,
+        help="Per-HTTP-operation timeout (local default: 300, remote default: 90; max: 900)",
+    )
     args = parser.parse_args()
     if args.show_errors:
         try:
@@ -66,7 +70,15 @@ def main() -> None:
         api_key = os.getenv("MARKET_EVENT_LLM_API_KEY")
         if not api_key:
             parser.error("Remote provider requires MARKET_EVENT_LLM_API_KEY")
-    provider = OpenAICompatibleProvider(base_url=base_url, api_key=api_key, model=model)
+    timeout_seconds = args.timeout_seconds
+    if timeout_seconds is None:
+        timeout_seconds = 300 if args.provider == "local" else 90
+    if not 1 <= timeout_seconds <= 900:
+        parser.error("--timeout-seconds must be between 1 and 900")
+    provider = OpenAICompatibleProvider(
+        base_url=base_url, api_key=api_key, model=model,
+        timeout_seconds=timeout_seconds,
+    )
     stats = ImpactProcessor(args.db.expanduser(), provider).process_pending(args.batch_size)
     print(json.dumps(asdict(stats)))
 

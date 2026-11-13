@@ -107,3 +107,30 @@ can mean unsupported evidence or incomplete response. Exception type alone
 is not definitive; preserve the failed row for subsequent controlled diagnosis.
 
 Do not rerun the whole backlog until a one-event pilot succeeds.
+
+
+## Intel Mac Ollama ReadTimeout adjustment
+
+Real `gemma2:latest` one-event pilot returned `ReadTimeout` at the
+previous HTTP 90-second limit. The default local provider timeout is now
+300 seconds (remote default remains 90 seconds); use
+`--timeout-seconds N` to explicitly select 1–900 seconds.
+
+```sh
+git pull --ff-only origin main
+python -m pip install -e .
+export MARKET_EVENT_LLM_MODEL=gemma2:latest
+market-event-analyze --provider local --batch-size 1 --timeout-seconds 300
+market-event-analyze --show-errors
+```
+
+Only a successful validated model response creates `impact_runs`; a timeout
+does not mark a claim as analyzed. The earlier error remains until this
+event is successfully processed. No automatic retry, no collector/LaunchAgent
+changes, no external model calls, and no impact validation weakening.
+
+The timeout controls HTTP operations, not an independent wall-clock deadline.
+The model's disk size (5.4 GB) does not tell us whether this Intel Mac has
+enough free RAM or acceptable inference throughput. If this retry still times
+out, gather `ollama ps` and local runtime resource observations before
+changing models or retry policy.
