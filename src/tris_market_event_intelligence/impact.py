@@ -9,7 +9,7 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-PROMPT_VERSION = "market-impact-v5"
+PROMPT_VERSION = "market-impact-v6"
 
 
 class ImpactAnalysisError(ValueError):
@@ -220,19 +220,21 @@ def ollama_native_schema(event: EventInput) -> dict[str, object]:
             "POSITIVE", "NEGATIVE", "MIXED", "UNCERTAIN",
         ]},
         "horizon": {"type": "string", "enum": ["SHORT_TERM", "MEDIUM_TERM"]},
-        "rationale": {"type": "string"},
-        "evidence_excerpt": {"type": "string"},
+        "rationale": {"type": "string", "minLength": 10, "maxLength": 2000},
+        "evidence_excerpt": {"type": "string", "minLength": 8, "maxLength": 1000},
         "uncertainty": {"type": "string", "enum": (
             ["LOW", "MEDIUM", "HIGH"] if event.status == "VERIFIED" else ["HIGH"]
         )},
-        "drivers": {"type": "array", "items": {"type": "string"}},
-        "entities": {"type": "array", "items": {"type": "string"}},
+        "drivers": {"type": "array", "minItems": 1, "maxItems": 6,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 200}},
+        "entities": {"type": "array", "maxItems": 8,
+                     "items": {"type": "string", "minLength": 1, "maxLength": 120}},
     }
     return {
         "type": "object", "additionalProperties": False,
         "required": ["impacts"],
         "properties": {"impacts": {
-            "type": "array",
+            "type": "array", "maxItems": 12,
             "items": {
                 "type": "object", "additionalProperties": False,
                 "properties": properties,
@@ -343,47 +345,74 @@ class OpenAICompatibleProvider:
             timeout=httpx.Timeout(self._timeout_seconds), trust_env=False
         )
         try:
-            response = client.post(
-                endpoint,
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json=payload,
-            )
-            # Unsupported schema grammar may cause 400/422 on older Ollama.
-            # Retry at most once in native JSON mode, retaining every guard.
-            if self._native_ollama and response.status_code in {400, 422}:
-                payload["format"] = "json"
+            # Never retry network timeouts or HTTP server errors.
+            # A single local format repair is permitted only for an invalid
+            # model result. The rejected text is never sent back to the model.
+            for attempt in range(2 if self._native_ollama else 1):
                 response = client.post(
                     endpoint,
                     headers={"Authorization": f"Bearer {self._api_key}"},
                     json=payload,
                 )
-            response.raise_for_status()
-            try:
-                data = response.json()
-            except ValueError as exc:
-                raise ImpactAnalysisError(
-                    "PROVIDER_JSON_INVALID", "Provider response is not valid JSON"
-                ) from exc
-            try:
-                content = (
-                    data["message"]["content"] if self._native_ollama
-                    else data["choices"][0]["message"]["content"]
+                # Old local Ollama may not accept JSON Schema grammar.
+                # Fall back once to native JSON mode on unsupported schema.
+                if self._native_ollama and response.status_code in {400, 422}:
+                    payload["format"] = "json"
+                    response = client.post(
+                        endpoint,
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        json=payload,
+                    )
+                response.raise_for_status()
+                try:
+                    data = response.json()
+                except ValueError as exc:
+                    raise ImpactAnalysisError(
+                        "PROVIDER_JSON_INVALID", "Provider response is not valid JSON"
+                    ) from exc
+                try:
+                    content = (
+                        data["message"]["content"] if self._native_ollama
+                        else data["choices"][0]["message"]["content"]
+                    )
+                except (KeyError, IndexError, TypeError) as exc:
+                    raise ImpactAnalysisError(
+                        "PROVIDER_RESPONSE_SHAPE", "Provider response has no message content"
+                    ) from exc
+                if not isinstance(content, str) or not content or len(content) > 30000:
+                    raise ImpactAnalysisError(
+                        "PROVIDER_CONTENT_INVALID", "Provider response is missing or oversized"
+                    )
+                try:
+                    parsed = ImpactResult.model_validate_json(content)
+                except ValidationError as exc:
+                    failure = ImpactAnalysisError(
+                        schema_error_code(exc), "Model response violates the impact schema"
+                    )
+                else:
+                    try:
+                        return validate_result(event, parsed)
+                    except ImpactAnalysisError as exc:
+                        failure = exc
+                if attempt == 1 or not self._native_ollama:
+                    raise failure
+                # Only deterministic contract feedback, no rejected output.
+                guidance = (
+                    "Your previous answer violated the output contract: "
+                    + failure.code
+                    + ". Generate a NEW answer matching every required field and "
+                    "length in the JSON schema. Rationale requires at least 10 "
+                    "meaningful characters and may not be an empty placeholder. "
+                    "Every quote must be verbatim from the provided evidence. "
+                    "For UNVERIFIED events uncertainty must remain HIGH. "
+                    "If a sourced explanation is impossible, return an empty impacts array. "
+                    "Never fabricate or pad rationale. JSON only."
                 )
-            except (KeyError, IndexError, TypeError) as exc:
-                raise ImpactAnalysisError(
-                    "PROVIDER_RESPONSE_SHAPE", "Provider response has no message content"
-                ) from exc
-            if not isinstance(content, str) or not content or len(content) > 30000:
-                raise ImpactAnalysisError(
-                    "PROVIDER_CONTENT_INVALID", "Provider response is missing or oversized"
-                )
-            try:
-                parsed = ImpactResult.model_validate_json(content)
-            except ValidationError as exc:
-                raise ImpactAnalysisError(
-                    schema_error_code(exc), "Model response violates the impact schema"
-                ) from exc
-            return validate_result(event, parsed)
+                payload["messages"] = [
+                    *payload["messages"],
+                    {"role": "system", "content": guidance},
+                ]
+            raise AssertionError("Unreachable: bounded model attempt loop")
         finally:
             if owned:
                 client.close()
