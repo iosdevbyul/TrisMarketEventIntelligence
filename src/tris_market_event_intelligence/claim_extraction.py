@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from tris_market_event_intelligence.events import FORECAST_CUES, clean_text, extract_policy_event
 from tris_market_event_intelligence.multi_events import (
+    ADDITIONAL_PATTERNS,
     ATTRIBUTED,
     OFFICIAL_CATEGORIES,
     PATTERNS,
@@ -24,6 +25,9 @@ DENIAL = re.compile(
 PAST = re.compile(
     r"(?i)\b(?:last year|last month|in 20\d{2}|previously|historical|"
     r"years ago|was reported last)\b|지난해|작년에|과거|지난달|전년도"
+)
+EDUCATIONAL = re.compile(
+    r"(?i)^(?:how to|guide to|explainer:|what is|what are)\b|알아보기|사용법"
 )
 POLICY_SOURCE = frozenset({"fed_monetary", "bok_monetary"})
 
@@ -74,11 +78,13 @@ def extract_claims(source: str, title: str, summary: str | None) -> list[EventCl
     claims: list[EventClaim] = []
     seen: set[tuple[str, str, str]] = set()
     for clause in _clauses(title, summary):
+        if EDUCATIONAL.search(clause):
+            continue
         polarity = "DENIED" if DENIAL.search(clause) else "AFFIRMED"
         temporal = "PAST" if PAST.search(clause) else "UNSPECIFIED"
         kind = _claim_kind(clause, polarity, temporal)
         matched = [
-            (category, tag) for category, tag, pattern in PATTERNS
+            (category, tag) for category, tag, pattern in PATTERNS + ADDITIONAL_PATTERNS
             if re.search(pattern, clause)
         ]
         policy = extract_policy_event(source, clause, None)

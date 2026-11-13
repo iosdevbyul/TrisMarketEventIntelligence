@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-11-14",
+  "description": "Source-linked headline replay benchmark. NOT a real-time collector success test; examples refer to news around November 13 2026, sometimes first published November 12.",
+  "positives": [
+    {
+      "id": "kospi-close",
+      "date": "2026-11-13",
+      "title": "KOSPI Surrenders 5,300 Line After Early Gains Fade",
+      "url": "https://en.sedaily.com/market/2026/11/13/kospi-surrenders-5300-line-after-early-gains-fade",
+      "category": "MARKET_MOVEMENT",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "kr-reform",
+      "date": "2026-11-13",
+      "title": "Lee Reaffirms Push for Capital Market Reforms to Restore Investor Confidence",
+      "url": "https://world.kbs.co.kr/service/news_view.htm?Seq_Code=205552&lang=e",
+      "category": "REGULATION",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "google-map",
+      "date": "2026-11-13",
+      "title": "Google complies with S. Korea's security requirements for high-precision map data: gov't",
+      "url": "https://en.yna.co.kr/view/AEN20261113004200320",
+      "category": "REGULATION",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "gpu-supply",
+      "date": "2026-11-13",
+      "title": "Nvidia confirms planned supply of GPUs to S. Korea despite Jensen Huang's resignation: science minister",
+      "url": "https://en.yna.co.kr/view/AEN20261113008400320",
+      "category": "SUPPLY_CHAIN",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "fed-rate-outlook",
+      "date": "2026-11-13",
+      "title": "PPI still ‘uncomfortably high’ as December rate hike looms",
+      "url": "https://www.investmentnews.com/equities/ppi-still-uncomfortably-high-as-december-rate-hike-looms/269002",
+      "category": "MONETARY_POLICY",
+      "claim_kind": "FORECAST",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "nvidia-leadership",
+      "date": "2026-11-12",
+      "title": "NVIDIA Announces CEO Transition",
+      "url": "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-CEO-Transition/default.aspx",
+      "category": "CORPORATE_EVENT",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "us-tech-selloff",
+      "date": "2026-11-13",
+      "title": "The Tech Stocks Taking a Beating Today",
+      "url": "https://www.wsj.com/livecoverage/stock-market-today-dow-sp-500-nasdaq-11-13-2026/card/the-tech-stocks-taking-a-beating-today-VqreNYbh4xTWid0GFWFX",
+      "category": "MARKET_MOVEMENT",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "us-ppi",
+      "date": "2026-11-13",
+      "title": "Producer Price Index News Release summary - 2026 M10 Results",
+      "url": "https://www.bls.gov/news.release/ppi.nr0.htm",
+      "category": "ECONOMIC_INDICATOR",
+      "source": "bls_ppi"
+    },
+    {
+      "id": "m365-outage",
+      "date": "2026-11-13",
+      "title": "November 13, 2026 - Microsoft 365 Outage (MO1550821)",
+      "url": "https://thersac.icts.thers.ac.jp/hc/en-us/articles/64262985209881-November-13-2026-Microsoft-365-Outage-MO1550821",
+      "category": "SERVICE_INCIDENT",
+      "source": "benchmark_news"
+    },
+    {
+      "id": "us-iran",
+      "date": "2026-11-13",
+      "title": "US military downs 2 Iranian attack drones as Iran claims a strike on a US radar in Bahrain",
+      "url": "https://apnews.com/article/5d73a23b5b8647d2515c35b267b36c08",
+      "category": "GEOPOLITICAL",
+      "source": "benchmark_news"
+    }
+  ],
+  "negatives": [
+    {
+      "id": "weather",
+      "title": "Weather forecast for a warm weekend"
+    },
+    {
+      "id": "sports",
+      "title": "Sports finals bring unexpected result"
+    },
+    {
+      "id": "map-feature",
+      "title": "Google Maps adds cycling routes"
+    },
+    {
+      "id": "earnings-education",
+      "title": "How to read earnings reports"
+    },
+    {
+      "id": "false-ceo",
+      "title": "NVIDIA CEO resignation denied",
+      "expected_claim_kind": "DENIAL"
+    }
+  ]
+}

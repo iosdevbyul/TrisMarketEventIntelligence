@@ -11,13 +11,13 @@ from html.parser import HTMLParser
 OFFICIAL_SOURCES = {"fed_monetary", "bok_monetary"}
 EXTRACTOR_VERSION = "policy-v1"
 RATE_CUES = re.compile(
-    r"(?i)interest rates?|policy rates?|federal funds|target range|"
+    r"(?i)interest rates?|policy rates?|rate hikes?|rate cuts?|federal funds|target range|"
     r"기준금리|정책금리|금리 결정|금융통화위원회"
 )
 FORECAST_CUES = re.compile(
     r"(?i)\b(?:expect(?:ed|s)?|forecast|predict(?:ed|s)?|may|might|"
     r"could|would|likely|project(?:ed|s)?|anticipat(?:e|ed|es)|"
-    r"proposal|proposed|rumou?r|speculat(?:e|ion)|plans? to)\b|"
+    r"proposal|proposed|rumou?r|speculat(?:e|ion)|plans? to|looms?)\b|"
     r"전망|예상|가능성|할 것으로|인상할|인하할|관측"
 )
 UP_CUES = re.compile(r"(?i)\b(?:raised?|increas(?:e|ed)|hiked?)\b|인상|올렸|상향")

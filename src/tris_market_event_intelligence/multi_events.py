@@ -25,6 +25,28 @@ PATTERNS = (
     ("INDUSTRY", "AI_INFRASTRUCTURE", r"(?i)\b(?:AI infrastructure|data center investment|GPU deployment)\b|AI 인프라|데이터센터 투자|GPU 투자"),
     ("MARKET_MOVEMENT", "EQUITIES", r"(?i)\b(?:KOSPI|NASDAQ|Dow Jones)\b.{0,45}\b(?:plunges?|slumps?|surges?|rallies|falls?|drops?)\b|\b(?:plunges?|surges?|falls?|drops?)\b.{0,45}\b(?:KOSPI|NASDAQ)\b|(?:코스피|나스닥|코스닥).{0,40}(?:급락|급등|하락|상승)"),
 )
+
+# Additional expressions prompted by real, source-linked 2026-11-13 headlines.
+# They remain conservative lexical cues, not factual confirmation.
+ADDITIONAL_PATTERNS = (
+    ("CORPORATE_EVENT", "LEADERSHIP",
+     r"(?i)\b(?:CEO|chief executive)\s+(?:transition|succession)\b"),
+    ("REGULATION", "FINANCIAL_POLICY",
+     r"(?i)\bcapital markets? reforms?\b"),
+    ("REGULATION", "MAP_DATA_POLICY",
+     (r"(?i)\b(?:map data exports?|high-precision map data|"
+     r"security requirements for high-precision map data)\b")),
+    ("SERVICE_INCIDENT", "OUTAGE",
+     r"(?i)\b(?:Microsoft 365|Office 365)\b.{0,55}\b(?:outage|disruption)\b"),
+    ("GEOPOLITICAL", "CONFLICT",
+     r"(?i)\b(?:Iranian attack drones?|strike on (?:a |the )?(?:US|U\.S\.) radar)\b"),
+    ("MARKET_MOVEMENT", "EQUITIES",
+     (r"(?i)\bKOSPI\b.{0,65}\b(?:surrenders?|slides?|reverses?)\b|"
+     r"\btech stocks\b.{0,55}\b(?:taking a beating|selloff|slide|fall|drop)\b")),
+    ("SUPPLY_CHAIN", "SEMICONDUCTOR",
+     r"(?i)\b(?:supply|shipment|pledge)\b.{0,65}\b(?:GPUs?|semiconductors?|chips?)\b"),
+)
+
 RUMOR = re.compile(r"(?i)\b(?:rumou?r(?:ed|s)?|unconfirmed|alleged)\b|루머|미확인")
 ATTRIBUTED = re.compile(r"(?i)\b(?:reportedly|according to sources|sources say)\b|관계자에 따르면")
 OFFICIAL_CATEGORIES = {
@@ -75,7 +97,7 @@ def extract_news_event(
         )
 
     matches = [
-        (category, tag) for category, tag, regex in PATTERNS
+        (category, tag) for category, tag, regex in PATTERNS + ADDITIONAL_PATTERNS
         if re.search(regex, evidence)
     ]
     if policy is not None:
