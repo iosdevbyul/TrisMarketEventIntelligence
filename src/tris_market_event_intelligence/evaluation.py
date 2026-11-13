@@ -34,7 +34,7 @@ def load_benchmark(path: Path) -> dict[str, object]:
     positives = data.get("positives")
     negatives = data.get("negatives")
     if not isinstance(positives, list) or not isinstance(negatives, list):
-        raise ValueError("Benchmark requires positive and negative arrays")
+        raise TypeError("Benchmark requires positive and negative arrays")
     if len(positives) != 10 or len(negatives) < 3:
         raise ValueError("Benchmark requires 10 positive and at least 3 negative cases")
     ids = set()
