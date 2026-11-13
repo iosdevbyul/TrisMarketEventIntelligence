@@ -40,6 +40,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         except (OSError, sqlite3.Error) as exc:
             raise HTTPException(status_code=503, detail="Event database unavailable") from exc
 
+    @app.get("/api/v1/event-claims")
+    def list_event_claims(
+        after_id: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        try:
+            return reader.claims(after_id=after_id, limit=limit)
+        except (OSError, sqlite3.Error) as exc:
+            raise HTTPException(status_code=503, detail="Claim database unavailable") from exc
+
     @app.get("/api/v1/impacts")
     def list_impacts(
         after_id: int = Query(default=0, ge=0),
