@@ -289,7 +289,9 @@ class OfficialNewsCollector:
         return outcome
 
 
-def run_collector(\n    db_path: Path, interval_seconds: int, once: bool, feeds: dict[str, str] | None = None\n) -> None:
+def run_collector(
+    db_path: Path, interval_seconds: int, once: bool, feeds: dict[str, str] | None = None
+) -> None:
     if interval_seconds < 30:
         raise ValueError("interval_seconds must be at least 30")
     collector = OfficialNewsCollector(NewsStore(db_path), feeds=feeds)
