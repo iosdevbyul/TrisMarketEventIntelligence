@@ -32,7 +32,7 @@ BP = re.compile(r"(?i)(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(?:basis points?|bps?)(?!\w)"
 PERCENT_CHANGE = re.compile(
     r"(?i)(?<!\d)(\d{1,2}(?:\.\d+)?)\s*(?:percentage points?|%p|퍼센트포인트)"
 )
-KOREAN_BP = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(?:bp|베이시스포인트)")
+KOREAN_BP = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(?:베이시스포인트)")
 MAX_TEXT = 12000
 
 
