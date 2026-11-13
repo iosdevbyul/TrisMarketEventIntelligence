@@ -18,7 +18,7 @@ SUPPORTED_CATEGORIES = frozenset({
 })
 
 
-def is_eligible(event: "EventInput") -> bool:
+def is_eligible(event: EventInput) -> bool:
     """Conservative coverage: no rumors, forecasts, or ambiguous policy decisions."""
     if event.classification not in SUPPORTED_CATEGORIES:
         return False
