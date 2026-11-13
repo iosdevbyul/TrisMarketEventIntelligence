@@ -63,8 +63,8 @@ class PolicyEvent:
 
 def _rate_change(text: str) -> int | None:
     matches: list[Decimal] = []
-    for pattern, factor in ((BP, Decimal("1")), (KOREAN_BP, Decimal("1")),
-                            (PERCENT_CHANGE, Decimal("100"))):
+    for pattern, factor in ((BP, Decimal(1)), (KOREAN_BP, Decimal(1)),
+                            (PERCENT_CHANGE, Decimal(100))):
         for match in pattern.finditer(text):
             try:
                 matches.append(Decimal(match.group(1)) * factor)
