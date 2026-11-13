@@ -9,7 +9,7 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-PROMPT_VERSION = "market-impact-v2"
+PROMPT_VERSION = "market-impact-v3"
 
 
 class ImpactAnalysisError(ValueError):
@@ -60,6 +60,23 @@ especially for reported corporate events, geopolitical claims, and forecasts.
 No investment advice or trading orders. If evidence is thin, return [].
 """
 
+
+def event_specific_instructions(event: EventInput) -> str:
+    """Trusted instructions derived from verification status, not untrusted source text."""
+    if event.status != "VERIFIED":
+        return (
+            "MANDATORY: Every impact object MUST contain uncertainty set to HIGH. "
+            "LOW and MEDIUM are forbidden for any UNVERIFIED or CANDIDATE claim. "
+            "This rule concerns source verification, NOT your confidence in a scenario. "
+            "Never promote an unverified news report into a confirmed fact. "
+            "If evidence is insufficient, return exactly {\"impacts\": []}. "
+            "Only quote exact evidence; do not invent companies, figures or sources. "
+            "Return just a JSON object without any Markdown."
+        )
+    return (
+        "This source is rule-verified, not independently fact checked. "
+        "Follow exact-evidence requirements; if insufficient, return {\"impacts\": []}."
+    )
 
 class Impact(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -204,9 +221,13 @@ class OpenAICompatibleProvider:
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": event_specific_instructions(event)},
                 {"role": "user", "content": json.dumps({
                     "classification": event.classification,
                     "status": event.status,
+                    "required_uncertainty": (
+                        "HIGH" if event.status != "VERIFIED" else None
+                    ),
                     "claim_kind": event.claim_kind,
                     "verification_note": event.verification_note,
                     "tags": event.tags,

@@ -158,3 +158,30 @@ market-event-analyze --show-errors
 
 Evidence checks and risk constraints are not relaxed. No raw generated
 text, prompts or credentials are persisted as error descriptions.
+
+## Phase 7-B source-aware Gemma 2 risk prompt
+
+The real Intel Mac pilot rejected an UNVERIFIED event with
+`UNCERTAINTY_MISMATCH`. Version `market-impact-v3` supplies
+trusted, verification-status-specific system instructions for the model.
+For UNVERIFIED or CANDIDATE inputs, every nonempty impact must set
+`uncertainty=HIGH` and must not turn a reported claim into a verified fact.
+If evidence is thin, `{"impacts":[]}` remains valid.
+
+The existing post-response validator continues rejecting LOW or MEDIUM
+uncertainty for unverified events. There is no silent rewriting of output
+and no automatic retry. A new prompt version isolates completed runs
+from historical v2 errors without destroying prior data.
+
+One controlled on-Mac pilot:
+
+```sh
+git pull --ff-only origin main
+export MARKET_EVENT_LLM_MODEL=gemma2:latest
+market-event-analyze --provider local --batch-size 1 --timeout-seconds 300
+market-event-analyze --show-errors
+curl -sS 'http://127.0.0.1:8100/api/v1/analysis-runs?after_id=0&limit=5'
+```
+
+CI mocks model responses; only an on-Mac run can verify Gemma 2
+compliance, runtime and market-analysis accuracy.
