@@ -52,6 +52,13 @@ def run_probe(client: httpx.Client | None = None) -> dict[str, object]:
                         "GROUP BY classification ORDER BY classification"
                     )
                 ]
+                failures = [
+                    {"source": name, "error_type": error}
+                    for name, error in db.execute(
+                        "SELECT source, last_error FROM fetch_state "
+                        "WHERE last_error IS NOT NULL ORDER BY source"
+                    )
+                ]
             coverage = stored_coverage(BENCHMARK, db_path)
             ok = sum(item["status"] == "ok" for item in rss.values())
             return {
@@ -65,10 +72,16 @@ def run_probe(client: httpx.Client | None = None) -> dict[str, object]:
                 "articles_per_source": source_counts,
                 "claims": asdict(claims),
                 "claims_per_category": claim_counts,
+                "source_errors": failures,
                 "story_groups": asdict(stories),
                 "benchmark_observed": coverage["observed"],
                 "benchmark_total": coverage["total"],
                 "gate_6_ready": False,
+                "collection_validation": (
+                    "INSUFFICIENT_EVIDENCE"
+                    if coverage["observed"] < coverage["total"]
+                    else "BENCHMARK_PRESENT_NOT_AUTHENTICATED"
+                ),
                 "limitations": [
                     "Not the user's Mac or home internet",
                     "No portal HTML pages fetched",
