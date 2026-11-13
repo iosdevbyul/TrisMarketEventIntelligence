@@ -61,14 +61,14 @@ def test_optional_naver_and_source_error_isolation(tmp_path: Path) -> None:
     )
     result = discovery.collect_once()
     assert result["naver_news"].inserted == 1
-    assert result["gdelt_doc"].status == "error"
+    assert result["gdelt_doc"].status == "rate_limited"
     assert discovery.collect_once()["naver_news"].inserted == 0
     assert store.stats()["articles"] == 1
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM captures").fetchone()[0] == 1
         assert db.execute(
             "SELECT last_error FROM fetch_state WHERE source='gdelt_doc'"
-        ).fetchone()[0] == "HTTPStatusError"
+        ).fetchone()[0] == "HTTP_429"
     assert len(calls) == 4
 
 

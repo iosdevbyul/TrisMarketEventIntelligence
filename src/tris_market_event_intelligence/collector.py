@@ -19,6 +19,14 @@ MAX_FEED_BYTES = 2_000_000
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS, validate_feeds
 
+
+def safe_error_code(error: Exception) -> str:
+    """Expose HTTP status without leaking query URLs or credentials."""
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"HTTP_{error.response.status_code}"
+    return type(error).__name__
+
+
 FEEDS = DEFAULT_FEEDS
 
 
@@ -281,7 +289,7 @@ class OfficialNewsCollector:
                     )
                     outcome[source] = {"status": "ok", "inserted": count}
                 except (httpx.HTTPError, ValueError, ET.ParseError) as exc:
-                    self.store.record_error(source, f"{type(exc).__name__}: {exc}", now)
+                    self.store.record_error(source, safe_error_code(exc), now)
                     outcome[source] = {"status": "error", "inserted": 0}
         finally:
             if owned:

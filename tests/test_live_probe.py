@@ -17,13 +17,15 @@ def test_probe_records_real_collection_metrics_without_claiming_mac_success() ->
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as client:
         result = run_probe(client)
-    assert result["rss_success"] == 3
-    assert result["rss_total"] == 3
-    assert result["articles"] == 4
-    assert result["claims"]["claims"] >= 4
+    assert result["rss_success"] == 6
+    assert result["rss_total"] == 6
+    assert result["articles"] == 7
+    assert result["claims"]["claims"] >= 7
     assert result["benchmark_observed"] == 0
+    assert len(result["portal_robots_preflight"]) == 3
     assert not result["gate_6_ready"]
     assert result["mode"] == "LIVE_GITHUB_RUNNER_NOT_LOCAL_MAC"
+    assert result["article_diagnostics"]["with_summaries"] >= 0
 
 
 def test_probe_reports_network_failure_not_fake_success() -> None:

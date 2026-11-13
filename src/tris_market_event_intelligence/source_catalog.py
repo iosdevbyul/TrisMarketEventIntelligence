@@ -14,6 +14,8 @@ DEFAULT_FEEDS: dict[str, str] = {
     "fed_all": "https://www.federalreserve.gov/feeds/press_all.xml",
     "bls_cpi": "https://www.bls.gov/feed/cpi.rss",
     "bls_ppi": "https://www.bls.gov/feed/ppi.rss",
+    # Separate official indicator feed; it does not replace or disguise a blocked PPI feed.
+    "bls_latest": "https://www.bls.gov/feed/bls_latest.rss",
     "bls_employment": "https://www.bls.gov/feed/empsit.rss",
     "sec_press": "https://www.sec.gov/news/pressreleases.rss",
     "bbc_business": "https://feeds.bbci.co.uk/news/business/rss.xml",
