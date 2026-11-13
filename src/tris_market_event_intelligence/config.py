@@ -1,7 +1,7 @@
 """Runtime configuration with loopback-only defaults."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
