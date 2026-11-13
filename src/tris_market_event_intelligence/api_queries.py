@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 
@@ -24,7 +25,7 @@ class EventReader:
     def events(
         self, *, after_id: int, limit: int, status: str | None
     ) -> dict[str, object]:
-        with self._connection() as db:
+        with closing(self._connection()) as db:
             # All values bound; IDs are stable per database instance.
             rows = db.execute(
                 """
@@ -56,7 +57,7 @@ class EventReader:
         }
 
     def claims(self, *, after_id: int, limit: int) -> dict[str, object]:
-        with self._connection() as db:
+        with closing(self._connection()) as db:
             rows = db.execute(
                 """
                 SELECT id, article_id, extractor_version, ordinal, classification,
@@ -78,7 +79,7 @@ class EventReader:
 
     def latest_claim_reviews(self, *, after_id: int, limit: int) -> dict[str, object]:
         # Latest review per claim, with claim-ID cursor (not history revision ID).
-        with self._connection() as db:
+        with closing(self._connection()) as db:
             rows = db.execute(
                 """
                 SELECT r.*, c.classification, c.evidence AS original_evidence
@@ -104,7 +105,7 @@ class EventReader:
     def claim_review_history(
         self, *, after_id: int, limit: int, claim_id: int | None
     ) -> dict[str, object]:
-        with self._connection() as db:
+        with closing(self._connection()) as db:
             rows = db.execute(
                 """
                 SELECT id, operation_id, claim_id, revision, prior_status, status,
@@ -125,7 +126,7 @@ class EventReader:
         }
 
     def analyses(self, *, after_id: int, limit: int) -> dict[str, object]:
-        with self._connection() as db:
+        with closing(self._connection()) as db:
             rows = db.execute(
                 """
                 SELECT i.id, i.event_id, i.model_id, i.prompt_version, i.market,
@@ -161,7 +162,7 @@ class EventReader:
         self, *, after_rowid: int, limit: int
     ) -> dict[str, object]:
         # Even NO_HYPOTHESIS should be visible to consumers separately.
-        with self._connection() as db:
+        with closing(self._connection()) as db:
             rows = db.execute(
                 """
                 SELECT rowid AS id, event_id, model_id, prompt_version,
@@ -185,7 +186,7 @@ def database_ready(db_path: Path) -> bool:
     if not db_path.is_file():
         return False
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as db:
+        with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)) as db:
             required = {"economic_events", "market_impacts", "impact_runs"}
             found = {row[0] for row in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
@@ -200,7 +201,7 @@ def claims_database_ready(db_path: Path) -> bool:
     if not db_path.is_file():
         return False
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as db:
+        with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)) as db:
             db.execute("PRAGMA query_only=ON")
             required = {"articles", "captures", "article_event_claims"}
             found = {
