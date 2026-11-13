@@ -134,3 +134,27 @@ The model's disk size (5.4 GB) does not tell us whether this Intel Mac has
 enough free RAM or acceptable inference throughput. If this retry still times
 out, gather `ollama ps` and local runtime resource observations before
 changing models or retry policy.
+
+## Specific analysis rejection codes
+
+The real Gemma 2 second attempt returned `ValueError` following the
+earlier `ReadTimeout`. The old error entry does not reveal the underlying
+condition. Future rejected results record safe identifiers:
+`PROVIDER_JSON_INVALID`, `PROVIDER_RESPONSE_SHAPE`,
+`PROVIDER_CONTENT_INVALID`, `EVIDENCE_MISMATCH`,
+`ENTITY_MISMATCH`, `UNCERTAINTY_MISMATCH`,
+`DUPLICATE_IMPACT_KEYS`, plus existing `ValidationError` and timeout types.
+
+This does not retroactively classify old `ValueError` entries.
+Only a new, explicitly invoked one-event analysis can show a more
+specific code; failed events remain retryable.
+
+```sh
+git pull --ff-only origin main
+export MARKET_EVENT_LLM_MODEL=gemma2:latest
+market-event-analyze --provider local --batch-size 1 --timeout-seconds 300
+market-event-analyze --show-errors
+```
+
+Evidence checks and risk constraints are not relaxed. No raw generated
+text, prompts or credentials are persisted as error descriptions.

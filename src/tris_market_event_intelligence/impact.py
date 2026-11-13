@@ -11,6 +11,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PROMPT_VERSION = "market-impact-v2"
 
+
+class ImpactAnalysisError(ValueError):
+    """Safe stable failure reason without persisting raw model output."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+
 SUPPORTED_CATEGORIES = frozenset({
     "MONETARY_POLICY", "ECONOMIC_INDICATOR", "EARNINGS", "CORPORATE_EVENT",
     "REGULATION", "GEOPOLITICAL", "SUPPLY_CHAIN", "INDUSTRY",
@@ -151,14 +161,14 @@ class ImpactProvider(Protocol):
 def validate_result(event: EventInput, result: ImpactResult) -> ImpactResult:
     """No inference is accepted as an observation; source evidence must be literal."""
     if not is_eligible(event):
-        raise ValueError("Only eligible reported or rule-verified events may be analyzed")
+        raise ImpactAnalysisError("INELIGIBLE_EVENT", "Only eligible reported or rule-verified events may be analyzed")
     for impact in result.impacts:
         if impact.evidence_excerpt not in event.evidence:
-            raise ValueError("Impact references evidence absent from the original event")
+            raise ImpactAnalysisError("EVIDENCE_MISMATCH", "Impact references evidence absent from the original event")
         if any(entity not in event.evidence for entity in impact.entities):
-            raise ValueError("Impact mentions entities absent from the original event")
+            raise ImpactAnalysisError("ENTITY_MISMATCH", "Impact mentions entities absent from the original event")
         if event.status != "VERIFIED" and impact.uncertainty != "HIGH":
-            raise ValueError("Unverified events require HIGH uncertainty")
+            raise ImpactAnalysisError("UNCERTAINTY_MISMATCH", "Unverified events require HIGH uncertainty")
     return result
 
 
@@ -218,10 +228,22 @@ class OpenAICompatibleProvider:
                 json=payload,
             )
             response.raise_for_status()
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            if not isinstance(content, str) or len(content) > 30000:
-                raise ValueError("Provider response is missing or oversized")
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise ImpactAnalysisError(
+                    "PROVIDER_JSON_INVALID", "Provider response is not valid JSON"
+                ) from exc
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise ImpactAnalysisError(
+                    "PROVIDER_RESPONSE_SHAPE", "Provider response has no message content"
+                ) from exc
+            if not isinstance(content, str) or not content or len(content) > 30000:
+                raise ImpactAnalysisError(
+                    "PROVIDER_CONTENT_INVALID", "Provider response is missing or oversized"
+                )
             parsed = ImpactResult.model_validate_json(content)
             return validate_result(event, parsed)
         finally:
