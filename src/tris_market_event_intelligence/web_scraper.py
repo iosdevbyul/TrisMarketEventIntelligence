@@ -6,12 +6,10 @@ JavaScript execution, cross-site redirects, or API credentials required.
 
 from __future__ import annotations
 
-import hashlib
 import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
