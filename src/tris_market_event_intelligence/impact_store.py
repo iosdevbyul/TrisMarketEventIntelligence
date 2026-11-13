@@ -134,7 +134,8 @@ class ImpactProcessor:
                             (event.event_id, self.provider.model_id, PROMPT_VERSION,
                              impact.market, impact.sector, impact.direction, impact.horizon,
                              impact.rationale, impact.evidence_excerpt, impact.uncertainty,
-                             json.dumps(impact.drivers, ensure_ascii=False), now,\n                             json.dumps(impact.entities, ensure_ascii=False)),
+                             json.dumps(impact.drivers, ensure_ascii=False), now,
+                             json.dumps(impact.entities, ensure_ascii=False)),
                         )
                     db.execute(
                         "INSERT INTO impact_runs VALUES (?, ?, ?, ?, ?)",
