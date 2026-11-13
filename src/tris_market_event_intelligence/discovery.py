@@ -5,13 +5,10 @@ Discovery returns articles or leads, not confirmed economic events.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from html import unescape
 from urllib.parse import urlsplit
 
 import httpx
