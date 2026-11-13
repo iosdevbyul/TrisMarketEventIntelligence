@@ -14,8 +14,9 @@ def test_headline_replay_has_ten_source_links_and_reports_failures() -> None:
     assert report["mode"] == "source_linked_headline_replay_not_live_collection"
     assert report["total"] == 10
     assert len(report["results"]) == 10
-    assert 0 <= report["passed"] <= 10
-    assert report["headline_recall"] == report["passed"] / 10
+    assert report["passed"] == 10
+    assert report["headline_recall"] == 1.0
+    assert report["negative_errors"] == 0
     assert all(
         case["extracted_categories"] is not None
         for case in report["results"]
