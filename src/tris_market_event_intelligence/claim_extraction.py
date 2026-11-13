@@ -83,6 +83,13 @@ def extract_claims(source: str, title: str, summary: str | None) -> list[EventCl
             if re.search(pattern, clause)
         ]
         policy = extract_policy_event(source, clause, None)
+        if re.search(
+            r"(?i)\\b(?:CEO|CFO|chief executive)\\b.{0,55}"
+            r"\\b(?:resignation|resigned|resigns|resign|departure)\\b"
+            r"|대표이사.{0,35}(?:사임|퇴임|교체)",
+            clause,
+        ):
+            matched.append(("CORPORATE_EVENT", "LEADERSHIP"))
         if policy is not None:
             matched.append(("MONETARY_POLICY", "MONETARY_POLICY"))
         for classification, tag in dict.fromkeys(matched):
