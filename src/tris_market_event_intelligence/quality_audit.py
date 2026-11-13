@@ -86,7 +86,7 @@ def create_review_sheet(
 def _labels(value: str) -> set[str]:
     if not value or not value.strip():
         raise ValueError("Unlabelled gold_categories; assign NONE or category names")
-    result = set(x.strip() for x in value.split("|"))
+    result = {x.strip() for x in value.split("|")}
     if "NONE" in result and len(result) != 1:
         raise ValueError("NONE cannot be combined with event categories")
     if not result or not result.issubset(CATEGORIES | {"NONE"}):
