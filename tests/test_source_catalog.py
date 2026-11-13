@@ -9,6 +9,7 @@ from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS, load_fe
 def test_defaults_cover_economy_regulation_world_and_technology() -> None:
     assert {"fed_monetary", "bok_monetary", "bls_cpi", "bls_ppi", "bls_employment",
             "sec_press", "bbc_world", "bbc_business", "bbc_technology"} <= DEFAULT_FEEDS.keys()
+    assert {"bok_all", "bok_statistics", "bok_corrections"} <= DEFAULT_FEEDS.keys()
     assert len(load_feeds()) == len(DEFAULT_FEEDS)
 
 

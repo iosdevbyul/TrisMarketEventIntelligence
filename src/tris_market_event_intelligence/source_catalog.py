@@ -11,6 +11,10 @@ from urllib.parse import urlsplit
 DEFAULT_FEEDS: dict[str, str] = {
     "fed_monetary": "https://www.federalreserve.gov/feeds/press_monetary.xml",
     "bok_monetary": "https://www.bok.or.kr/portal/bbs/P0000559/news.rss?menuNo=200690",
+    # Published directly by the Bank of Korea: separate economics and corrections sources.
+    "bok_all": "https://www.bok.or.kr/portal/bbs/B0000552/news.rss?menuNo=200690",
+    "bok_statistics": "https://www.bok.or.kr/portal/bbs/B0000501/news.rss?menuNo=201264",
+    "bok_corrections": "https://www.bok.or.kr/portal/bbs/P0000560/news.rss?menuNo=200040",
     "fed_all": "https://www.federalreserve.gov/feeds/press_all.xml",
     "bls_cpi": "https://www.bls.gov/feed/cpi.rss",
     "bls_ppi": "https://www.bls.gov/feed/ppi.rss",
