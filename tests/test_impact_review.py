@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from tris_market_event_intelligence.impact_review import (
-    DIMENSIONS, export_impact_review, score_impact_review,
+    DIMENSIONS,
+    export_impact_review,
+    score_impact_review,
 )
 
 
@@ -61,7 +63,7 @@ def test_real_v6_case_export_and_manual_score(tmp_path: Path) -> None:
     assert report["distinct_events"] == 1
     assert not report["quality_verified"]
     with sheet.open(encoding="utf-8-sig", newline="") as stream:
-        row = list(csv.DictReader(stream))[0]
+        row = next(iter(csv.DictReader(stream)))
     assert row["automated_quality_flag"] == "RATIONALE_INCOMPLETE"
     assert row["source_support"] == ""
     assert score_impact_review(db, sheet)["reviewed_impacts"] == 0
