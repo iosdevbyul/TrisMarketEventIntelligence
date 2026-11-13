@@ -1,0 +1,43 @@
+name: Live Source Probe
+
+on:
+  pull_request:
+    paths:
+      - "src/tris_market_event_intelligence/live_probe.py"
+      - "tests/test_live_probe.py"
+      - ".github/workflows/live-source-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-source-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e .
+      - name: Bounded public-network probe
+        id: collect
+        continue-on-error: true
+        run: python -m tris_market_event_intelligence.live_probe --output live-probe.json
+      - name: Publish safe totals
+        if: always()
+        run: |
+          if [ -f live-probe.json ]; then
+            python -c 'import json; x=json.load(open("live-probe.json")); print("RSS success:",x["rss_success"],"of",x["rss_total"],"articles:",x["articles"],"claims:",x["claims"]["claims"],"benchmark observed:",x["benchmark_observed"])'
+          else
+            echo "No probe report was produced"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-source-probe
+          path: live-probe.json
+          if-no-files-found: warn
+          retention-days: 7
