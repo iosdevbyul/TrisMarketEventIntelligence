@@ -32,6 +32,8 @@ market-event-scrape = "tris_market_event_intelligence.scrape_cli:main"
 market-event-review = "tris_market_event_intelligence.review_cli:main"
 market-event-evaluate = "tris_market_event_intelligence.evaluate_cli:main"
 market-event-quality = "tris_market_event_intelligence.quality_cli:main"
+market-event-cycle = "tris_market_event_intelligence.cycle_cli:main"
+market-event-launchd = "tris_market_event_intelligence.launchd_config:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
