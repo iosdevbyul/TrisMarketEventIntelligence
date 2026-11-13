@@ -247,3 +247,39 @@ curl -sS 'http://127.0.0.1:8100/api/v1/analysis-runs?after_id=0&limit=5'
 ```
 
 No CI assertion can certify actual Gemma 2 quality or CPU/RAM performance.
+
+## Phase 7-B v6 — model output contract recovery
+
+The on-device Gemma 2 v5 pilot reached native Ollama inference, but
+`rationale` failed the existing Pydantic minimum length of 10 characters.
+Previously the local JSON Schema omitted this requirement even though the
+application validator enforced it, so the model could emit a response that
+would inevitably be rejected.
+
+`market-impact-v6` aligns the native schema with Pydantic constraints
+for rationale, evidence excerpts, driver strings, impact count and item
+limits. The model still must provide exact source evidence, HIGH uncertainty
+for unverified events, and truthful conditional research only.
+
+**Bounded repair:** If the local model returns syntactically valid JSON that
+fails the model contract or evidence checks, the client may generate one
+new response using the same original source data and a safe failure-code
+hint. It never sends rejected model text back to the model, edits a failed
+rationale, pads a quote, or accepts unsupported evidence. After the second
+failed output, the event remains retryable and records the safe failure code.
+No additional retries are attempted for timeouts or 5xx errors. Old Ollama
+400/422 schema-compatibility fallback remains separately bounded.
+
+The end-to-end offline test suite covers a too-short initial rationale
+followed by a correct complete result, repeated invalid responses,
+unsupported evidence, empty hypotheses and transport failures. It does not
+claim that the local Gemma 2 has succeeded yet. No batch automation or
+scheduled LLM processing is added.
+
+### Current live verification
+
+The latest verified on-device status is still zero successful runs.
+A **single** future Mac pilot should be considered only when ready to
+verify deployment; no repeated ad-hoc prompts or model reinstalls are
+necessary. If a run fails again, inspect the version-specific stored error,
+not a new prompt revision.
