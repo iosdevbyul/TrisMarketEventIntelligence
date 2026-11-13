@@ -6,12 +6,12 @@ import httpx
 import pytest
 
 from tris_market_event_intelligence.impact import (
+    PROMPT_VERSION,
     EventInput,
     Impact,
     ImpactAnalysisError,
     ImpactResult,
     OpenAICompatibleProvider,
-    PROMPT_VERSION,
     event_specific_instructions,
 )
 
