@@ -9,7 +9,11 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 
 from tris_market_event_intelligence import __version__
-from tris_market_event_intelligence.api_queries import EventReader, database_ready
+from tris_market_event_intelligence.api_queries import (
+    EventReader,
+    claims_database_ready,
+    database_ready,
+)
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
@@ -27,6 +31,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def ready() -> dict[str, str]:
         if not database_ready(path):
             raise HTTPException(status_code=503, detail="Event database is not ready")
+        return {"status": "ready"}
+
+    @app.get("/ready/claims")
+    def claims_ready() -> dict[str, str]:
+        if not claims_database_ready(path):
+            raise HTTPException(status_code=503, detail="Claim database is not ready")
         return {"status": "ready"}
 
     @app.get("/api/v1/events")
