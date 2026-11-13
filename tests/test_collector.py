@@ -96,10 +96,15 @@ def test_error_is_recorded_and_next_poll_recovers(tmp_path: Path) -> None:
 def test_atomic_save_rolls_back_on_invalid_article(tmp_path: Path) -> None:
     store = NewsStore(tmp_path / "news.sqlite3")
     store.initialize()
-    with pytest.raises(sqlite3.IntegrityError):
+    with store.connect() as db:
+        db.execute(
+            """CREATE TRIGGER reject_bad_article BEFORE INSERT ON articles
+            WHEN NEW.external_id = 'bad' BEGIN SELECT RAISE(ABORT, 'bad article'); END"""
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="bad article"):
         store.save(
             "fed", "https://example.org/feed", RSS,
-            [parse_rss("fed", RSS, "now")[0], replace(parse_rss("fed", RSS, "now")[0], title=None)],
+            [parse_rss("fed", RSS, "now")[0], replace(parse_rss("fed", RSS, "now")[0], external_id="bad")],
             "now", None, None,
         )
     assert store.stats() == {"articles": 0, "captures": 0}
