@@ -23,6 +23,8 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q
+      - name: Source-linked news headline benchmark (not live news collection)
+        run: market-event-evaluate --benchmark benchmarks/2026-11-13-headlines.json
       - name: Build distribution
         run: |
           python -m pip install build
