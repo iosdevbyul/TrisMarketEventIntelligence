@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -97,7 +98,7 @@ def test_atomic_save_rolls_back_on_invalid_article(tmp_path: Path) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         store.save(
             "fed", "https://example.org/feed", RSS,
-            [parse_rss("fed", RSS, "now")[0], None],
+            [parse_rss("fed", RSS, "now")[0], replace(parse_rss("fed", RSS, "now")[0], title=None)],
             "now", None, None,
         )
     assert store.stats() == {"articles": 0, "captures": 0}
