@@ -56,9 +56,11 @@ def test_api_plist_is_separate_loopback_and_opt_in(tmp_path: Path) -> None:
 
 def test_local_api_runner_binds_loopback_and_explicit_db(tmp_path: Path) -> None:
     db = tmp_path / "news.sqlite3"
-    with patch("sys.argv", ["market-event-api-local", "--db", str(db), "--port", "8181"]):
-        with patch("tris_market_event_intelligence.api_service.uvicorn.run") as serve:
-            api_main()
+    with (
+        patch("sys.argv", ["market-event-api-local", "--db", str(db), "--port", "8181"]),
+        patch("tris_market_event_intelligence.api_service.uvicorn.run") as serve,
+    ):
+        api_main()
     assert serve.call_args.kwargs["host"] == "127.0.0.1"
     assert serve.call_args.kwargs["port"] == 8181
     assert serve.call_args.kwargs["proxy_headers"] is False
