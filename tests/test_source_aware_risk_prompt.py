@@ -35,7 +35,7 @@ def sample_result(level: str) -> ImpactResult:
 
 
 def test_prompt_version_and_source_risk_directive() -> None:
-    assert PROMPT_VERSION == "market-impact-v6"
+    assert PROMPT_VERSION == "market-impact-v7"
     prompt = event_specific_instructions(sample_event())
     assert "MUST contain uncertainty set to HIGH" in prompt
     assert "LOW and MEDIUM are forbidden" in prompt
