@@ -21,7 +21,7 @@ def test_http_403_and_429_diagnosed_without_urls(tmp_path: Path) -> None:
             store, client, gdelt_topics=("semiconductor",),
         ).collect_once(naver=False)
     assert collected["bls_ppi"]["status"] == "error"
-    assert searched["gdelt_doc"].status == "error"
+    assert searched["gdelt_doc"].status == "rate_limited"
     with store.connect() as db:
         errors = dict(db.execute("SELECT source, last_error FROM fetch_state"))
     assert errors == {"bls_ppi": "HTTP_403", "gdelt_doc": "HTTP_429"}
@@ -45,3 +45,19 @@ def test_robots_preflight_never_fetches_article_html() -> None:
     assert result["daum"]["status"] == "not_declared_permission_unknown"
     assert len(calls) == 3
     assert all(url.endswith("/robots.txt") for url in calls)
+
+
+def test_rate_limited_source_stops_remaining_topics(tmp_path: Path) -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(429)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = SearchDiscovery(
+            NewsStore(tmp_path / "limited.db"), client,
+            gdelt_topics=("stocks", "interest rates", "chips"),
+        ).collect_once(naver=False)
+    assert result["gdelt_doc"].status == "rate_limited"
+    assert len(calls) == 1
