@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+import xml.etree.ElementTree as ET
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,7 +32,7 @@ def test_parse_rss_preserves_publication_and_detection_times() -> None:
 
 
 def test_invalid_xml_and_excessive_payload_fail() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ET.ParseError):
         parse_rss("fed", b"<rss>", "now")
     with pytest.raises(ValueError, match="maximum size"):
         parse_rss("fed", b"x" * 2_000_001, "now")
