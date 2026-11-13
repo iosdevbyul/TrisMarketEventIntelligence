@@ -6,9 +6,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-from tris_market_event_intelligence.event_store import EventProcessor
-
-
 class EventReader:
     """Independent monotonically increasing cursors avoid late-analysis data loss."""
 
@@ -57,18 +54,8 @@ class EventReader:
                        i.evidence_excerpt, i.uncertainty, i.drivers_json,
                        i.generated_at
                 FROM market_impacts i
-                ORDER BY i.id ASC
-                LIMIT ?
-                """,
-                (limit + 1,),
-            ).fetchall() if after_id == 0 else db.execute(
-                """
-                SELECT id, event_id, model_id, prompt_version, market,
-                       sector, direction, horizon, rationale, evidence_excerpt,
-                       uncertainty, drivers_json, generated_at
-                FROM market_impacts
-                WHERE id > ?
-                ORDER BY id ASC LIMIT ?
+                WHERE i.id > ?
+                ORDER BY i.id ASC LIMIT ?
                 """,
                 (after_id, limit + 1),
             ).fetchall()
