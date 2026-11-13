@@ -76,6 +76,54 @@ class EventReader:
             "hasMore": has_more,
         }
 
+    def latest_claim_reviews(self, *, after_id: int, limit: int) -> dict[str, object]:
+        # Latest review per claim, with claim-ID cursor (not history revision ID).
+        with self._connection() as db:
+            rows = db.execute(
+                """
+                SELECT r.*, c.classification, c.evidence AS original_evidence
+                FROM claim_review_history r
+                JOIN article_event_claims c ON c.id = r.claim_id
+                WHERE r.claim_id > ?
+                  AND r.revision = (
+                    SELECT MAX(r2.revision) FROM claim_review_history r2
+                    WHERE r2.claim_id = r.claim_id
+                  )
+                ORDER BY r.claim_id LIMIT ?
+                """,
+                (after_id, limit + 1),
+            ).fetchall()
+        has_more = len(rows) > limit
+        items = [dict(row) for row in rows[:limit]]
+        return {
+            "schemaVersion": "1.0", "items": items,
+            "nextCursor": items[-1]["claim_id"] if items else after_id,
+            "hasMore": has_more,
+        }
+
+    def claim_review_history(
+        self, *, after_id: int, limit: int, claim_id: int | None
+    ) -> dict[str, object]:
+        with self._connection() as db:
+            rows = db.execute(
+                """
+                SELECT id, operation_id, claim_id, revision, prior_status, status,
+                       evidence_article_id, evidence_quote, evidence_kind,
+                       reviewer, reason, created_at
+                FROM claim_review_history
+                WHERE id > ? AND (? IS NULL OR claim_id = ?)
+                ORDER BY id LIMIT ?
+                """,
+                (after_id, claim_id, claim_id, limit + 1),
+            ).fetchall()
+        has_more = len(rows) > limit
+        items = [dict(row) for row in rows[:limit]]
+        return {
+            "schemaVersion": "1.0", "items": items,
+            "nextCursor": items[-1]["id"] if items else after_id,
+            "hasMore": has_more,
+        }
+
     def analyses(self, *, after_id: int, limit: int) -> dict[str, object]:
         with self._connection() as db:
             rows = db.execute(
