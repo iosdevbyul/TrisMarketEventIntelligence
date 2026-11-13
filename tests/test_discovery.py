@@ -8,10 +8,14 @@ import pytest
 
 from tris_market_event_intelligence.collector import NewsStore
 from tris_market_event_intelligence.discovery import (
-    SearchDiscovery, parse_gdelt, parse_naver,
+    SearchDiscovery,
+    parse_gdelt,
+    parse_naver,
 )
 from tris_market_event_intelligence.story_index import (
-    StoryIndex, canonical_url, title_fingerprint,
+    StoryIndex,
+    canonical_url,
+    title_fingerprint,
 )
 
 
