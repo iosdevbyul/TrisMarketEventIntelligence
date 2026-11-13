@@ -39,6 +39,7 @@ market-event-api-launchd = "tris_market_event_intelligence.api_launchd_config:ma
 market-event-api-local = "tris_market_event_intelligence.api_service:main"
 market-event-runtime-audit = "tris_market_event_intelligence.runtime_audit:main"
 market-event-bridge = "tris_market_event_intelligence.claim_bridge_cli:main"
+market-event-impact-audit = "tris_market_event_intelligence.impact_review_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
