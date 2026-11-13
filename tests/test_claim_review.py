@@ -98,8 +98,21 @@ def test_confirmation_requires_official_primary_evidence(tmp_path: Path) -> None
             **common, evidence_article_id=denial_article,
             evidence_quote="NVIDIA denies CEO resignation",
         )
+    # Even an authentic monetary-policy release cannot prove an unrelated
+    # claim about the CEO of a company.
+    with pytest.raises(ValueError, match="does not corroborate"):
+        manager.record(
+            **common, evidence_article_id=official_article,
+            evidence_quote="The Committee raised the interest rate by 25 basis points.",
+        )
+    with manager.claims.store.connect() as conn:
+        policy_claim = conn.execute(
+            "SELECT id FROM article_event_claims "
+            "WHERE classification='MONETARY_POLICY' ORDER BY id LIMIT 1"
+        ).fetchone()[0]
     confirmed = manager.record(
-        **common, evidence_article_id=official_article,
+        **{**common, "claim_id": policy_claim},
+        evidence_article_id=official_article,
         evidence_quote="The Committee raised the interest rate by 25 basis points.",
     )
     assert confirmed.status == "CONFIRMED"
