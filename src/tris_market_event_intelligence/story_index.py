@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import sqlite3
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
