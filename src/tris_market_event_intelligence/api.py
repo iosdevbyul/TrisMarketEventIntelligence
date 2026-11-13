@@ -50,6 +50,29 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         except (OSError, sqlite3.Error) as exc:
             raise HTTPException(status_code=503, detail="Claim database unavailable") from exc
 
+    @app.get("/api/v1/claim-reviews")
+    def list_claim_reviews(
+        after_id: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        try:
+            return reader.latest_claim_reviews(after_id=after_id, limit=limit)
+        except (OSError, sqlite3.Error) as exc:
+            raise HTTPException(status_code=503, detail="Review database unavailable") from exc
+
+    @app.get("/api/v1/claim-review-history")
+    def list_claim_review_history(
+        after_id: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+        claim_id: int | None = Query(default=None, ge=1),
+    ) -> dict[str, object]:
+        try:
+            return reader.claim_review_history(
+                after_id=after_id, limit=limit, claim_id=claim_id
+            )
+        except (OSError, sqlite3.Error) as exc:
+            raise HTTPException(status_code=503, detail="Review database unavailable") from exc
+
     @app.get("/api/v1/impacts")
     def list_impacts(
         after_id: int = Query(default=0, ge=0),
