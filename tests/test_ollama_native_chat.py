@@ -35,7 +35,7 @@ def good_result() -> str:
 
 
 def test_native_schema_is_flat_and_restricts_high() -> None:
-    assert PROMPT_VERSION == "market-impact-v5"
+    assert PROMPT_VERSION == "market-impact-v6"
     schema = ollama_native_schema(sample_event())
     assert "$defs" not in json.dumps(schema)
     item = schema["properties"]["impacts"]["items"]
@@ -103,7 +103,7 @@ def test_fallback_does_not_accept_lower_risk() -> None:
     with pytest.raises(ImpactAnalysisError) as error:
         provider.analyze(sample_event())
     assert error.value.code == "UNCERTAINTY_MISMATCH"
-    assert calls == 2
+    assert calls == 3
 
 
 def test_other_http_errors_never_fallback() -> None:
