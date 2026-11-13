@@ -7,7 +7,9 @@ import pytest
 
 from tris_market_event_intelligence.collector import NewsStore
 from tris_market_event_intelligence.web_scraper import (
-    WebScrapingCollector, article_links, parse_article,
+    WebScrapingCollector,
+    article_links,
+    parse_article,
 )
 
 
