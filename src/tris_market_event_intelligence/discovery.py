@@ -172,6 +172,7 @@ class SearchDiscovery:
     ) -> SourceResult:
         inserted = returned = 0
         errors = 0
+        blocked_status = None
         for query in topics:
             now = utc_now()
             params: dict[str, str | int]
@@ -195,5 +196,16 @@ class SearchDiscovery:
                 # Never record exception text: some HTTP exceptions include URLs/query values.
                 self.store.record_error(source, safe_error_code(exc), now)
                 errors += 1
-        status = "ok" if not errors else "partial_error" if errors < len(topics) else "error"
+                # Provider rate limits and access denials apply to the source,
+                # not just a single query. Stop further requests immediately.
+                if isinstance(exc, httpx.HTTPStatusError):
+                    if exc.response.status_code == 429:
+                        blocked_status = "rate_limited"
+                        break
+                    if exc.response.status_code in {401, 403}:
+                        blocked_status = "access_denied"
+                        break
+        status = blocked_status or (
+            "ok" if not errors else "partial_error" if errors < len(topics) else "error"
+        )
         return SourceResult(status, inserted, returned)
