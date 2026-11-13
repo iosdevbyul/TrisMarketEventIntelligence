@@ -10,6 +10,7 @@ import httpx
 
 from tris_market_event_intelligence.impact import OpenAICompatibleProvider
 from tris_market_event_intelligence.impact_diagnostics import inspect_errors
+from tris_market_event_intelligence.impact_pilot import pilot_candidates
 from tris_market_event_intelligence.impact_store import ImpactProcessor
 
 
@@ -25,6 +26,10 @@ def main() -> None:
     parser.add_argument("--show-errors", action="store_true",
                         help="Read saved analysis failures without invoking a model")
     parser.add_argument("--error-limit", type=int, default=10)
+    parser.add_argument("--pilot-preview", action="store_true",
+                        help="Read-only 3-event candidate preview; does not call Ollama")
+    parser.add_argument("--event-ids", type=str, default=None,
+                        help="Explicit comma-separated IDs (maximum 3) to analyze")
     parser.add_argument(
         "--timeout-seconds", type=int, default=None,
         help="Per-HTTP-operation timeout (local default: 300, remote default: 90; max: 900)",
@@ -39,6 +44,35 @@ def main() -> None:
         if result['status'] in {'database_missing', 'database_unreadable'}:
             raise SystemExit(2)
         return
+    if args.pilot_preview:
+        try:
+            report = pilot_candidates(
+                args.db.expanduser(),
+                model_id=os.getenv("MARKET_EVENT_LLM_MODEL", "gemma2:latest"),
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(report, ensure_ascii=False))
+        if report["status"] != "ok":
+            raise SystemExit(2)
+        return
+    selected_ids = None
+    if args.event_ids is not None:
+        try:
+            raw = args.event_ids.split(",")
+            if not 1 <= len(raw) <= 3 or any(
+                not value.isascii() or not value.isdecimal() for value in raw
+            ):
+                raise ValueError("Expected 1..3 comma-separated positive integer IDs")
+            selected_ids = tuple(int(value) for value in raw)
+            if (
+                any(value < 1 for value in selected_ids)
+                or len(set(selected_ids)) != len(selected_ids)
+                or args.batch_size < len(selected_ids)
+            ):
+                raise ValueError("IDs must be positive, distinct and within batch-size")
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.list_local_models:
         try:
             response = httpx.get("http://127.0.0.1:11434/api/tags", timeout=5, trust_env=False)
@@ -81,7 +115,12 @@ def main() -> None:
         structured_output=False,
         native_ollama=args.provider == "local",
     )
-    stats = ImpactProcessor(args.db.expanduser(), provider).process_pending(args.batch_size)
+    try:
+        stats = ImpactProcessor(args.db.expanduser(), provider).process_pending(
+            args.batch_size, event_ids=selected_ids,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     print(json.dumps(asdict(stats)))
 
 
