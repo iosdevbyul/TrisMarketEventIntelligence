@@ -110,7 +110,7 @@ def run_cycle(
                 "scraping_used": False,
             }
     
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - record uncaught cycle failures safely
             # Do not leave a stale healthy checkpoint after an unexpected failure.
             # Exception messages can contain URLs, secrets or article contents:
             # persist only a bounded exception class and never an exception string.

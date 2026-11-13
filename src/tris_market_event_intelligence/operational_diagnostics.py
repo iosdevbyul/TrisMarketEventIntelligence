@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -19,7 +19,7 @@ def diagnose(
     """Report evidence only; no network, schema initialization, or DB writes."""
     if stale_after_minutes < 1 or warning_bytes < 1:
         raise ValueError("Thresholds must be positive")
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone aware")
     checks: dict[str, dict[str, object]] = {}
@@ -29,8 +29,8 @@ def diagnose(
         try:
             content = json.loads(status_path.read_text(encoding="utf-8"))
             if not isinstance(content, dict):
-                raise ValueError("Invalid status object")
-            finished = datetime.fromisoformat(content["finished_at"].replace("Z", "+00:00"))
+                raise TypeError("Invalid status object")
+            finished = datetime.fromisoformat(content["finished_at"])
             if finished.tzinfo is None:
                 raise ValueError("Naive timestamp")
             age = (now - finished).total_seconds()

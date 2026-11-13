@@ -1,7 +1,7 @@
 """Offline health and unexpected collection failure regression tests."""
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,7 +9,7 @@ from tris_market_event_intelligence.operational_diagnostics import diagnose
 from tris_market_event_intelligence.operations import run_cycle
 
 
-NOW = datetime(2026, 11, 14, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
 
 
 def _fixture(tmp_path: Path, *, status: str = "healthy", age: int = 10) -> tuple[Path, Path]:
