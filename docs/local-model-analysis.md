@@ -185,3 +185,32 @@ curl -sS 'http://127.0.0.1:8100/api/v1/analysis-runs?after_id=0&limit=5'
 
 CI mocks model responses; only an on-Mac run can verify Gemma 2
 compliance, runtime and market-analysis accuracy.
+
+## Phase 7-B v4 — local Ollama structured output
+
+The Intel Mac pilot generated a v3 `ValidationError`. Ollama documents
+JSON Schema constraints through the OpenAI-compatible chat completions API.
+Local requests now use `response_format.type=json_schema` with the
+`ImpactResult` Pydantic schema, explicit allowed enum values and
+`uncertainty=HIGH` as the *only* allowed value for UNVERIFIED/CANDIDATE inputs.
+Remote-provider requests continue using the existing `json_object` mode.
+
+The model output is still parsed and checked against the original Pydantic
+schema, literal evidence/entity rules and verification rules; no repair,
+fallback or implicit approval is permitted. New v4 outputs and failures remain
+independent from previous v2/v3 attempts. When the schema fails, the stored
+error identifies only an allowlisted field/type, e.g.
+`SCHEMA_MISSING_RATIONALE`, never the generated text.
+
+Run a single opt-in on-device pilot:
+
+```sh
+git pull --ff-only origin main
+export MARKET_EVENT_LLM_MODEL=gemma2:latest
+market-event-analyze --provider local --batch-size 1 --timeout-seconds 300
+market-event-analyze --show-errors
+curl -sS 'http://127.0.0.1:8100/api/v1/analysis-runs?after_id=0&limit=5'
+```
+
+GitHub CI tests the request shape with a mocked model only. Real local Ollama
+schema compatibility and the analysis output still require Mac verification.
