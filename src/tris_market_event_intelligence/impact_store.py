@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+
+import httpx
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -183,7 +185,11 @@ class ImpactProcessor:
                 """,
                 (event_id, self.provider.model_id, PROMPT_VERSION,
                  error.code if isinstance(error, ImpactAnalysisError)
-                 else type(error).__name__, utc_now()),
+                 else (
+                     f"HTTP_{error.response.status_code}"
+                     if isinstance(error, httpx.HTTPStatusError)
+                     else type(error).__name__
+                 ), utc_now()),
             )
 
     def list_impacts(self) -> list[dict[str, object]]:

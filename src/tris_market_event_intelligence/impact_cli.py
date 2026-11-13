@@ -78,7 +78,8 @@ def main() -> None:
     provider = OpenAICompatibleProvider(
         base_url=base_url, api_key=api_key, model=model,
         timeout_seconds=timeout_seconds,
-        structured_output=args.provider == "local",
+        structured_output=False,
+        native_ollama=args.provider == "local",
     )
     stats = ImpactProcessor(args.db.expanduser(), provider).process_pending(args.batch_size)
     print(json.dumps(asdict(stats)))

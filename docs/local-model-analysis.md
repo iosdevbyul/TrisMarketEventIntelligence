@@ -214,3 +214,36 @@ curl -sS 'http://127.0.0.1:8100/api/v1/analysis-runs?after_id=0&limit=5'
 
 GitHub CI tests the request shape with a mocked model only. Real local Ollama
 schema compatibility and the analysis output still require Mac verification.
+
+
+## Phase 7-B v5 — native Ollama compatibility and HTTP diagnostics
+
+Real device evidence: v2 timed out or failed risk checks, v3 failed schema
+validation, and v4 returned an HTTPStatusError from the local API. The HTTP
+status was not recorded for that historical attempt, so its cause is unknown.
+
+The local provider now uses the Ollama native `POST /api/chat` interface
+with `stream: false` and a compact inline schema under `format`.
+Unlike the former OpenAI-compatible nested `response_format`, this is the
+official native structured-output contract. For HTTP 400 or 422 on the
+structured request only, the local client makes **one bounded compatibility
+retry** using Ollama's native `format: "json"` mode. No retry is performed
+for timeouts or other status codes. The same strict Pydantic, evidence, entity
+and risk checks apply in both modes. This is not an automatic correction
+of a rejected hypothesis. Remote LLM requests are unchanged.
+
+Future HTTP errors persist a sanitized status code (such as `HTTP_400`),
+not a raw response body or credential. Historical v4 error rows are preserved.
+`market-impact-v5` is a separate versioned analysis contract.
+
+The next real-Mac run remains a **single-event pilot**, not a full backlog:
+
+```sh
+git pull --ff-only origin main
+export MARKET_EVENT_LLM_MODEL=gemma2:latest
+market-event-analyze --provider local --batch-size 1 --timeout-seconds 300
+market-event-analyze --show-errors
+curl -sS 'http://127.0.0.1:8100/api/v1/analysis-runs?after_id=0&limit=5'
+```
+
+No CI assertion can certify actual Gemma 2 quality or CPU/RAM performance.
