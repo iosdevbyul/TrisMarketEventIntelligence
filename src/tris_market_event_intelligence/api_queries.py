@@ -193,3 +193,21 @@ def database_ready(db_path: Path) -> bool:
             return required.issubset(found)
     except sqlite3.Error:
         return False
+
+
+def claims_database_ready(db_path: Path) -> bool:
+    """True only if the collector's claim tables exist; no schema creation."""
+    if not db_path.is_file():
+        return False
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as db:
+            db.execute("PRAGMA query_only=ON")
+            required = {"articles", "captures", "article_event_claims"}
+            found = {
+                row[0] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            return required.issubset(found)
+    except sqlite3.Error:
+        return False
