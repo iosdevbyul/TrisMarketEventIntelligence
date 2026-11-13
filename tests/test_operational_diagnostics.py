@@ -8,7 +8,6 @@ from unittest.mock import patch
 from tris_market_event_intelligence.operational_diagnostics import diagnose
 from tris_market_event_intelligence.operations import run_cycle
 
-
 NOW = datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
 
 
