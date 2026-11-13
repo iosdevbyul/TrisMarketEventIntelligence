@@ -25,7 +25,6 @@ PAST = re.compile(
     r"(?i)\b(?:last year|last month|in 20\d{2}|previously|historical|"
     r"years ago|was reported last)\b|지난해|작년에|과거|지난달|전년도"
 )
-REPORT = re.compile(r"(?i)\b(?:says?|reported|announced|released|confirms?)\b|발표|보도")
 POLICY_SOURCE = frozenset({"fed_monetary", "bok_monetary"})
 
 
@@ -84,8 +83,8 @@ def extract_claims(source: str, title: str, summary: str | None) -> list[EventCl
         ]
         policy = extract_policy_event(source, clause, None)
         if re.search(
-            r"(?i)\\b(?:CEO|CFO|chief executive)\\b.{0,55}"
-            r"\\b(?:resignation|resigned|resigns|resign|departure)\\b"
+            r"(?i)\b(?:CEO|CFO|chief executive)\b.{0,55}"
+            r"\b(?:resignation|resigned|resigns|resign|departure)\b"
             r"|대표이사.{0,35}(?:사임|퇴임|교체)",
             clause,
         ):
