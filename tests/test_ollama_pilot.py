@@ -78,7 +78,7 @@ def test_eligible_selection_skips_initial_ineligible_rows_with_batch_one(tmp_pat
 
 def test_cli_checks_local_model_before_database_changes(tmp_path: Path) -> None:
     db = tmp_path / "untouched.sqlite3"
-    response = httpx.Response(200, json={"models": [{"name": "other:latest"}]})
+    response = httpx.Response(200, json={"models": [{"name": "other:latest"}]}, request=httpx.Request("GET", "http://127.0.0.1:11434/api/tags"))
     with (
         patch("sys.argv", [
             "market-event-analyze", "--provider", "local", "--db", str(db),
@@ -104,7 +104,8 @@ def test_cli_uses_selected_local_model_and_explicit_database(tmp_path: Path, cap
         ]),
         patch.dict("os.environ", {"MARKET_EVENT_LLM_MODEL": "gemma2:latest"}),
         patch("tris_market_event_intelligence.impact_cli.httpx.get", return_value=httpx.Response(
-            200, json={"models": [{"name": "gemma2:latest"}]}
+            200, json={"models": [{"name": "gemma2:latest"}]},
+            request=httpx.Request("GET", "http://127.0.0.1:11434/api/tags"),
         )),
         patch("tris_market_event_intelligence.impact_cli.OpenAICompatibleProvider",
               return_value=model),
