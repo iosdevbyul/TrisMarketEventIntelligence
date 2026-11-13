@@ -1,0 +1,6 @@
+{
+  "feeds": {
+    "kr_business_example": "https://YOUR-LICENSED-NEWS-PROVIDER.example/rss/business",
+    "kr_industry_example": "https://YOUR-LICENSED-NEWS-PROVIDER.example/rss/industry"
+  }
+}
