@@ -405,7 +405,7 @@ class OpenAICompatibleProvider:
                     "meaningful characters and may not be an empty placeholder. "
                     "Every quote must be verbatim from the provided evidence. "
                     "For UNVERIFIED events uncertainty must remain HIGH. "
-                    "If a sourced explanation is impossible, return {\\\"impacts\\\":[]}. "
+                    "If a sourced explanation is impossible, return an empty impacts array. "
                     "Never fabricate or pad rationale. JSON only."
                 )
                 payload["messages"] = [
