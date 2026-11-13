@@ -17,7 +17,7 @@ RATE_CUES = re.compile(
 FORECAST_CUES = re.compile(
     r"(?i)\b(?:expect(?:ed|s)?|forecast|predict(?:ed|s)?|may|might|"
     r"could|would|likely|project(?:ed|s)?|anticipat(?:e|ed|es)|"
-    r"proposal|proposed|rumou?r|speculat(?:e|ion)|plans? to)\b|"
+    r"proposal|proposed|rumou?r|speculat(?:e|ion)|plans? to|looms?)\b|"
     r"전망|예상|가능성|할 것으로|인상할|인하할|관측"
 )
 UP_CUES = re.compile(r"(?i)\b(?:raised?|increas(?:e|ed)|hiked?)\b|인상|올렸|상향")

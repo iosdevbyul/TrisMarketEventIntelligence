@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from tris_market_event_intelligence.events import FORECAST_CUES, clean_text, extract_policy_event
 from tris_market_event_intelligence.multi_events import (
+    ADDITIONAL_PATTERNS,
     ATTRIBUTED,
     OFFICIAL_CATEGORIES,
     PATTERNS,
@@ -78,7 +79,7 @@ def extract_claims(source: str, title: str, summary: str | None) -> list[EventCl
         temporal = "PAST" if PAST.search(clause) else "UNSPECIFIED"
         kind = _claim_kind(clause, polarity, temporal)
         matched = [
-            (category, tag) for category, tag, pattern in PATTERNS
+            (category, tag) for category, tag, pattern in PATTERNS + ADDITIONAL_PATTERNS
             if re.search(pattern, clause)
         ]
         policy = extract_policy_event(source, clause, None)
