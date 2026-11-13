@@ -11,7 +11,7 @@ from html.parser import HTMLParser
 OFFICIAL_SOURCES = {"fed_monetary", "bok_monetary"}
 EXTRACTOR_VERSION = "policy-v1"
 RATE_CUES = re.compile(
-    r"(?i)interest rates?|policy rates?|federal funds|target range|"
+    r"(?i)interest rates?|policy rates?|rate hikes?|rate cuts?|federal funds|target range|"
     r"기준금리|정책금리|금리 결정|금융통화위원회"
 )
 FORECAST_CUES = re.compile(
