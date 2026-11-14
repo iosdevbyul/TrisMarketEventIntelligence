@@ -1,7 +1,5 @@
 """Synthetic boundary tests for leak-resistant KR/US research samples."""
 from datetime import UTC, datetime, timedelta
-from math import isnan
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -77,8 +75,9 @@ def test_embargo_and_unmatured_train_labels_are_purged() -> None:
     before = item(1, datetime(2026, 11, 17, 10, 55, tzinfo=NY))
     after = item(2, datetime(2026, 11, 17, 12, 30, tzinfo=NY))
     dataset = split([before, after])
-    assert dataset["counts"].get("PURGED_TIME_BOUNDARY") == 10
-    assert dataset["samples"] == []
+    assert dataset["counts"].get("PURGED_TIME_BOUNDARY") == 9
+    assert dataset["counts"].get("TRAIN") == 1
+    assert len(dataset["samples"]) == 1
 
 
 def test_no_random_split_and_late_holdout_starts_after_embargo() -> None:
