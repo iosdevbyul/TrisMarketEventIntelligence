@@ -21,6 +21,14 @@ def main() -> None:
         "--db", type=Path, default=Path(os.getenv("MARKET_EVENT_DB", str(base / "news.sqlite3")))
     )
     parser.add_argument("--batch-size", type=int, default=100)
+    parser.add_argument(
+        "--live-freshness-minutes", type=int, default=None,
+        help="Opt-in: defer old, undated or unhealthy source news before model analysis",
+    )
+    parser.add_argument(
+        "--source-success-minutes", type=int, default=15,
+        help="Max age of last successful source poll when using live freshness",
+    )
     parser.add_argument("--provider", choices=("local", "remote"), default="local")
     parser.add_argument("--list-local-models", action="store_true")
     parser.add_argument("--show-errors", action="store_true",
@@ -83,6 +91,12 @@ def main() -> None:
             parser.error(f"Local model server unavailable: {type(exc).__name__}")
         return
 
+    if args.live_freshness_minutes is not None and not (
+        1 <= args.live_freshness_minutes <= 1440
+    ):
+        parser.error("--live-freshness-minutes must be 1..1440")
+    if not 1 <= args.source_success_minutes <= 1440:
+        parser.error("--source-success-minutes must be 1..1440")
     model = os.getenv("MARKET_EVENT_LLM_MODEL")
     if not model:
         parser.error("Set MARKET_EVENT_LLM_MODEL to an installed model name")
@@ -118,6 +132,11 @@ def main() -> None:
     try:
         stats = ImpactProcessor(args.db.expanduser(), provider).process_pending(
             args.batch_size, event_ids=selected_ids,
+            live_freshness_seconds=(
+                args.live_freshness_minutes * 60
+                if args.live_freshness_minutes is not None else None
+            ),
+            source_success_seconds=args.source_success_minutes * 60,
         )
     except ValueError as exc:
         parser.error(str(exc))
