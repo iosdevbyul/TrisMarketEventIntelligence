@@ -39,6 +39,28 @@ bash scripts/news-learning-review.sh --update holdout \
   --output /private/holdout-plan-new.json
 ```
 
+If an independent human-news review exists, add `--review` to the same
+`holdout` action to audit whether a **TRAIN** news label had already
+been written by the training cutoff. This does not expose important or
+unimportant gold labels in any split output:
+
+```sh
+bash scripts/news-learning-review.sh --update holdout \
+  --cohort /private/historical-news-cohort-v2.json \
+  --review /private/human-reviewed.json \
+  --train-end 2026-09-01T00:00:00+09:00 \
+  --validation-end 2026-10-01T00:00:00+09:00 \
+  --embargo-hours 24 \
+  --output /private/holdout-with-review-availability-new.json
+```
+
+For TRAIN, `trainGoldAvailability` records unreviewed, uncertain,
+reviewed-after-train-end, or human label available-by-cutoff but not
+independently audited. For VALIDATION/TEST/EMBARGO/QUARANTINED it is
+`NOT_TRAIN_LABEL`: the gold values and review reasons are never exported.
+The full original review is validated against archived source hashes and
+timestamps before any output. An unavailable review is never backdated.
+
 The sample timestamps are **illustrative**; they do not represent actual
 historical coverage or an approved model experiment. Output is create-only.
 Only a clean main checkout can use optional `--update`.
