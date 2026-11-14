@@ -26,7 +26,6 @@ def files(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     items = []
     for number in range(12):
         important = number % 2 == 0
-        label = "IMPORTANT" if important else "UNIMPORTANT"
         if number < 6:
             receipt = "2026-11-01T12:00:00+00:00"
         elif number < 10:
