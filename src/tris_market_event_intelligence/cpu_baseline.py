@@ -32,13 +32,13 @@ def _validated_rows(dataset: dict[str, object]) -> tuple[list[dict], list[dict]]
         raise ValueError("Invalid research embargo or horizon contract")
     rows = dataset.get("samples")
     if not isinstance(rows, list):
-        raise ValueError("Samples must be a list")
+        raise TypeError("Samples must be a list")
     train: list[dict] = []
     holdout: list[dict] = []
     seen: set[tuple[str, int, str, int]] = set()
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("features"), dict):
-            raise ValueError("Malformed research sample")
+            raise TypeError("Malformed research sample")
         features = row["features"]
         if set(features) != _FEATURES:
             raise ValueError("Features must match strict point-in-time allowlist")
