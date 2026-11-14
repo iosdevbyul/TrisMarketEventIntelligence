@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
+from unittest.mock import patch
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from tris_market_event_intelligence.collector import NewsStore
+from tris_market_event_intelligence.collector import NewsStore, parse_rss
 from tris_market_event_intelligence.event_store import EventProcessor
 from tris_market_event_intelligence.integrated_launchd_config import (
+    _confirm_unloaded,
     integrated_launchd_configuration,
     verified_v3_activation,
 )
@@ -109,3 +112,63 @@ def test_v3_plist_rejects_symlinked_review_paths(tmp_path: Path) -> None:
             enable_v3_cutover_catchup=True,
             listing_bundle=linked, review_output_root=actual,
         )
+
+
+def test_scheduled_v3_refuses_loaded_or_unknown_launchagent() -> None:
+    label = "com.tris.market-event-intelligence-integrated"
+    with patch(
+        "tris_market_event_intelligence.integrated_launchd_config.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            [], 0, stdout="loaded", stderr="",
+        ),
+    ), pytest.raises(ValueError, match="still loaded"):
+        _confirm_unloaded(label)
+    with patch(
+        "tris_market_event_intelligence.integrated_launchd_config.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            [], 3, stdout="", stderr="Permission denied",
+        ),
+    ), pytest.raises(ValueError, match="unknown"):
+        _confirm_unloaded(label)
+    with patch(
+        "tris_market_event_intelligence.integrated_launchd_config.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            [], 113, stdout="", stderr=f'Could not find service "{label}" in domain',
+        ),
+    ):
+        _confirm_unloaded(label)
+
+
+def test_rollback_v2_does_not_reprocess_v3_checkpointed_articles(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "news.sqlite3"
+    store = NewsStore(db)
+    store.initialize()
+    activated_at, floor, _ = EventProcessor(db).activate_v3_rollout()
+    receipt = datetime.now(UTC).isoformat()
+    payload = (
+        "<rss><channel><item><guid>meta</guid>"
+        "<title>Italy fines Meta €805m over accessing users' photos</title>"
+        "<link>https://example.org/meta</link></item></channel></rss>"
+    ).encode()
+    store.save(
+        "bbc_world", "https://example.org/feed", payload,
+        parse_rss("bbc_world", payload, receipt), receipt, None, None,
+    )
+    v3 = EventProcessor(db).process_pending(
+        extractor_version="multi-v3",
+        received_since=activated_at, after_article_id=floor,
+    )
+    assert v3.processed == 1
+    assert v3.events == 1
+    v2 = EventProcessor(db).process_pending()
+    assert v2.processed == 0
+    assert v2.events == 0
+    with sqlite3.connect(db) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM economic_events"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM extraction_runs"
+        ).fetchone()[0] == 1
