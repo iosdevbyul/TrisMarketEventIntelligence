@@ -39,7 +39,7 @@ def seeded(tmp_path: Path) -> Path:
         db.execute(
             "INSERT INTO captures VALUES (1,?,?,?,?,?)",
             ("RSS", "https://example.org/feed", "2026-11-01T12:00:00+00:00",
-             "f" * 64, b"archive"),
+             hashlib.sha256(b"archive").hexdigest(), b"archive"),
         )
         for row in [
             (1, "Important release", "2026-11-01T12:00:01+00:00"),
@@ -82,6 +82,7 @@ def test_all_observed_articles_survive_even_without_claims(tmp_path: Path) -> No
     assert result["items"][0]["claimCountProcessedByCutoff"] == 1
     assert result["items"][0]["eventCountProcessedByCutoff"] == 0
     assert result["items"][0]["storyGroupId"] == 4
+    assert result["items"][0]["captureChecksumVerified"] is True
     assert result["items"][1]["claimCountProcessedByCutoff"] == 0
     assert result["items"][2]["eventCountProcessedByCutoff"] == 0
     assert all(row["importanceHumanGold"] == "UNKNOWN" for row in result["items"])
@@ -164,4 +165,12 @@ def test_inconsistent_receipt_capture_fails_closed(tmp_path: Path) -> None:
             "UPDATE captures SET fetched_at='2026-11-02T12:00:00+00:00'"
         )
     with pytest.raises(ValueError, match="before"):
+        run(source)
+
+
+def test_changed_original_rss_payload_checksum_fails_closed(tmp_path: Path) -> None:
+    source = seeded(tmp_path)
+    with sqlite3.connect(source) as db:
+        db.execute("UPDATE captures SET payload=? WHERE id=1", (b"tampered",))
+    with pytest.raises(ValueError, match="checksum mismatch"):
         run(source)
