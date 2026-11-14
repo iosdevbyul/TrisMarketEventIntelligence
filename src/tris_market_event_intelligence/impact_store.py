@@ -201,9 +201,15 @@ class ImpactProcessor:
             provider_elapsed_ms: float | None = None
             outcome = "ERROR"
             try:
-                raw_result = self.provider.analyze(event)
-                provider_returned_at = utc_now()
-                provider_elapsed_ms = max(0.0, (time.monotonic() - started_mono) * 1000)
+                try:
+                    raw_result = self.provider.analyze(event)
+                finally:
+                    # Capture elapsed provider time even if Ollama times out or
+                    # the provider raises before returning an answer.
+                    provider_returned_at = utc_now()
+                    provider_elapsed_ms = max(
+                        0.0, (time.monotonic() - started_mono) * 1000,
+                    )
                 result = validate_result(event, raw_result)
                 keys = [(i.market, i.sector, i.horizon) for i in result.impacts]
                 if len(keys) != len(set(keys)):
