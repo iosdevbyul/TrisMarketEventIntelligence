@@ -14,6 +14,8 @@ def main() -> None:
         description="Plan chronological news-only training/validation/test partitions"
     )
     parser.add_argument("--cohort", type=Path, required=True)
+    parser.add_argument("--review", type=Path, default=None,
+                        help="Optional private human-label review, used for TRAIN cutoff audit")
     parser.add_argument("--train-end", type=datetime.fromisoformat, required=True)
     parser.add_argument("--validation-end", type=datetime.fromisoformat, required=True)
     parser.add_argument("--embargo-hours", type=int, default=24)
@@ -23,7 +25,7 @@ def main() -> None:
         result = plan_news_holdout(
             args.cohort, train_end=args.train_end,
             validation_end=args.validation_end,
-            embargo_hours=args.embargo_hours,
+            embargo_hours=args.embargo_hours, review_path=args.review,
         )
         if args.output.is_symlink() or not args.output.parent.is_dir():
             raise ValueError("Existing ordinary output directory required")
