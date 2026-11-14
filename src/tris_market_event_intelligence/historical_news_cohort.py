@@ -16,7 +16,7 @@ from pathlib import Path
 
 def _timestamp(value: str) -> datetime:
     if not isinstance(value, str):
-        raise ValueError("Timestamp is not a string")
+        raise TypeError("Timestamp is not a string")
     try:
         dt = datetime.fromisoformat(value)
     except ValueError as exc:
