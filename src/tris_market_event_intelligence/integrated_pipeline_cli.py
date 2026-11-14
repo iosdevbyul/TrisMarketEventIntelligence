@@ -32,6 +32,10 @@ def main() -> None:
     parser.add_argument("--sources", default=",".join(OPERATIONAL_SOURCES))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--enable-local-analysis", action="store_true")
+    parser.add_argument(
+        "--enable-v3-for-new-articles", action="store_true",
+        help="Opt in to v3 for articles first saved during THIS invocation only",
+    )
     parser.add_argument("--enable-ticker-review", action="store_true",
                         help="Explicitly capture a review-only ticker report for new news")
     parser.add_argument("--listing-bundle", type=Path,
@@ -46,6 +50,10 @@ def main() -> None:
     parser.add_argument("--markets", default="XKRX,XNYS,XNAS",
                         help="Target exchanges with --sessions")
     args = parser.parse_args()
+    if args.enable_v3_for_new_articles and (
+        not args.enable_ticker_review or args.enable_local_analysis
+    ):
+        parser.error("v3 requires explicitly enabled ticker review and no local analysis")
     if args.enable_ticker_review:
         if not args.listing_bundle or not args.review_output_root:
             parser.error("--enable-ticker-review requires a listing bundle and output root")
@@ -84,6 +92,7 @@ def main() -> None:
             "local_model_requested": args.enable_local_analysis,
             "background_service_installed": False,
             "ticker_review_requested": args.enable_ticker_review,
+            "v3_fresh_only_requested": args.enable_v3_for_new_articles,
             "session_plan": plan,
         }))
         return
@@ -127,6 +136,7 @@ def main() -> None:
         if args.listing_bundle else None,
         review_output_root=args.review_output_root.expanduser().absolute()
         if args.review_output_root else None,
+        enable_v3_for_new_articles=args.enable_v3_for_new_articles,
     )
     print(json.dumps(report, ensure_ascii=False))
     if report["status"] not in {"healthy"}:
