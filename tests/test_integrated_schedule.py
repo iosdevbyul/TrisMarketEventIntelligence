@@ -11,12 +11,11 @@ from unittest.mock import patch
 import pytest
 
 from test_integrated_pipeline import fake_client
-
 from tris_market_event_intelligence.integrated_launchd_config import (
     INTEGRATED_LABEL,
     integrated_launchd_configuration,
-    main as schedule_main,
 )
+from tris_market_event_intelligence.integrated_launchd_config import main as schedule_main
 from tris_market_event_intelligence.integrated_pipeline import run_integrated_pass
 from tris_market_event_intelligence.integrated_watchdog import audit_integrated_schedule
 from tris_market_event_intelligence.integrated_watchdog_cli import main as watchdog_main
