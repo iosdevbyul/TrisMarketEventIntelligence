@@ -13,6 +13,7 @@ import httpx
 
 from tris_market_event_intelligence.impact import PROMPT_VERSION
 from tris_market_event_intelligence.impact_pilot_report import parse_event_ids
+from tris_market_event_intelligence.impact_version_comparison import compare_impact_versions
 
 
 def _run(args: list[str], root: Path) -> subprocess.CompletedProcess[str]:
@@ -117,6 +118,9 @@ def verify(
         )
     else:
         result["status"] = "ok"
+    base = Path.home() / "Library" / "Application Support" / "TrisMarketEventIntelligence"
+    db = Path(os.getenv("MARKET_EVENT_DB", str(base / "news.sqlite3"))).expanduser()
+    result["version_comparison"] = compare_impact_versions(db, model_id=model)
     return _save(result, output_dir)
 
 
