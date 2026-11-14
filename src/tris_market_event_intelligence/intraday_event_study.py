@@ -12,6 +12,8 @@ from datetime import UTC, datetime, time, timedelta
 from math import isfinite
 from zoneinfo import ZoneInfo
 
+from tris_market_event_intelligence.exchange_sessions import SessionCalendar
+
 INTRADAY_HORIZONS = (1, 5, 15, 30, 60)
 MARKETS = {
     "XKRX": ("Asia/Seoul", time(9, 0), time(15, 30)),
@@ -83,7 +85,7 @@ def _regular_session(
 
 
 def _prepare(
-    bars: Iterable[MinuteClose],
+    bars: Iterable[MinuteClose], calendar: SessionCalendar | None = None,
 ) -> dict[tuple[str, str], dict[datetime, float]]:
     result: dict[tuple[str, str], dict[datetime, float]] = {}
     for bar in bars:
@@ -92,8 +94,13 @@ def _prepare(
         stamp = _utc(bar.close_at)
         if stamp.second != 0 or stamp.microsecond != 0:
             raise ValueError("Minute bars require exact minute-end timestamps")
-        if not _regular_session(bar.market, stamp):
-            raise ValueError("Minute bar is outside normal regular-session hours")
+        status = (
+            calendar.instant_status(bar.market, stamp)
+            if calendar is not None else
+            ("IN_SESSION" if _regular_session(bar.market, stamp) else "OUTSIDE_REGULAR_SESSION")
+        )
+        if status != "IN_SESSION":
+            raise ValueError(f"Minute bar outside confirmed exchange session: {status}")
         if not isfinite(bar.adjusted_close) or bar.adjusted_close <= 0:
             raise ValueError("Minute closes must have positive finite adjusted prices")
         series = result.setdefault((bar.market, bar.symbol), {})
@@ -107,13 +114,14 @@ def study_intraday(
     events: Iterable[IntradayNews],
     minute_closes: Iterable[MinuteClose],
     *, horizons: tuple[int, ...] = INTRADAY_HORIZONS,
+    calendar: SessionCalendar | None = None,
 ) -> list[IntradayResult]:
     """Produce descriptive minute-price labels without future-information leakage."""
     if not horizons or any(type(h) is not int or h < 1 for h in horizons):
         raise ValueError("Horizons must be positive integer minutes")
     if len(set(horizons)) != len(horizons):
         raise ValueError("Horizons must be unique")
-    prices = _prepare(minute_closes)
+    prices = _prepare(minute_closes, calendar)
     observed: set[tuple[int, str, str]] = set()
     results: list[IntradayResult] = []
     for event in events:
@@ -144,15 +152,35 @@ def study_intraday(
                 tuple(IntradayLabel(h, None, None, None, None, reason) for h in horizons),
             )
 
-        if not _regular_session(event.market, available, include_open=True):
-            results.append(missing("OUTSIDE_REGULAR_SESSION"))
+        available_status = (
+            calendar.instant_status(event.market, available, include_open=True)
+            if calendar is not None else
+            ("IN_SESSION" if _regular_session(event.market, available, include_open=True)
+             else "OUTSIDE_REGULAR_SESSION")
+        )
+        if available_status != "IN_SESSION":
+            results.append(missing(available_status))
             continue
 
         # The price at exactly available_at might not yet have been received;
         # choose the first CLOSED minute strictly later than information availability.
         entry = available.replace(second=0, microsecond=0) + _ONE_MINUTE
-        if not _regular_session(event.market, entry):
-            results.append(missing("NO_ENTRY_IN_SESSION"))
+        entry_status = (
+            calendar.instant_status(event.market, entry)
+            if calendar is not None else
+            ("IN_SESSION" if _regular_session(event.market, entry)
+             else "NO_ENTRY_IN_SESSION")
+        )
+        if entry_status != "IN_SESSION":
+            results.append(missing(
+                "NO_ENTRY_IN_SESSION" if entry_status == "OUTSIDE_REGULAR_SESSION"
+                else entry_status,
+            ))
+            continue
+        if calendar is not None and calendar.intersects_halt(
+            event.market, (event.symbol, event.benchmark_symbol), entry, entry,
+        ):
+            results.append(missing("TRADING_HALTED_AT_ENTRY", entry))
             continue
         stock = prices.get((event.market, event.symbol), {})
         bench = prices.get((event.market, event.benchmark_symbol), {})
@@ -167,9 +195,24 @@ def study_intraday(
         for horizon in horizons:
             exit_at = entry + timedelta(minutes=horizon)
             exit_iso = exit_at.isoformat()
-            if not _regular_session(event.market, exit_at):
+            exit_status = (
+                calendar.instant_status(event.market, exit_at)
+                if calendar is not None else
+                ("IN_SESSION" if _regular_session(event.market, exit_at)
+                 else "OUTSIDE_REGULAR_SESSION")
+            )
+            if exit_status != "IN_SESSION":
                 labels.append(IntradayLabel(
-                    horizon, exit_iso, None, None, None, "SESSION_BOUNDARY",
+                    horizon, exit_iso, None, None, None,
+                    "SESSION_BOUNDARY" if exit_status == "OUTSIDE_REGULAR_SESSION"
+                    else exit_status,
+                ))
+                continue
+            if calendar is not None and calendar.intersects_halt(
+                event.market, (event.symbol, event.benchmark_symbol), entry, exit_at,
+            ):
+                labels.append(IntradayLabel(
+                    horizon, exit_iso, None, None, None, "TRADING_HALTED_WINDOW",
                 ))
                 continue
             # No missing bar compression: every minute must have a recorded

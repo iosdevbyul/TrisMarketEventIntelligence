@@ -105,6 +105,16 @@ process does not make unadjusted prices valid. The reader rejects
 status. It explicitly records `prediction_model_trained=false`,
 `quality_verified=false`, and `causal_effect_estimated=false`.
 
+
+## Subsequent safety slice: explicitly supplied exchange sessions
+
+The optional `--sessions` and `--halts` inputs now let intraday labels
+fail closed for documented OPEN/CLOSED trading dates, early closing and
+stock/benchmark halt windows. Unknown dates remain unknown; static weekday
+fallback is flagged as unverified, **not** a production calendar.
+See `docs/stage-4-explicit-exchange-sessions.md`. The schedule's content
+and source authenticity must still be independently checked before training.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration

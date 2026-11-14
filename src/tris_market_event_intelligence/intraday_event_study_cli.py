@@ -4,9 +4,14 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
+from tris_market_event_intelligence.exchange_sessions import (
+    SessionCalendar,
+    SessionDay,
+    TradingHalt,
+)
 from tris_market_event_intelligence.intraday_event_study import (
     IntradayNews,
     MinuteClose,
@@ -22,7 +27,42 @@ def _csv_rows(path: Path, required: set[str]) -> list[dict[str, str]]:
         return list(reader)
 
 
-def intraday_csv(news_path: Path, prices_path: Path) -> dict[str, object]:
+def _calendar_csv(
+    sessions_path: Path | None, halts_path: Path | None,
+) -> SessionCalendar | None:
+    if sessions_path is None:
+        if halts_path is not None:
+            raise ValueError("--halts requires an explicit --sessions file")
+        return None
+    sessions = []
+    for row in _csv_rows(
+        sessions_path, {"market", "date", "status", "open_at", "close_at"},
+    ):
+        status = row["status"].strip()
+        sessions.append(SessionDay(
+            market=row["market"].strip(), day=date.fromisoformat(row["date"].strip()),
+            status=status,
+            open_at=datetime.fromisoformat(row["open_at"].strip()) if row["open_at"].strip() else None,
+            close_at=(
+                datetime.fromisoformat(row["close_at"].strip())
+                if row["close_at"].strip() else None
+            ),
+        ))
+    halts = []
+    if halts_path is not None:
+        for row in _csv_rows(halts_path, {"market", "symbol", "start_at", "end_at"}):
+            halts.append(TradingHalt(
+                market=row["market"].strip(), symbol=row["symbol"].strip(),
+                start_at=datetime.fromisoformat(row["start_at"].strip()),
+                end_at=datetime.fromisoformat(row["end_at"].strip()),
+            ))
+    return SessionCalendar(sessions, halts)
+
+
+def intraday_csv(
+    news_path: Path, prices_path: Path, *,
+    sessions_path: Path | None = None, halts_path: Path | None = None,
+) -> dict[str, object]:
     """Read only explicitly adjusted, minute-end prices and timestamped news."""
     news = [
         IntradayNews(
@@ -50,14 +90,22 @@ def intraday_csv(news_path: Path, prices_path: Path) -> dict[str, object]:
             close_at=datetime.fromisoformat(row["close_at"].strip()),
             adjusted_close=float(row["adjusted_close"]),
         ))
-    results = study_intraday(news, prices)
+    calendar = _calendar_csv(sessions_path, halts_path)
+    results = study_intraday(news, prices, calendar=calendar)
     return {
         "schema_version": "intraday_event_study_v1",
         "markets": ["XKRX", "XNYS", "XNAS"],
         "horizons_minutes": [1, 5, 15, 30, 60],
         "price_basis": "adjusted_minute_close",
         "entry_policy": "first_completed_minute_strictly_after_available_at",
-        "market_hours": "regular_only; timezone-aware; holiday_calendar_unverified",
+        "market_hours": (
+            "explicit_supplied_session_days; source_accuracy_not_independently_verified"
+            if calendar is not None
+            else "legacy_static_weekday_hours; holiday_calendar_unverified"
+        ),
+        "session_calendar_supplied": calendar is not None,
+        "session_calendar_source_verified": False,
+        "trading_halts_supplied": halts_path is not None,
         "benchmark": "same_market_exact_minute",
         "quality_verified": False,
         "causal_effect_estimated": False,
@@ -73,10 +121,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Offline KR/US intraday news event study")
     parser.add_argument("--news", type=Path, required=True)
     parser.add_argument("--prices", type=Path, required=True)
+    parser.add_argument("--sessions", type=Path, default=None,
+                        help="Reviewed open/closed market-date CSV; avoids static weekday assumptions")
+    parser.add_argument("--halts", type=Path, default=None,
+                        help="Optional date-time bounded stock/benchmark halt CSV")
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
     try:
-        report = intraday_csv(args.news, args.prices)
+        report = intraday_csv(
+            args.news, args.prices, sessions_path=args.sessions, halts_path=args.halts,
+        )
         if args.output is None:
             print(json.dumps(report, ensure_ascii=False))
         else:
