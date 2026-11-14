@@ -530,3 +530,55 @@ existing integrated listing validation. If no activation exists,
 it reports `NOT_ACTIVATED` rather than zero backlog. The default
 v2 mode, pinned listing bundle, local Ollama restrictions, source
 catalog, LaunchAgent and event processing rules are unchanged.
+
+
+## Stage 2-M: replace the existing integrated LaunchAgent with v3 (operator-only)
+
+The Mac's **actual** post-cutover audit found articles 20605 and 20606,
+both `V2_PROCESSED_FIRST`, even though the manual v3 activation fence
+was pinned at `2026-11-14T17:58:08.821552+00:00` and ID `20604`.
+The existing integrated LaunchAgent invokes
+`tris_market_event_intelligence.integrated_pipeline_cli` every 15
+minutes **without** any version flag, hence v2 extraction wins.
+The older `cycle_cli` LaunchAgent only polls RSS and does not extract
+events. This change does **not** activate any background job or
+overwrite its existing plist.
+
+A pre-existing manually activated v3 fence, verified pinned listing
+bundle and existing private report folder are all required for a
+scheduled v3 configuration. To preview the proposed plist (no writes),
+use the known full paths:
+
+```bash
+market-event-integrated-launchd --interval 900 \
+  --enable-v3-cutover-catchup \
+  --listing-bundle "$HOME/Library/Application Support/TrisMarketEventIntelligence/listing-research/observed-<existing-bundle>" \
+  --review-output-root "$HOME/Library/Application Support/TrisMarketEventIntelligence/listing-research"
+```
+
+The `--write` form additionally checks actual manual v3 activation in
+SQLite, validates the existing listing manifest, checks the report
+folder, and refuses to write a new plist unless **both** legacy and
+integrated jobs are confirmed unloaded through `launchctl print`.
+An existing legacy plist also blocks creation; an existing integrated
+plist is never overwritten. The operator must first inspect the real
+launchd state, stop and back up the current job's plist, and remove
+or move its existing plist only after explicit approval. Never load
+both collectors concurrently. The generated replacement retains the
+existing integrated label, 900-second interval and source catalog but
+sets `--enable-v3-cutover-catchup`, `--enable-ticker-review`,
+`--listing-bundle` and `--review-output-root`; no Ollama inference
+is allowed. Only the operator may activate it using `launchctl`.
+
+Rollback: boot out the v3 integrated job, **preserve its new v3
+checkpoints and events**, restore the backed-up original integrated
+v2 plist, and bootstrap that single original job. Rolling back does
+not delete any historical or v3 data. Check both service labels
+for unloaded/loaded state before and after the transition. Since v2
+uses version-specific checkpoints, a later v2 run may be eligible to
+process **v3-only** articles again; therefore operational rollback
+must be reviewed for cross-version duplicate events. The safe
+fallback is disabling the v3 scheduler and keeping the existing
+RSS-only collector while this is audited; **do not automatically
+reactivate the integrated v2 event processor** over v3 history.
+No synthetic post-cutover events or live coverage are claimed.
