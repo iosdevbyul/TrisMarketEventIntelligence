@@ -366,7 +366,7 @@ def test_full_review_packet_exposes_context_hypothesis_and_gaps_without_writes(
     assert result["hypothesis"]["scoreIsCalibratedToReturns"] is False
     assert "costs if prolonged" in result["hypothesis"]["conditionalMechanism"]
     assert result["independentVerificationChecklist"] == [
-        {"check": "CONFIRM_OUTAGE_DURATION", "verified": False}
+        {"check": "CONFIRM_OUTAGE_DURATION", "verified": False, "manualEvidence": None}
     ]
     assert result["reviewDecision"] is None
     assert result["published"] is False
@@ -581,7 +581,7 @@ def test_checklist_conflict_and_corruption_rejected_by_auditor(
     }
     ledger.record(**kwargs, commit=True)
     with pytest.raises(ValueError, match="Immutable"):
-        ledger.record(**{**kwargs, "review_status": "CONFLICTING_SOURCE"}, commit=True)
+        ledger.record(**{**kwargs, "note": "This later comment conflicts with the archived note."}, commit=True)
     with sqlite3.connect(journal) as db:
         db.execute(
             "UPDATE news_pilot_checklist_reviews SET signal_sha256=? WHERE id=1",
