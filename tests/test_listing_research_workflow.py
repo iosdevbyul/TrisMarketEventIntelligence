@@ -28,7 +28,7 @@ OTHER = (
     b"ACME|Acme Corporation - Common Stock|N|ACME|N|100|N|ACME\n"
     b"ABBV|AbbVie Inc. Common Stock|N|ABBV|N|100|N|ABBV\n"
     b"OTHER|Another Corp - Common Stock|P|OTHER|N|100|N|OTHER\n"
-    b"File Creation Time: 1115202612:00|||||||\n"
+    b"File Creation Time: 1115202612:00||||||\n"
 )
 KRX = (
     "market,symbol,company_name,security_type\n"

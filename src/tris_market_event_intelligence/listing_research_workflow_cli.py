@@ -37,7 +37,11 @@ def main() -> None:
             ledger=args.review_ledger.expanduser() if args.review_ledger else None,
             limit=args.limit,
         )
-    except (ValueError, OSError, KeyError, UnicodeError, TypeError,
+    except ValueError as exc:
+        # Show only bounded validation messages, never raw source records.
+        reason = str(exc).replace("\n", " ").replace("\r", " ")[:180]
+        parser.exit(2, f"listing-research: {reason}\n")
+    except (OSError, KeyError, UnicodeError, TypeError,
             httpx.HTTPError, sqlite3.Error, json.JSONDecodeError) as exc:
         parser.exit(2, f"listing-research: {type(exc).__name__}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))

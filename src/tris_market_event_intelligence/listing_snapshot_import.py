@@ -64,6 +64,23 @@ def _rows(raw: bytes, *, delimiter: str, expected: set[str]) -> list[dict[str, s
     for index, row in enumerate(reader, start=1):
         if index > MAX_ROWS:
             raise ValueError("Snapshot exceeds issuer row limit")
+        # The official otherlisted.txt footer has ONE FEWER trailing pipe
+        # than its eight-column header (while nasdaqlisted.txt has eight).
+        # Accept only that exact final-field omission on the timestamp footer;
+        # ordinary security rows must still have the complete source schema.
+        if expected == OTHER_FIELDS and row.get("NASDAQ Symbol") is None:
+            footer = row.get("ACT Symbol", "")
+            if (
+                isinstance(footer, str)
+                and re.fullmatch(
+                    r"File Creation Time: (?:\d{12}|\d{10}:\d{2})", footer
+                )
+                and all(row.get(key) == "" for key in OTHER_FIELDS - {
+                    "ACT Symbol", "NASDAQ Symbol"
+                })
+                and None not in row
+            ):
+                row["NASDAQ Symbol"] = ""
         if None in row or any(value is None for value in row.values()):
             raise ValueError("Malformed snapshot row")
         result.append(row)
@@ -76,9 +93,21 @@ def _us_rows(raw: bytes, kind: str) -> tuple[list[tuple[str, str, str]], dict[st
     output: list[tuple[str, str, str]] = []
     counts = {"test": 0, "etf": 0, "non_nyse": 0, "unsupported": 0}
     footer_found = False
-    for item in rows:
+    for index, item in enumerate(rows):
         symbol = item["Symbol"] if kind == "NASDAQ_DIRECTORY" else item["ACT Symbol"]
         if symbol.startswith("File Creation Time:"):
+            # Footer must be the only final row, with an actual time token
+            # and blank metadata cells. A malformed intermediate row is not a footer.
+            if (
+                footer_found or index != len(rows) - 1
+                or re.fullmatch(
+                    r"File Creation Time: (?:\d{12}|\d{10}:\d{2})", symbol
+                ) is None
+                or any(value for key, value in item.items() if key not in {
+                    "Symbol", "ACT Symbol"
+                })
+            ):
+                raise ValueError("Invalid official symbol directory footer")
             footer_found = True
             continue
         if not US.fullmatch(symbol) or not item["Security Name"].strip():
