@@ -720,3 +720,42 @@ GitHub CI tests use controlled local SQLite and pinned offline KRX
 research fixtures. Mac execution is not required to validate this
 pure-Python report export; fresh live data can be inspected during
 the existing automatic integrated run after deployment.
+
+
+## Stage 3-B: candidate-to-minute-source coverage (no real labels yet)
+
+The prior project already implements a strict KR/US 1/5/15/30/60-minute
+event study and a SHA-256 pinned minute-source contract. Neither is a
+live market data provider, and the public daily DonghakStockVision KRX
+feed is **not** an adjusted minute source. Stage 3-B begins by joining
+the Stage 3-A **unapproved, source-pinned article issuer review bundle**
+with any operator-provided local minute-source manifest. No network
+requests, Mac-only dependencies or invented prices.
+
+Example after obtaining your own verified local files:
+
+```bash
+market-event-news-price-coverage \
+  --review-bundle /path/to/article-issuer-review.json \
+  --minute-manifest /path/to/minute-manifest.json \
+  --benchmark XKRX:KOSPI \
+  --benchmark XNAS:SPY \
+  --benchmark XNYS:SPY \
+  --as-of 2026-11-16T17:00:00+00:00 \
+  --output /path/to/new-coverage-report.json
+```
+
+This CLI requires an explicit benchmark per market (no guessed index
+mapping). It reuses the existing minute-source SHA-256/schema/adjustment
+audit. Reports distinguish absent stock/benchmark bars, incorrect
+instrument kind, unadjusted/unknown adjustment provenance, no
+post-article observations, and both sides observed but **unverified**.
+The report binds both input files by SHA-256 and records provenance
+without returning any ticker price, return, training label or model
+prediction. It rejects incomplete review candidate sets and candidates
+claiming approved/training-ready status. A matching minute source is
+only evidence that *some data exists*, not proof of the continuous
+minute window, exchange holiday calendar, issuer identity or ability
+to trade. Next milestones require independently verified issuer
+relationships, authenticated market data and minute-window completeness
+before running the pre-existing intraday label calculator.
