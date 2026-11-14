@@ -246,3 +246,44 @@ news-pressure score, not an expected stock return.
 The local pilot and automatic 15-minute jobs remain independent; this change
 does not populate SQLite or certify Gemma 2's real-world accuracy. A new
 manual Mac run is required to observe the upgraded fields in real responses.
+
+
+## Opt-in isolated evidence journal for real two-stage pilot reports
+
+Real Mac test confirmed the new `evidence_assessment` in the report for
+event 69. That does not mean the result was independently fact-checked
+or is safe to publish as a production news-intensity signal.
+
+The opt-in `market-event-pilot-evidence` command parses an existing pilot
+JSON report, opens the operating `news.sqlite3` in **SQLite read-only mode**,
+and verifies event IDs, stored classification/status, source URL, literal
+evidence quote, strong-score guardrails, stage call counts, and model/prompt
+version. Only `TWO_STAGE_OUTPUT_VALIDATED` entries with structured
+fact/hypothesis/review data qualify. Every accepted output remains
+`REQUIRES_HUMAN_REVIEW` — it is not externally validated.
+
+Preview safely, with no writes:
+
+```bash
+market-event-pilot-evidence \
+  --report "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-two-stage-20261115T061043.json"
+```
+
+After reviewing this report, **explicitly** archive it into an
+isolated, new private research journal:
+
+```bash
+market-event-pilot-evidence \
+  --report "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-two-stage-20261115T061043.json" \
+  --commit
+```
+
+The journal is a separate `news-pilot-review.sqlite3` database, not
+`news.sqlite3`, `market_impacts`, or `news_pressure_signals`.
+It stores the original report hash, a per-event source evidence hash,
+immutable JSON signal and a fixed review-required status. Reimporting
+the identical report is idempotent; conflicting records are rejected.
+The API and 15-minute operational cycle are not changed. No
+automated imports, stock data, Donghak access, or production release
+occur. A distinct approved review and publish workflow must be
+implemented before a news signal can become operational.
