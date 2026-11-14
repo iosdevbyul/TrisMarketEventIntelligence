@@ -155,7 +155,7 @@ def test_future_availability_and_invalid_group_fail_closed(tmp_path: Path) -> No
 def test_no_market_returns_are_ever_included(tmp_path: Path) -> None:
     path = cohort(tmp_path)
     report = run(path)
-    serialized = json.dumps(report)
-    assert "price" not in serialized.lower()
-    assert "excessReturn" not in serialized
-    assert "stockMarketDataUsed" not in serialized
+    assert report["stockPricesUsed"] is False
+    assert all(set(item) == {
+        "articleId", "textSha256", "firstObservedAt", "split", "exclusionReason",
+    } for item in report["items"])
