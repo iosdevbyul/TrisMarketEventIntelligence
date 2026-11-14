@@ -236,7 +236,7 @@ def validate_existing_listing_news(
         review_path = output_dir / "article-issuer-review.json"
         with review_path.open("x", encoding="utf-8") as output:
             json.dump(review_artifact, output, ensure_ascii=False, indent=2)
-            output.write("\\n")
+            output.write("\n")
         article_coverage["review_bundle_path"] = str(review_path)
         article_coverage["review_bundle_sha256"] = hashlib.sha256(
             review_path.read_bytes()
