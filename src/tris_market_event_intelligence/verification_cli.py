@@ -12,6 +12,10 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.impact import PROMPT_VERSION
+from tris_market_event_intelligence.impact_pair_review import (
+    paired_review_samples,
+    save_private_review_bundle,
+)
 from tris_market_event_intelligence.impact_pilot_report import parse_event_ids
 from tris_market_event_intelligence.impact_version_comparison import compare_impact_versions
 
@@ -121,6 +125,15 @@ def verify(
     base = Path.home() / "Library" / "Application Support" / "TrisMarketEventIntelligence"
     db = Path(os.getenv("MARKET_EVENT_DB", str(base / "news.sqlite3"))).expanduser()
     result["version_comparison"] = compare_impact_versions(db, model_id=model)
+    review = paired_review_samples(db, model_id=model)
+    result["paired_review_status"] = review["status"]
+    result["paired_review_sampled_events"] = len(review["items"])
+    if review["items"]:
+        folder = output_dir or base / "verification-reports"
+        date = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        path = save_private_review_bundle(folder, f"paired-review-{date}.json", review)
+        result["paired_review_path"] = str(path)
+        print(f"[verify] private paired review: {path}", flush=True)
     return _save(result, output_dir)
 
 
