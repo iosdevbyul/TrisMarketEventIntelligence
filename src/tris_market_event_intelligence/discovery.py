@@ -6,6 +6,7 @@ Discovery returns articles or leads, not confirmed economic events.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -174,7 +175,6 @@ class SearchDiscovery:
         errors = 0
         blocked_status = None
         for query in topics:
-            now = utc_now()
             params: dict[str, str | int]
             if source == "naver_news":
                 params = {"query": query, "display": 100, "start": 1, "sort": "date"}
@@ -183,28 +183,45 @@ class SearchDiscovery:
                     "query": query, "mode": "artlist", "format": "json",
                     "maxrecords": 75, "timespan": "1d", "sort": "datedesc",
                 }
+            # Always capture response arrival AFTER request completion. A story
+            # cannot be considered known when its request merely started.
+            started_at = utc_now()
+            started_mono = time.monotonic()
+            response_at: str | None = None
+            elapsed_ms: float | None = None
+            query_returned = query_inserted = 0
+            status_for_attempt = "error"
             try:
                 response = client.get(endpoint, params=params, headers=headers)
+                response_at = utc_now()
+                elapsed_ms = max(0.0, (time.monotonic() - started_mono) * 1000)
                 response.raise_for_status()
-                articles = parse(response.content, now)
-                count = self.store.save(
-                    source, str(response.url), response.content, articles, now, None, None
+                articles = parse(response.content, response_at)
+                query_returned = len(articles)
+                query_inserted = self.store.save(
+                    source, str(response.url), response.content, articles,
+                    response_at, None, None,
                 )
-                inserted += count
-                returned += len(articles)
+                inserted += query_inserted
+                returned += query_returned
+                status_for_attempt = "ok"
             except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
-                # Never record exception text: some HTTP exceptions include URLs/query values.
-                self.store.record_error(source, safe_error_code(exc), now)
+                # No raw exception strings: HTTP URLs can include query values.
+                self.store.record_error(source, safe_error_code(exc), utc_now())
                 errors += 1
-                # Provider rate limits and access denials apply to the source,
-                # not just a single query. Stop further requests immediately.
+                # Auth denials and rate limits stop this source's subsequent
+                # requests without losing the failing attempt's measurements.
                 if isinstance(exc, httpx.HTTPStatusError):
                     if exc.response.status_code == 429:
                         blocked_status = "rate_limited"
-                        break
-                    if exc.response.status_code in {401, 403}:
+                    elif exc.response.status_code in {401, 403}:
                         blocked_status = "access_denied"
-                        break
+            self.store.record_attempt(
+                source, started_at, response_at, utc_now(),
+                elapsed_ms, status_for_attempt, query_returned, query_inserted,
+            )
+            if blocked_status is not None:
+                break
         status = blocked_status or (
             "ok" if not errors else "partial_error" if errors < len(topics) else "error"
         )
