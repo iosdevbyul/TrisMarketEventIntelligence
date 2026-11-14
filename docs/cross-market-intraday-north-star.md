@@ -176,6 +176,17 @@ feed-declared publication date is not independently authenticated;
 RSS feed coverage and market-breaking-news freshness are not yet
 verified. See `docs/stage-1-news-first-seen-latency.md`.
 
+## Stage 1: full local news-to-model checkpoint latency
+
+The read-only `market-event-lifecycle-latency` audit connects existing
+`articles.detected_at`, `economic_events.processed_at`, and
+`impact_runs.processed_at` into receipt-to-extraction,
+extraction-to-checkpoint, and end-to-end durations. It excludes impossible
+clock order and keeps missing analysis runs visibly missing, not zero.
+The Gemma checkpoint does **not** prove first usable inference, publisher
+breaking time or real-time KR/US coverage.
+See `docs/stage-1-news-to-gemma-lifecycle-latency.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
