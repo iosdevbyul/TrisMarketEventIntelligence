@@ -130,10 +130,10 @@ def test_tmux_base_python_falls_back_to_named_conda_env(tmp_path: Path) -> None:
         "git:status --porcelain",
         "git:pull --ff-only origin main",
         "python:-c import tris_market_event_intelligence.verification_cli",
-        "conda:run -n tris-market-event python -c "
-        "import tris_market_event_intelligence.verification_cli",
-        "conda:run --no-capture-output -n tris-market-event python "
-        "-m tris_market_event_intelligence.verification_cli",
+        ("conda:run -n tris-market-event python -c "
+         "import tris_market_event_intelligence.verification_cli"),
+        ("conda:run --no-capture-output -n tris-market-event python "
+         "-m tris_market_event_intelligence.verification_cli"),
     ]
 
 
