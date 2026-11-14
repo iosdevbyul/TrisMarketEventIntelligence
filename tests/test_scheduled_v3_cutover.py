@@ -77,14 +77,16 @@ def test_scheduled_v3_requires_existing_persisted_utc_activation(
         verified_v3_activation(db)
     cutoff, floor, created = EventProcessor(db).activate_v3_rollout()
     assert created and floor == 0
-    payload = db.read_bytes()
+    with sqlite3.connect(db) as conn:
+        payload = tuple(conn.iterdump())
     observed = verified_v3_activation(db)
     assert observed == {
         "activated_at": cutoff.isoformat(),
         "article_id_floor": floor,
         "read_only": True,
     }
-    assert db.read_bytes() == payload
+    with sqlite3.connect(db) as conn:
+        assert tuple(conn.iterdump()) == payload
     with sqlite3.connect(db) as conn:
         conn.execute(
             "UPDATE event_extractor_rollout SET activated_at=?",
