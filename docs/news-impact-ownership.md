@@ -394,3 +394,38 @@ The packet is read-only and shows `published=false` even when
 the pilot journal or production DB, call an LLM, or interact with
 price prediction. The 0-100 intensity score is subjective news
 pressure, not a forecast of stock returns.
+
+
+## Manual source-documentation checklist (research only)
+
+Real news Event #69 still has missing independent checks. To avoid
+automatically declaring these claims true, a reviewer can attach
+**self-declared source notes** to individual checklist items. The program
+never fetches the cited page and therefore cannot certify its content.
+
+Start with a **no-write preview** for an unresolved checklist item:
+
+```bash
+"$HOME/opt/anaconda3/envs/tris-market-event/bin/python3.11" \
+  -m tris_market_event_intelligence.news_pilot_checklist_cli \
+  --evidence-id 1 --check CONFIRM_OUTAGE_DURATION \
+  --status NOT_CONFIRMED --reviewer local-reviewer \
+  --note "No independently assessed source for duration has been supplied."
+```
+
+Use `--commit` only after choosing to record the note. To document
+a follow-up report, use `--status SOURCE_DOCUMENTED`, add an HTTPS
+`--source-url` and an exact `--source-excerpt` copied from that report,
+plus a clear review note. `CONFLICTING_SOURCE` also requires a citation.
+A supplied URL or excerpt is **human-provided and not automatically
+verified**; the packet retains `verified=false` and shows the review note
+beside its original checklist item. Entries are append-only and immutable:
+record the same evidence twice safely; incompatible changes are rejected.
+Only one self-attestation per checklist item is supported by this version.
+
+All checklist rows are checked during full-journal audit. An orphan,
+unknown check code, modified source/signal hash, invalid timestamp or
+malformed reviewer/source information fails closed. Neither editorial
+research approval nor these citations makes the news claim a confirmed
+fact or activates any production API, automatic schedule, price system,
+or other repository. Only the isolated research journal is writable.
