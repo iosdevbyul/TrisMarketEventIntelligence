@@ -228,6 +228,14 @@ def inspect_article_issuer_coverage(
                     if hint["status"] != "NEEDS_HUMAN_ALIAS_REVIEW":
                         continue
                     for issuer_hint in hint["possible_issuers"]:
+                        owner = next(
+                            issuer for issuer in derived_aliases[hint["candidate_alias"]]
+                            if (issuer.market, issuer.symbol)
+                            == (issuer_hint["market"], issuer_hint["symbol"])
+                            and issuer.evidence_seen_at <= seen
+                            and issuer.valid_from <= seen
+                            and (issuer.valid_until is None or seen < issuer.valid_until)
+                        )
                         review_items_total += 1
                         if len(review_items) < MAX_REVIEW_ITEMS:
                             review_items.append({
@@ -240,8 +248,8 @@ def inspect_article_issuer_coverage(
                                 "market": issuer_hint["market"],
                                 "symbol": issuer_hint["symbol"],
                                 "matched_names": [hint["candidate_alias"]],
-                                "registry_source_id": None,
-                                "registry_evidence_seen_at": None,
+                                "registry_source_id": owner.source_id,
+                                "registry_evidence_seen_at": owner.evidence_seen_at.isoformat(),
                                 "human_review_required": True,
                                 "approved": False,
                                 "point_in_time_training_eligible": False,
