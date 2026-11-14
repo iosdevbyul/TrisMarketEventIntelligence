@@ -97,3 +97,31 @@ injected HTTP client; live Gemma 2 quality and inference speed on the
 Mac remain unverified. Next: controlled pilot, persisted strength
 records, then an additive versioned API. Until that validation, no
 new pressure values are advertised as operational model output.
+
+
+## Opt-in persistent news-pressure API (Stage 3)
+
+The new `NewsPressureStore` requires an **existing** initialized news
+SQLite file. Its `initialize()` method is an explicit migration that
+creates `news_pressure_signals` only when requested. It never runs from
+the existing v3 event extractor, market-impact-v8 analyzer, or 15-minute
+LaunchAgent. `save(impact_id=..., signal=...)` records only a
+`news-pressure-intensity-v1` result whose event ID, source URL,
+market, sector, direction, horizon, uncertainty, and evidence quote
+match an **existing persisted** `market_impacts` record. A source
+reference cannot be invented merely by passing an arbitrary ID.
+Exact retries are idempotent, and conflicting updates are rejected.
+The original `impact_runs` checkpoints are not modified.
+
+The read-only, additive API `GET /api/v1/news-impact-signals?after_id=0&limit=100`
+returns monotonically increasing IDs, `sourceImpactId`, and validated
+`news_impact_signal_v1` fields. It returns HTTP 503 if the opt-in
+table has not been initialized or any returned record fails integrity
+checks; it does **not** claim zero results on an unavailable database.
+Existing `/api/v1/impacts` consumers remain unchanged.
+
+This is **storage and delivery plumbing only**. No automatic
+Gemma calls, production enablement, price labels, model calibration,
+or live Mac execution are implied. The subsequent separately
+authorized pilot must measure real Gemma quality before enabling any
+periodic writes.

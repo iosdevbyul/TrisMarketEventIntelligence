@@ -14,6 +14,7 @@ from tris_market_event_intelligence.api_queries import (
     claims_database_ready,
     database_ready,
 )
+from tris_market_event_intelligence.news_pressure_store import NewsPressureStore
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
@@ -114,6 +115,20 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             return reader.analysis_runs(after_rowid=after_id, limit=limit)
         except (OSError, sqlite3.Error) as exc:
             raise HTTPException(status_code=503, detail="Analysis database unavailable") from exc
+
+    @app.get("/api/v1/news-impact-signals")
+    def list_news_impact_signals(
+        after_id: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        # Uninitialized opt-in store is unavailable, NOT a fabricated empty
+        # successful report. No migration or model call on GET.
+        try:
+            return NewsPressureStore(path).list_signals(after_id=after_id, limit=limit)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="News pressure signal database unavailable"
+            ) from exc
 
     return app
 
