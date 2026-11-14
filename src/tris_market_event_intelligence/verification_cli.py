@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -33,7 +33,7 @@ def _read_json(args: list[str], root: Path) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise RuntimeError("Command returned invalid JSON") from exc
     if not isinstance(record, dict):
-        raise RuntimeError("Command returned non-object JSON")
+        raise TypeError("Command returned non-object JSON")
     return record
 
 
@@ -126,7 +126,7 @@ def _save(result: dict[str, object], output_dir: Path | None) -> dict[str, objec
         / "TrisMarketEventIntelligence" / "verification-reports"
     )
     folder.mkdir(parents=True, exist_ok=True)
-    date = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    date = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     path = folder / f"verify-{date}.json"
     with path.open("x", encoding="utf-8") as output:
         json.dump(result, output, ensure_ascii=False, indent=2)
@@ -150,7 +150,7 @@ def main() -> None:
             Path(__file__).resolve().parents[2], update=args.update,
             live=selected, model=args.model, output_dir=args.output_dir,
         )
-    except (ValueError, RuntimeError, OSError) as exc:
+    except (ValueError, RuntimeError, TypeError, OSError) as exc:
         parser.exit(2, f"[verify] {exc}\n")
     if result["status"] != "ok":
         raise SystemExit(1)
