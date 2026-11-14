@@ -579,3 +579,50 @@ v3, preventing duplicate events after switching back. Any v2-created
 events remain append-only, and the operator must verify the resulting
 v2/v3 stage audit before treating rollback as fully complete.
 No synthetic post-cutover events or live coverage are claimed.
+
+
+## Stage 2-N: live v3 event integrity evidence (read-only)
+
+Following the operator-confirmed 15-minute v3 schedule activation,
+the first Mac integrated run completed with `status=healthy`,
+`event_extractor_version=multi-v3`, `v3_cutover_catchup=true`,
+`v3_cutover_created=false`, `processed=0`, and `events=0`.
+This proves schedule configuration and one successful execution, **not**
+classification quality or the existence of a real post-cutover v3 event.
+
+The existing integrated listing validation report now includes
+`ticker_review.v3_event_integrity` (also in the private summary JSON).
+The new inspector is strictly SQLite `mode=ro` and only examines
+`multi-v3` economic event records after the immutable activation
+time and `article_id_floor`, up to the evidence cutoff. It checks:
+
+- v3 checkpoint existence and matching processed timestamp
+- matching article source, URL and receipt timestamp
+- article-linked capture SHA-256 against original stored RSS payload
+- event metadata presence, JSON list of tags and nonempty evidence
+- processing timestamp not preceding receipt or exceeding evaluation cutoff
+- classification record count, unverified/verified event status,
+  bounded 20-event samples and source counts
+
+The result is `NO_POST_CUTOVER_V3_EVENTS` until an actual v3 event
+exists, `OBSERVED_STORED_EVIDENCE` when every inspected row is
+internally consistent, or `INTEGRITY_ISSUES` if a mismatch is found.
+`NOT_ACTIVATED` and `UNAVAILABLE_SCHEMA` are not silently
+converted into zero events. The audit never fetches external publisher
+pages, invokes an LLM, rewrites a checkpoint, endorses a claimed
+event, approves a ticker or verifies a market reaction.
+
+The same integrated 15-minute job will update this evidence after new
+RSS articles arrive, even if no v3 event is generated. An operator
+can still run the existing manual verification without changing
+the LaunchAgent:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news --v3-cutover-catchup
+```
+
+Read `ticker_review.v3_cutover_audit.stage_counts` to distinguish
+processed-no-event from pending or v2-first news, and
+`ticker_review.v3_event_integrity` for actual persisted v3 event
+provenance. A successful RSS poll is not proof of full news coverage;
+an internally consistent event is not proof of economic relevance.

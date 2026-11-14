@@ -28,6 +28,7 @@ from tris_market_event_intelligence.ticker_review_queue import (
     reconcile_ticker_review_queue,
 )
 from tris_market_event_intelligence.v3_cutover_audit import audit_v3_cutover
+from tris_market_event_intelligence.v3_event_integrity import inspect_v3_event_integrity
 
 MAX_PAGES = 16
 PAGE_SIZE = 500
@@ -240,7 +241,8 @@ def validate_existing_listing_news(
             "news_pipeline_evidence": pipeline,
             "news_stage_transitions": transitions,
             "news_classification_evidence": classification,
-        "v3_cutover_audit": audit_v3_cutover(news_db, as_of=cutoff),
+            "v3_cutover_audit": audit_v3_cutover(news_db, as_of=cutoff),
+            "v3_event_integrity": inspect_v3_event_integrity(news_db, as_of=cutoff),
             "candidate_samples": samples,
             "report_only": True,
             "source_origin_independently_authenticated": False,
