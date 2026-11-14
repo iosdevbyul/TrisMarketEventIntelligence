@@ -69,3 +69,31 @@ def test_no_update_does_not_call_git(tmp_path: Path) -> None:
     assert calls.read_text().splitlines() == [
         "python:-m tris_market_event_intelligence.verification_cli",
     ]
+
+
+def test_update_only_runs_python_without_extra_arguments(tmp_path: Path) -> None:
+    script, env, calls = _setup(tmp_path)
+    result = subprocess.run(
+        ["bash", str(script), "--update"], env=env,
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert calls.read_text().splitlines() == [
+        "git:branch --show-current",
+        "git:status --porcelain",
+        "git:pull --ff-only origin main",
+        "python:-m tris_market_event_intelligence.verification_cli",
+    ]
+
+
+def test_no_arguments_avoids_empty_array_expansion_in_nounset_mode(tmp_path: Path) -> None:
+    script, env, calls = _setup(tmp_path)
+    result = subprocess.run(
+        ["bash", "-u", str(script)], env=env,
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "unbound variable" not in result.stderr
+    assert calls.read_text().splitlines() == [
+        "python:-m tris_market_event_intelligence.verification_cli",
+    ]
