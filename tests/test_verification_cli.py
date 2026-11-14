@@ -48,7 +48,7 @@ def test_live_mode_runs_only_explicit_ids_and_compares_v7_v8(
 
     def read_json(args: list[str], root: Path):
         seen.append(tuple(args))
-        if "impact_cli" in args:
+        if "tris_market_event_intelligence.impact_cli" in args:
             return {"processed": 1, "impacts": 0, "failed": 0}
         return {"status": "ok", "quality_verified": False, "items": []}
 
