@@ -5,10 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from tris_market_event_intelligence.market_minute_source import (
-    MarketSourceContractError,
-    audit_market_source,
-)
+from tris_market_event_intelligence.market_minute_source import audit_market_source
 
 
 def main() -> None:
