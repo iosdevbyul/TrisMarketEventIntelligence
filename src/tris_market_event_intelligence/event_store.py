@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.collector import NewsStore, utc_now
@@ -62,9 +63,21 @@ class EventProcessor:
                 """
             )
 
-    def process_pending(self, batch_size: int = 1000) -> ProcessingStats:
+    def process_pending(
+        self, batch_size: int = 1000, *,
+        received_since: datetime | None = None,
+        received_until: datetime | None = None,
+    ) -> ProcessingStats:
         if not 1 <= batch_size <= 10000:
             raise ValueError("batch_size must be 1..10000")
+        for bound in (received_since, received_until):
+            if bound is not None and bound.utcoffset() is None:
+                raise ValueError("Event extraction windows require timezone-aware datetimes")
+        if (
+            received_since is not None and received_until is not None
+            and received_since > received_until
+        ):
+            raise ValueError("Event extraction window is reversed")
         self.initialize()
         processed = 0
         created = 0
@@ -81,9 +94,18 @@ class EventProcessor:
                     SELECT 1 FROM extraction_runs r
                     WHERE r.article_id = a.id AND r.extractor_version = ?
                 )
+                  AND (? IS NULL OR julianday(a.detected_at) >= julianday(?))
+                  AND (? IS NULL OR julianday(a.detected_at) <= julianday(?))
                 ORDER BY a.id ASC LIMIT ?
                 """,
-                (EXTRACTOR_VERSION, batch_size),
+                (
+                    EXTRACTOR_VERSION,
+                    received_since.isoformat() if received_since else None,
+                    received_since.isoformat() if received_since else None,
+                    received_until.isoformat() if received_until else None,
+                    received_until.isoformat() if received_until else None,
+                    batch_size,
+                ),
             ).fetchall()
             for article_id, source, url, title, summary, published, detected, sha in rows:
                 classification = extract_news_event(source, title, summary)
