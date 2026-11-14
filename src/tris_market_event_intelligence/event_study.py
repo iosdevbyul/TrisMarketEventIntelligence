@@ -8,7 +8,7 @@ descriptive historical labels, not identified causal effects.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from math import isfinite
 from typing import Iterable
 
@@ -95,8 +95,8 @@ def study_events(
         # later trading date, conservatively discarding same-day reactions.
         publication_day = event.published_at.date()
         stock = prices.get(event.symbol, [])
-        aligned = [bar for bar in stock if bar.day > publication_day and bar.day in market]
-        if not aligned:
+        future = [bar for bar in stock if bar.day > publication_day]
+        if not future:
             results.append(EventStudyResult(
                 event.event_id, event.symbol, benchmark_symbol, None,
                 "NO_ENTRY_SESSION", tuple(HorizonLabel(
@@ -104,14 +104,28 @@ def study_events(
                 ) for h in horizons),
             ))
             continue
-        entry = aligned[0]
+        entry = future[0]
+        if entry.day not in market:
+            results.append(EventStudyResult(
+                event.event_id, event.symbol, benchmark_symbol, entry.day.isoformat(),
+                "BENCHMARK_ENTRY_MISSING", tuple(HorizonLabel(
+                    h, None, None, None, None, "BENCHMARK_ENTRY_MISSING"
+                ) for h in horizons),
+            ))
+            continue
         base_market = market[entry.day]
         labels: list[HorizonLabel] = []
         for horizon in horizons:
-            if horizon >= len(aligned):
+            if horizon >= len(future):
                 labels.append(HorizonLabel(horizon, None, None, None, None, "INSUFFICIENT_FUTURE"))
                 continue
-            exit_bar = aligned[horizon]
+            exit_bar = future[horizon]
+            if exit_bar.day not in market:
+                labels.append(HorizonLabel(
+                    horizon, exit_bar.day.isoformat(), None, None, None,
+                    "BENCHMARK_EXIT_MISSING",
+                ))
+                continue
             market_exit = market[exit_bar.day]
             sr = exit_bar.adjusted_close / entry.adjusted_close - 1.0
             mr = market_exit.adjusted_close / base_market.adjusted_close - 1.0
