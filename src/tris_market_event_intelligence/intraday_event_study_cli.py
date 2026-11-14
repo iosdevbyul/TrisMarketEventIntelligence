@@ -12,6 +12,10 @@ from tris_market_event_intelligence.exchange_sessions import (
     SessionDay,
     TradingHalt,
 )
+from tris_market_event_intelligence.event_ticker_screen import (
+    EventTickerLink,
+    screen_intraday_links,
+)
 from tris_market_event_intelligence.intraday_event_study import (
     IntradayNews,
     MinuteClose,
@@ -62,6 +66,7 @@ def _calendar_csv(
 def intraday_csv(
     news_path: Path, prices_path: Path, *,
     sessions_path: Path | None = None, halts_path: Path | None = None,
+    links_path: Path | None = None,
 ) -> dict[str, object]:
     """Read only explicitly adjusted, minute-end prices and timestamped news."""
     news = [
@@ -92,6 +97,25 @@ def intraday_csv(
         ))
     calendar = _calendar_csv(sessions_path, halts_path)
     results = study_intraday(news, prices, calendar=calendar)
+    screening = []
+    if links_path is not None:
+        links = [
+            EventTickerLink(
+                event_id=int(row["event_id"]),
+                market=row["market"].strip(), symbol=row["symbol"].strip(),
+                benchmark_symbol=row["benchmark_symbol"].strip(),
+                source_url=row["source_url"].strip(),
+                evidence_seen_at=datetime.fromisoformat(row["evidence_seen_at"].strip()),
+                relationship=row["relationship"].strip(),
+            )
+            for row in _csv_rows(links_path, {
+                "event_id", "market", "symbol", "benchmark_symbol",
+                "source_url", "evidence_seen_at", "relationship",
+            })
+        ]
+        results, screening = screen_intraday_links(
+            news, links, results, horizons=(1, 5, 15, 30, 60),
+        )
     return {
         "schema_version": "intraday_event_study_v1",
         "markets": ["XKRX", "XNYS", "XNAS"],
@@ -104,6 +128,10 @@ def intraday_csv(
             else "legacy_static_weekday_hours; holiday_calendar_unverified"
         ),
         "session_calendar_supplied": calendar is not None,
+        "point_in_time_links_supplied": links_path is not None,
+        "source_links_independently_verified": False,
+        "training_dataset_eligible": False,
+        "link_screening": screening,
         "session_calendar_source_verified": False,
         "trading_halts_supplied": halts_path is not None,
         "benchmark": "same_market_exact_minute",
@@ -125,11 +153,14 @@ def main() -> None:
                         help="Reviewed open/closed market-date CSV; avoids static weekday assumptions")
     parser.add_argument("--halts", type=Path, default=None,
                         help="Optional date-time bounded stock/benchmark halt CSV")
+    parser.add_argument("--links", type=Path, default=None,
+                        help="Optional point-in-time event-to-ticker evidence CSV")
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
     try:
         report = intraday_csv(
             args.news, args.prices, sessions_path=args.sessions, halts_path=args.halts,
+            links_path=args.links,
         )
         if args.output is None:
             print(json.dumps(report, ensure_ascii=False))
