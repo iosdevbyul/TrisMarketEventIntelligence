@@ -99,7 +99,7 @@ class NewsPilotChecklistLedger:
         if review_status not in STATES:
             raise ValueError("Unknown checklist review status")
         if not isinstance(reviewer, str) or not isinstance(note, str):
-            raise ValueError("Reviewer and note required")
+            raise TypeError("Reviewer and note required")
         reviewer, note = reviewer.strip(), note.strip()
         if not 0 < len(reviewer) <= 100 or not 15 <= len(note) <= 1000:
             raise ValueError("Reviewer or note invalid")
