@@ -6,10 +6,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+
 from tris_market_event_intelligence.article_issuer_coverage import inspect_article_issuer_coverage
 from tris_market_event_intelligence.collector import NewsStore, parse_rss
 from tris_market_event_intelligence.event_ticker_proposals import ListedIssuer
-
 
 NOW = datetime(2026, 11, 15, 3, tzinfo=UTC)
 OBSERVED = NOW - timedelta(hours=1)
