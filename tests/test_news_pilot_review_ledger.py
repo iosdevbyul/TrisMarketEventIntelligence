@@ -615,3 +615,70 @@ def test_orphaned_checklist_record_causes_audit_failure(
         )
     with pytest.raises(ValueError, match="Orphaned"):
         NewsPilotReviewAuditor(source_db=source, journal_db=journal).audit()
+
+
+def test_review_packet_includes_unverified_semantic_context_triage(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    with sqlite3.connect(source) as db:
+        production_before = tuple(db.iterdump())
+    with sqlite3.connect(journal) as db:
+        journal_before = tuple(db.iterdump())
+    packet = NewsPilotReviewPacket(source_db=source, journal_db=journal).build(
+        evidence_id=1
+    )
+    triage = packet["semanticContextReview"]
+    assert triage["status"] == "REQUIRES_HUMAN_REVIEW"
+    assert triage["reviewTarget"] == "CONDITIONAL_MECHANISM"
+    assert triage["scope"] == "BOUNDED_ORIGINAL_SOURCE_CONTEXT"
+    assert triage["sourceExcerptMatches"] is True
+    assert triage["independentlyVerified"] is False
+    assert triage["semanticallyVerified"] is False
+    assert triage["published"] is False
+    assert packet["published"] is False
+    with sqlite3.connect(source) as db:
+        assert tuple(db.iterdump()) == production_before
+    with sqlite3.connect(journal) as db:
+        assert tuple(db.iterdump()) == journal_before
+
+
+def test_review_packet_flags_qualifier_outside_exact_quote(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    # Construct a separately hash-linked research fixture. This is not a
+    # mutation of a real archived signal or the production news DB.
+    with sqlite3.connect(source) as db:
+        original = db.execute(
+            "SELECT evidence FROM economic_events WHERE id=69"
+        ).fetchone()[0]
+        qualified = "The issuer did not confirm the report. " + original
+        db.execute(
+            "UPDATE economic_events SET evidence=? WHERE id=69",
+            (qualified,),
+        )
+    with sqlite3.connect(journal) as db:
+        db.execute(
+            """UPDATE news_pilot_evidence
+               SET source_evidence_sha256=? WHERE id=1""",
+            (hashlib.sha256(qualified.encode("utf-8")).hexdigest(),),
+        )
+    packet = NewsPilotReviewPacket(source_db=source, journal_db=journal).build(
+        evidence_id=1
+    )
+    triage = packet["semanticContextReview"]
+    assert triage["sourceExcerptMatches"] is True
+    assert "NEGATION_OUTSIDE_EXCERPT_REVIEW" in triage["reviewCodes"]
+    assert "SOURCE_NEGATION_OMITTED_REVIEW" in triage["reviewCodes"]
+    assert triage["status"] == "REQUIRES_HUMAN_REVIEW"
+    assert packet["source"]["literalEvidenceQuote"] == original
+    assert packet["independentSourceVerification"] is False
