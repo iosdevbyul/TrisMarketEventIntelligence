@@ -21,6 +21,7 @@ from tris_market_event_intelligence.issuer_alias_diagnostics import inspect_alia
 from tris_market_event_intelligence.listing_snapshot_import import (
     preview_listing_snapshot,
 )
+from tris_market_event_intelligence.news_classification_evidence import inspect_unclassified_news
 from tris_market_event_intelligence.news_pipeline_evidence import inspect_news_pipeline
 from tris_market_event_intelligence.news_stage_transitions import inspect_news_stage_transitions
 from tris_market_event_intelligence.ticker_review_queue import (
@@ -200,6 +201,9 @@ def validate_existing_listing_news(
         transitions = inspect_news_stage_transitions(
             news_db, snapshot_observed_at=first_seen, as_of=cutoff,
         )
+        classification = inspect_unclassified_news(
+            news_db, observed_at=first_seen, as_of=cutoff,
+        )
         summary: dict[str, object] = {
             "schema_version": "listing_news_validation_v1",
             "status": (
@@ -234,6 +238,7 @@ def validate_existing_listing_news(
             "new_news_available": after > 0,
             "news_pipeline_evidence": pipeline,
             "news_stage_transitions": transitions,
+            "news_classification_evidence": classification,
             "candidate_samples": samples,
             "report_only": True,
             "source_origin_independently_authenticated": False,
