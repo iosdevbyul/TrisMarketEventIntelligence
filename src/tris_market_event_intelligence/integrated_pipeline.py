@@ -17,6 +17,7 @@ import httpx
 
 from tris_market_event_intelligence.collector import utc_now
 from tris_market_event_intelligence.event_store import EventProcessor
+from tris_market_event_intelligence.exchange_sessions import SessionCalendar
 from tris_market_event_intelligence.impact import ImpactProvider
 from tris_market_event_intelligence.impact_store import ImpactProcessor
 from tris_market_event_intelligence.operations import (
@@ -24,6 +25,7 @@ from tris_market_event_intelligence.operations import (
     _write_status,
     run_cycle,
 )
+from tris_market_event_intelligence.session_operations import market_session_plan
 from tris_market_event_intelligence.source_health import audit_source_health
 
 MAX_EVENT_EXTRACTION = 1000
@@ -75,6 +77,8 @@ def run_integrated_pass(
     live_freshness_seconds: int = 900,
     source_success_seconds: int = 900,
     max_event_extraction: int = MAX_EVENT_EXTRACTION,
+    session_calendar: SessionCalendar | None = None,
+    target_markets: tuple[str, ...] = ("XKRX", "XNYS", "XNAS"),
 ) -> dict[str, object]:
     """Finite pass with separate pipeline lock; defaults to *zero* LLM calls.
 
@@ -94,6 +98,24 @@ def run_integrated_pass(
         raise ValueError("Source poll age must be 1..86400 seconds")
     if not 1 <= max_event_extraction <= MAX_EVENT_EXTRACTION:
         raise ValueError("Extraction batch must be 1..1000")
+    if session_calendar is not None:
+        plan = market_session_plan(
+            session_calendar, now=datetime.now(UTC),
+            markets=target_markets, sources=selected_sources,
+        )
+        if plan["decision"] != "RUN":
+            return {
+                "schema_version": "integrated_news_pass_v1",
+                "status": (
+                    "session_skipped" if plan["decision"] == "SKIP" else "blocked"
+                ),
+                "session_plan": plan,
+                "collection": None, "event_extraction": None,
+                "source_health": None, "model_invoked": False,
+                "network_requests": 0, "mac_runtime_verified": False,
+                "market_coverage_verified": False,
+                "prediction_model_trained": False,
+            }
     db_path.parent.mkdir(parents=True, exist_ok=True)
     pipeline_lock = db_path.with_name(db_path.name + ".pipeline.lock")
     fd = os.open(pipeline_lock, os.O_CREAT | os.O_RDWR, 0o600)
@@ -114,6 +136,7 @@ def run_integrated_pass(
         )
         report: dict[str, object] = {
             "schema_version": "integrated_news_pass_v1",
+            "session_plan": plan if session_calendar is not None else None,
             "started_at": began,
             "status": collector["status"],
             "collection": collector,

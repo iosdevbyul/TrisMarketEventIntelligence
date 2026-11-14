@@ -218,6 +218,19 @@ backlog model calls or duplicate runs. No background service, actual
 KR/US breaking-news timing certification or market predictor is
 claimed. See `docs/stage-1-integrated-local-pipeline.md`.
 
+## Stage 1 operator-controlled KR/US market-session readiness
+
+The integrated RSS→extraction→opt-in local Gemma pass can now consult
+an explicitly supplied KR/US trading calendar before it makes any
+request. It skips known out-of-session windows, blocks unknown dates
+rather than inventing holidays, and reports source-health readiness.
+The separate read-only `market-event-ops-readiness` command checks
+per-source polling evidence. These are **operator-supplied sessions**,
+not independent proof of actual market calendars, headline coverage,
+or low-latency Gemma inference. After-hours news collection remains
+a separate supported path. See
+`docs/stage-1-kr-us-market-operations-readiness.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
