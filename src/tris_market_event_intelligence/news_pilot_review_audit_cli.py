@@ -7,8 +7,8 @@ import sqlite3
 from pathlib import Path
 
 from tris_market_event_intelligence.news_pilot_review_audit import (
-    NewsPilotReviewAuditor,
     STATES,
+    NewsPilotReviewAuditor,
 )
 
 
