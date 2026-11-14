@@ -145,7 +145,7 @@ def test_new_cohort_skips_duplicate_articles_and_title_only_ppi(tmp_path: Path) 
             ("https://example.org/story/3?utm_source=feed",),
         )
         conn.execute(
-            "UPDATE economic_events SET evidence=? WHERE id=4",
+            "UPDATE economic_events SET classification='ECONOMIC_INDICATOR', evidence=? WHERE id=4",
             ("2026년 8월 생산자물가지수(잠정)",),
         )
     before = db.read_bytes()
