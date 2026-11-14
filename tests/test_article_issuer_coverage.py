@@ -7,9 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tris_market_event_intelligence.article_issuer_coverage import (
-    inspect_article_issuer_coverage,
-)
+from tris_market_event_intelligence.article_issuer_coverage import inspect_article_issuer_coverage
 from tris_market_event_intelligence.collector import NewsStore, parse_rss
 from tris_market_event_intelligence.event_ticker_proposals import ListedIssuer
 
