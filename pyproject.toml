@@ -51,6 +51,7 @@ market-event-pilot-review-packet = "tris_market_event_intelligence.news_pilot_re
 market-event-news-semantic-gold = "tris_market_event_intelligence.news_semantic_gold_cli:main"
 market-event-historical-news-cohort = "tris_market_event_intelligence.historical_news_cohort_cli:main"
 market-event-news-importance-review = "tris_market_event_intelligence.news_importance_review_cli:main"
+market-event-news-importance-evaluate = "tris_market_event_intelligence.news_importance_evaluation_cli:main"
 market-event-pilot-checklist = "tris_market_event_intelligence.news_pilot_checklist_cli:main"
 market-event-study = "tris_market_event_intelligence.event_study_cli:main"
 market-event-krx-readiness = "tris_market_event_intelligence.krx_snapshot_cli:main"
