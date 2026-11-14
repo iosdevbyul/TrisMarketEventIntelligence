@@ -53,7 +53,7 @@ def inspect_news_stage_transitions(
             }
         required = {
             "articles": {"id", "source", "url", "detected_at"},
-            "economic_events": {"id", "article_id", "status"},
+            "economic_events": {"id", "article_id", "status", "processed_at"},
             "extraction_runs": {"article_id", "processed_at"},
         }
         for table, columns in required.items():
@@ -84,13 +84,11 @@ def inspect_news_stage_transitions(
                        WHERE e.article_id=a.id) AS first_event_at
                FROM articles a ORDER BY a.id"""
         ).fetchall()
-        # Most legacy fixtures have no event.processed_at; inspect this
-        # explicitly instead of falling through to SQL errors.
     totals: Counter[str] = Counter()
     source_summary: dict[str, Counter[str]] = {}
     samples: list[dict[str, object]] = []
     event_delay_seconds: list[float] = []
-    for article_id, source, url, received_text, checkpointed, processed_text, count_events, event_text in rows:
+    for article_id, source, url, received_text, checkpointed, _processed_text, count_events, event_text in rows:
         received = _utc(received_text)
         if not since <= received <= cutoff:
             continue
