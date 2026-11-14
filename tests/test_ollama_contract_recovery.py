@@ -42,7 +42,7 @@ def provider(handler) -> OpenAICompatibleProvider:
 
 
 def test_native_schema_includes_all_pydantic_length_bounds() -> None:
-    assert PROMPT_VERSION == "market-impact-v7"
+    assert PROMPT_VERSION == "market-impact-v8"
     result = ollama_native_schema(event())
     assert result["properties"]["impacts"]["maxItems"] == 12
     item = result["properties"]["impacts"]["items"]
