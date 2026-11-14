@@ -12,6 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+    validate_checklist_row,
+)
 from tris_market_event_intelligence.news_pilot_review_ledger import (
     DECISIONS,
     NewsPilotReviewLedger,
@@ -71,9 +74,20 @@ class NewsPilotReviewAuditor:
                     "SELECT * FROM news_pilot_evidence ORDER BY id"
                 ).fetchall()
 
+            has_checklists = db.execute(
+                """SELECT 1 FROM sqlite_master
+                   WHERE type='table' AND name='news_pilot_checklist_reviews'"""
+            ).fetchone() is not None
+            if has_checklists and db.execute(
+                """SELECT 1 FROM news_pilot_checklist_reviews c
+                   LEFT JOIN news_pilot_evidence e ON e.id=c.evidence_id
+                   WHERE e.id IS NULL LIMIT 1"""
+            ).fetchone() is not None:
+                raise ValueError("Orphaned checklist evidence record")
             totals: Counter[str] = Counter({state: 0 for state in STATES})
             items: list[dict[str, object]] = []
             review_count = 0
+            checklist_count = 0
             for row in rows:
                 signal = self.ledger._verify(row)
                 assessment = signal.evidence_assessment
@@ -104,6 +118,18 @@ class NewsPilotReviewAuditor:
                     if dt.tzinfo is None:
                         raise ValueError("Missing review timestamp timezone")
                     review_count += 1
+                if has_checklists:
+                    checks = db.execute(
+                        """SELECT * FROM news_pilot_checklist_reviews
+                           WHERE evidence_id=?""", (row["id"],),
+                    ).fetchall()
+                    for check in checks:
+                        validate_checklist_row(
+                            check, signal_sha256=row["signal_sha256"],
+                            source_evidence_sha256=row["source_evidence_sha256"],
+                            allowed_checks=assessment.verification_needed,
+                        )
+                        checklist_count += 1
                 totals[resolved] += 1
                 if row["id"] <= after_id or (status is not None and resolved != status):
                     continue
@@ -134,6 +160,12 @@ class NewsPilotReviewAuditor:
                 ).fetchone()[0]
                 if count != review_count:
                     raise ValueError("Duplicate or unexplained review ledger rows")
+            if has_checklists:
+                count = db.execute(
+                    "SELECT COUNT(*) FROM news_pilot_checklist_reviews"
+                ).fetchone()[0]
+                if count != checklist_count:
+                    raise ValueError("Unexpected checklist review row count")
             # Integrity of content hashes is a local consistency check; an
             # actor who can modify both payload and hashes could still forge.
             digest = hashlib.sha256()
@@ -150,6 +182,7 @@ class NewsPilotReviewAuditor:
                 "counts": dict(sorted(totals.items())),
                 "totalEvidence": len(rows),
                 "reviewDecisions": review_count,
+                "checklistEvidenceRecords": checklist_count,
                 "items": filtered,
                 "nextCursor": filtered[-1]["id"] if filtered else after_id,
                 "hasMore": len(items) > limit,
