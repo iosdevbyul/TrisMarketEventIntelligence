@@ -56,14 +56,24 @@ def inspect_alias_coverage(
     human-review approval CLI or market-return model.
     """
     if not event_ids:
-        return {"counts": {}, "hints": [], "hints_truncated": False}
+        return {
+            "counts": {}, "hints": [], "hints_total": 0,
+            "hints_truncated": False, "derived_aliases_checked": 0,
+            "diagnostic_only": True, "automatic_links_created": False,
+            "database_modified": False,
+        }
     if len(event_ids) > 500 or len(event_ids) != len(set(event_ids)) or (
         any(type(value) is not int or value <= 0 for value in event_ids)
     ):
         raise ValueError("Diagnostic page requires 1..500 unique event IDs")
     mapping = derived_alias_candidates(issuers)
     if not mapping:
-        return {"counts": {}, "hints": [], "hints_truncated": False}
+        return {
+            "counts": {}, "hints": [], "hints_total": 0,
+            "hints_truncated": False, "derived_aliases_checked": 0,
+            "diagnostic_only": True, "automatic_links_created": False,
+            "database_modified": False,
+        }
     uri = news_db.resolve().as_uri() + "?mode=ro"
     placeholders = ",".join("?" for _ in event_ids)
     with sqlite3.connect(uri, uri=True, timeout=5) as db:
