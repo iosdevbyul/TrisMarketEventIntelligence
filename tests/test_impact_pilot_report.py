@@ -53,7 +53,10 @@ def test_v7_selected_pilot_report_is_version_isolated_and_readonly(tmp_path: Pat
     db = tmp_path / "news.sqlite3"
     setup(db)
     before = db.read_bytes()
-    result = pilot_outcomes(db, event_ids=(6, 7, 8), model_id="gemma2:latest")
+    result = pilot_outcomes(
+        db, event_ids=(6, 7, 8), model_id="gemma2:latest",
+        prompt_version="market-impact-v7",
+    )
     assert result["status"] == "ok"
     assert result["outcome_counts"] == {
         "COMPLETED": 1, "FAILED_PENDING_RETRY": 1, "NO_HYPOTHESIS": 1,
@@ -83,7 +86,10 @@ def test_historical_syntax_warning_is_not_retroactive_failure(tmp_path: Path) ->
 def test_missing_not_attempted_and_model_isolation(tmp_path: Path) -> None:
     db = tmp_path / "news.sqlite3"
     setup(db)
-    result = pilot_outcomes(db, event_ids=(6, 8, 999), model_id="another-model")
+    result = pilot_outcomes(
+        db, event_ids=(6, 8, 999), model_id="another-model",
+        prompt_version="market-impact-v7",
+    )
     assert result["outcome_counts"] == {
         "EVENT_NOT_FOUND": 1, "NOT_ATTEMPTED": 1, "FAILED_PENDING_RETRY": 1,
     }

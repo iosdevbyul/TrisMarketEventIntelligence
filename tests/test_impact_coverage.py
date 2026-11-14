@@ -66,7 +66,7 @@ def test_versioned_census_is_read_only_and_distinct(tmp_path: Path) -> None:
     db = tmp_path / "news.sqlite3"
     prepare(db)
     before = db.read_bytes()
-    report = impact_coverage(db, model_id="gemma2:latest")
+    report = impact_coverage(db, model_id="gemma2:latest", prompt_version="market-impact-v7")
     assert report["total_events"] == 6
     assert report["eligible_events"] == 4
     assert report["ineligible_events"] == 2

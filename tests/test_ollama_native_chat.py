@@ -35,7 +35,7 @@ def good_result() -> str:
 
 
 def test_native_schema_is_flat_and_restricts_high() -> None:
-    assert PROMPT_VERSION == "market-impact-v7"
+    assert PROMPT_VERSION == "market-impact-v8"
     schema = ollama_native_schema(sample_event())
     assert "$defs" not in json.dumps(schema)
     item = schema["properties"]["impacts"]["items"]

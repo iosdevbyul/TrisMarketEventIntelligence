@@ -9,9 +9,10 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
 
-PROMPT_VERSION = "market-impact-v7"
+PROMPT_VERSION = "market-impact-v8"
 
 
 class ImpactAnalysisError(ValueError):
@@ -59,7 +60,22 @@ must also occur verbatim in source text. No invented companies, prices,
 percentages, consensus surprises, or supporting documents.
 For non-VERIFIED events use HIGH uncertainty only. Explain uncertainty,
 especially for reported corporate events, geopolitical claims, and forecasts.
-No investment advice or trading orders. If evidence is thin, return [].
+A source report, economic summary, or claim about economic strength is NOT
+itself a market-impact analysis. For EACH impact, the rationale must connect:
+(1) the precise reported source fact; (2) an EXPLICIT, conditional transmission
+mechanism into the named market/sector (for example a change in investor
+earnings expectations, valuation discount rates, costs, demand, or cash flows);
+(3) why that mechanism could influence market/sector pricing or exposure;
+and (4) what is unknown, including verification, market expectations and
+whether the news was priced in. Describe the transmission as a hypothetical
+scenario, NEVER as another observed fact.
+Do NOT extrapolate a GLOBAL/BROAD_MARKET trend from one report about business
+fundamentals. A claim that performance 'may indicate economic strength' alone
+is generic commentary, not a market mechanism.
+Use drivers only for mechanisms actually justified as conditional in rationale;
+drivers may be [] and MUST NOT be fabricated just to populate the field.
+If you cannot connect specific source facts to a defensible market-facing
+transmission, return exactly {"impacts": []}. No investment advice or trading orders.
 """
 
 
@@ -73,6 +89,8 @@ def event_specific_instructions(event: EventInput) -> str:
             "Never promote an unverified news report into a confirmed fact. "
             "If evidence is insufficient, return exactly {\"impacts\": []}. "
             "Only quote exact evidence; do not invent companies, figures or sources. "
+            "A macroeconomic summary without a market transmission channel is "
+            "NOT an impact hypothesis; in that case return an empty impacts array. "
             "Return just a JSON object without any Markdown."
         )
     return (
@@ -191,6 +209,11 @@ def validate_result(event: EventInput, result: ImpactResult) -> ImpactResult:
             raise ImpactAnalysisError("ENTITY_MISMATCH", "Impact mentions entities absent from the original event")
         if event.status != "VERIFIED" and impact.uncertainty != "HIGH":
             raise ImpactAnalysisError("UNCERTAINTY_MISMATCH", "Unverified events require HIGH uncertainty")
+        mechanism_code = mechanism_quality_code(impact.sector, impact.rationale)
+        if mechanism_code:
+            raise ImpactAnalysisError(
+                mechanism_code, "Broad-market rationale contains no explicit market transmission"
+            )
     return result
 
 
@@ -411,7 +434,9 @@ class OpenAICompatibleProvider:
                     "Every quote must be verbatim from the provided evidence. "
                     "For UNVERIFIED events uncertainty must remain HIGH. "
                     "If a sourced explanation is impossible, return an empty impacts array. "
-                    "Never fabricate or pad rationale. JSON only."
+                    "Never fabricate or pad rationale. A generic summary of "
+                    "economic strength without explicit market transmission is not "
+                    "a market hypothesis; return an empty impacts array if needed. JSON only."
                 )
                 payload["messages"] = [
                     *payload["messages"],

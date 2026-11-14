@@ -55,6 +55,10 @@ def database(db: Path) -> None:
                (2, 'gemma2:latest', 'market-impact-v7', 'now', 'NO_HYPOTHESIS')"""
         )
         conn.execute(
+            """INSERT INTO impact_runs VALUES
+               (2, 'gemma2:latest', 'market-impact-v8', 'now', 'NO_HYPOTHESIS')"""
+        )
+        conn.execute(
             """INSERT INTO impact_errors VALUES
                (1, 'gemma2:latest', 'market-impact-v7',
                 'RATIONALE_INCOMPLETE', 'now', 1)"""
@@ -64,7 +68,7 @@ def database(db: Path) -> None:
 def test_diverse_fresh_candidates_avoid_failed_and_completed(tmp_path: Path) -> None:
     db = tmp_path / "sample.sqlite3"
     database(db)
-    report = pilot_candidates(db, model_id="gemma2:latest")
+    report = pilot_candidates(db, model_id="gemma2:latest", prompt_version="market-impact-v7")
     assert [r["event_id"] for r in report["candidates"]] == [3, 4, 7]
     assert report["eligible_events"] == 5
     assert report["already_checkpointed_events"] == 1
