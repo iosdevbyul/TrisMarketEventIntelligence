@@ -41,14 +41,18 @@ def _default_runner(argv: list[str]) -> subprocess.CompletedProcess[str]:
 def _service_state(
     label: str, *, uid: int, runner: CommandRunner,
 ) -> str:
-    # Launchctl's exit 113 convention is not a stable product contract.
-    # A nonzero result could be missing OR a permissions/runtime failure:
-    # do not assume that an unsuccessful print proves an unloaded agent.
+    # Only recognize the explicit 'Could not find service' diagnostic.
+    # Other nonzero exits may be permission/runtime errors, not absence.
     try:
         result = runner(["launchctl", "print", f"gui/{uid}/{label}"])
     except (OSError, subprocess.TimeoutExpired):
         return "UNKNOWN"
-    return "LOADED" if result.returncode == 0 else "UNKNOWN"
+    if result.returncode == 0:
+        return "LOADED"
+    message = result.stderr + "\n" + result.stdout
+    if "Could not find service" in message and label in message:
+        return "NOT_LOADED"
+    return "UNKNOWN"
 
 
 def audit_launchagent_cutover(
