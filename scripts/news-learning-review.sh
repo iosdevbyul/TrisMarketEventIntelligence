@@ -10,6 +10,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] evaluate --cohort FILE --review HUMAN_REVIEW_JSON --predictions MODEL_JSON --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] holdout --cohort FILE [--review HUMAN_REVIEW_JSON] --train-end ISO --validation-end ISO --embargo-hours N --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] test-usage --ledger FILE --init|--audit|--reserve PURPOSE ..."
+  echo "  bash scripts/news-learning-review.sh [--update] near-duplicates --cohort FILE --holdout FILE --output FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
