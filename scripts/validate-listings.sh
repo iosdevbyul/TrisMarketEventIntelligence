@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 update=0
 materialize=0
 integrated=0
+v3_fresh=0
 params=()
 reentry_args=()
 bundle_set=0
@@ -23,6 +24,8 @@ for arg in "$@"; do
     materialize=1
   elif [[ "$arg" == "--integrated-new-news" ]]; then
     integrated=1
+  elif [[ "$arg" == "--v3-fresh-only" ]]; then
+    v3_fresh=1
   else
     params+=("$arg")
   fi
@@ -32,6 +35,10 @@ for arg in "$@"; do
     --output-dir) output_set=1 ;;
   esac
 done
+if [[ "$v3_fresh" -eq 1 && ( "$integrated" -ne 1 || "$materialize" -eq 1 ) ]]; then
+  echo "[listing-validation] v3 needs --integrated-new-news, without materialize" >&2
+  exit 2
+fi
 if [[ "$integrated" -eq 1 && "$materialize" -eq 1 ]]; then
   echo "[listing-validation] Choose only one write workflow" >&2
   exit 2
@@ -52,6 +59,9 @@ if [[ "$materialize" -eq 1 ]]; then
 fi
 if [[ "$integrated" -eq 1 ]]; then
   module="tris_market_event_intelligence.integrated_pipeline_cli"
+fi
+if [[ "$v3_fresh" -eq 1 ]]; then
+  params+=(--enable-v3-for-new-articles)
 fi
 runner=()
 if command -v python >/dev/null 2>&1 && \
