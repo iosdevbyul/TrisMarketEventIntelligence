@@ -9,6 +9,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] score --cohort FILE --score HUMAN_REVIEW_JSON --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] evaluate --cohort FILE --review HUMAN_REVIEW_JSON --predictions MODEL_JSON --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] holdout --cohort FILE [--review HUMAN_REVIEW_JSON] --train-end ISO --validation-end ISO --embargo-hours N --output FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] test-usage --ledger FILE --init|--audit|--reserve PURPOSE ..."
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -43,6 +44,9 @@ case "$action" in
     ;;
   holdout)
     module="tris_market_event_intelligence.news_holdout_plan_cli"
+    ;;
+  test-usage)
+    module="tris_market_event_intelligence.news_test_usage_ledger_cli"
     ;;
   *)
     usage >&2
