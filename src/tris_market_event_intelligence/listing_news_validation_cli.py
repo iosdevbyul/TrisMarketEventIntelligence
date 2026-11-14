@@ -20,6 +20,8 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--review-ledger", type=Path)
     parser.add_argument("--max-pages", type=int, default=16)
+    parser.add_argument("--post-snapshot-only", action="store_true",
+                        help="Inspect only events received on or after listing capture")
     args = parser.parse_args()
     try:
         result = validate_existing_listing_news(
@@ -27,6 +29,7 @@ def main() -> None:
             args.output_dir.expanduser(),
             ledger=args.review_ledger.expanduser() if args.review_ledger else None,
             max_pages=args.max_pages,
+            post_snapshot_only=args.post_snapshot_only,
         )
     except ValueError as exc:
         reason = str(exc).replace("\n", " ").replace("\r", " ")[:180]
