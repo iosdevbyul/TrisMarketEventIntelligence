@@ -1,10 +1,10 @@
 # TrisMarketEventIntelligence
 
-An independent, local-first service for collecting financial news, verifying economic events, and publishing structured market-impact analyses to consumers including DonghakStockVision.
+An independent, local-first service for collecting financial news, verifying economic events, and publishing **news-driven direction, pressure, uncertainty and evidence** to consumers such as DonghakStockVision. **Stock prices, stock-return predictions and portfolio decisions belong exclusively to DonghakStockVision.**
 
 ## Principles
 
-- Keep financial event ingestion and analysis independent from the consumers.
+- Keep financial event ingestion and news-only impact analysis independent from consumers.\n- TrisMarketEventIntelligence estimates whether a news event exerts positive, negative or mixed pressure and how strongly; it does **not** predict stock returns, targets or prices.\n- DonghakStockVision owns price collection, market forecasts, and any calibration of news pressure against realized returns.
 - Store original source provenance and separate observed facts from AI hypotheses.
 - Record publication, detection and processing times separately to avoid look-ahead bias.
 - Treat event IDs as durable, deduplicated delivery cursors.
@@ -33,10 +33,12 @@ Optional settings: `MARKET_EVENT_HOST` (loopback-only) and `MARKET_EVENT_PORT` (
 1. **Foundation:** installable package, CI, isolated FastAPI health endpoint.
 2. **Collector:** official-source adapters, source preservation, SQLite idempotency and retry.
 3. **Event verification:** differentiate confirmed decisions from forecasts or commentary.
-4. **Impact analysis:** explicit evidence, hypotheses, uncertainty and model-provider adapter.
+4. **News pressure analysis:** conditional direction, qualitative strength, evidence, uncertainty and model-provider adapter; no price predictions.
 5. **Event API:** versioned event schema and cursor-based consumer polling.
 6. **Mac operations:** launchd, observability, reboot and failure recovery.
 7. **DonghakStockVision integration:** consume verified events without rewriting existing KRX pipelines.
 8. **v1.0 verification:** live-source end-to-end, historical leakage checks and release criteria.
 
 No real-world news collection or AI analysis is implemented in the foundation phase. The health endpoint alone is not a production-readiness signal.
+
+## Project responsibility boundary (Stage 3 revised)\n\nSee [docs/news-impact-ownership.md](docs/news-impact-ownership.md) for the ownership contract and migration notes. The first additive `news_impact_signal_v1` schema accepts directional strength (`LOW`, `MODERATE`, `HIGH`, or `UNASSESSED`), an optional **news pressure index from 0 to 100, not a price percentage**, and provenance. Existing `market-impact-v8` records are adapted with `UNASSESSED` rather than inventing a strength score. Producing genuinely evidence-supported strength estimates is a separate model upgrade and evaluation task. Legacy minute-price study utilities remain for compatibility but are excluded from this module's future product scope.\n
