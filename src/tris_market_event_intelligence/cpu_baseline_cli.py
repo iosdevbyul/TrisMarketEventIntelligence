@@ -12,10 +12,10 @@ def evaluate_report(path: Path) -> dict[str, object]:
     with path.open(encoding="utf-8") as handle:
         source = json.load(handle)
     if not isinstance(source, dict):
-        raise ValueError("Expected a JSON object")
+        raise TypeError("Expected a JSON object")
     dataset = source.get("walkforward_dataset", source)
     if not isinstance(dataset, dict):
-        raise ValueError("Missing walk-forward dataset")
+        raise TypeError("Missing walk-forward dataset")
     return evaluate_empirical_baseline(dataset)
 
 
