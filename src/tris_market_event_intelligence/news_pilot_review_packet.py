@@ -9,10 +9,10 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from tris_market_event_intelligence.news_pilot_review_audit import NewsPilotReviewAuditor
 from tris_market_event_intelligence.news_pilot_checklist_ledger import (
     validate_checklist_row,
 )
+from tris_market_event_intelligence.news_pilot_review_audit import NewsPilotReviewAuditor
 from tris_market_event_intelligence.news_pilot_review_ledger import NewsPilotReviewLedger
 
 
