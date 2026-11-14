@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.collector import NewsStore, utc_now
@@ -68,6 +68,50 @@ class EventProcessor:
                 );
                 """
             )
+
+    def activate_v3_rollout(self) -> tuple[datetime, int, bool]:
+        """Pin activation time and existing article high-water mark once.
+
+        The returned immutable fence is never inferred from historical news
+        or the listing snapshot. A separate operator opt-in is mandatory.
+        """
+        self.initialize()
+        with self.store.connect() as db:
+            with db:
+                db.execute(
+                    """CREATE TABLE IF NOT EXISTS event_extractor_rollout (
+                        extractor_version TEXT PRIMARY KEY,
+                        activated_at TEXT NOT NULL,
+                        article_id_floor INTEGER NOT NULL CHECK(article_id_floor >= 0)
+                    )"""
+                )
+                activated = datetime.now(UTC)
+                floor = int(db.execute(
+                    "SELECT COALESCE(MAX(id), 0) FROM articles"
+                ).fetchone()[0])
+                inserted = db.execute(
+                    """INSERT OR IGNORE INTO event_extractor_rollout
+                       (extractor_version, activated_at, article_id_floor)
+                       VALUES (?, ?, ?)""",
+                    (V3_PRODUCTION_VERSION, activated.isoformat(), floor),
+                ).rowcount
+                row = db.execute(
+                    """SELECT activated_at, article_id_floor
+                       FROM event_extractor_rollout
+                       WHERE extractor_version = ?""",
+                    (V3_PRODUCTION_VERSION,),
+                ).fetchone()
+        if row is None:
+            raise ValueError("Missing v3 rollout fence")
+        try:
+            cutoff = datetime.fromisoformat(row[0])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid v3 rollout timestamp") from exc
+        if cutoff.utcoffset() is None or cutoff > datetime.now(UTC):
+            raise ValueError("Invalid v3 rollout cutoff")
+        if not isinstance(row[1], int) or row[1] < 0 or row[1] > floor:
+            raise ValueError("Invalid v3 rollout article floor")
+        return cutoff.astimezone(UTC), row[1], bool(inserted)
 
     def process_pending(
         self, batch_size: int = 1000, *,
