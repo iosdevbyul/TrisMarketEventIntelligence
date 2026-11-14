@@ -10,7 +10,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from tris_market_event_intelligence.event_ticker_screen import source_identity
+from tris_market_event_intelligence.story_index import canonical_url
 from tris_market_event_intelligence.news_importance_review import _cohort, _instant
 
 
@@ -61,9 +61,7 @@ def plan_news_holdout(
             keys = [("story", str(story))]
         else:
             keys = []
-        identity = source_identity(item["sourceUrl"])
-        if identity is None:
-            raise ValueError("Cannot normalize source article identity")
+        identity = canonical_url(item["sourceUrl"])
         keys.extend((("url", identity), ("text", item["textSha256"])))
         for key in keys:
             if key in identities:
