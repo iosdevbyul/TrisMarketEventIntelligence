@@ -111,6 +111,59 @@ def test_snapshot_only_never_backdates_news_links(tmp_path: Path) -> None:
     assert older["items"][0]["status"] == "FUTURE_REGISTRY_EVIDENCE"
 
 
+
+def test_real_nyse_footer_seven_columns_is_valid_but_stock_rows_are_strict(
+    tmp_path: Path,
+) -> None:
+    # The real NasdaqTrader otherlisted.txt footer has only six pipes,
+    # even though its header and security records have eight columns.
+    actual_footer = OTHER.replace(
+        "File Creation Time: 111420261500|||||||",
+        "File Creation Time: 1113202621:31||||||",
+    )
+    m = manifest(
+        tmp_path,
+        source(tmp_path / "otherlisted.txt", actual_footer, kind="NYSE_DIRECTORY"),
+    )
+    report, rows = preview_listing_snapshot(m)
+    assert report["issuer_rows"] == 1
+    assert [(row["market"], row["symbol"]) for row in rows] == [("XNYS", "IBM")]
+
+    # Do NOT silently tolerate a similarly short ordinary stock record.
+    broken = actual_footer.replace(
+        "IBM|International Business Machines Corporation - Common Stock|N|IBM|N|100|N|IBM",
+        "IBM|International Business Machines Corporation - Common Stock|N|IBM|N|100|N",
+    )
+    m = manifest(tmp_path, source(
+        tmp_path / "otherlisted.txt", broken, kind="NYSE_DIRECTORY",
+    ))
+    with pytest.raises(ValueError, match="Malformed snapshot row"):
+        preview_listing_snapshot(m)
+
+
+def test_bad_nyse_footer_position_or_data_rejected(tmp_path: Path) -> None:
+    actual_footer = OTHER.replace(
+        "File Creation Time: 111420261500|||||||",
+        "File Creation Time: 1113202621:31||||||",
+    )
+    for bad in (
+        actual_footer.replace(
+            "File Creation Time: 1113202621:31",
+            "File Creation Time: UNVERIFIED",
+        ),
+        actual_footer + "TEST|Test Issuer - Common Stock|N|TEST|N|100|N|TEST\\n",
+        actual_footer.replace(
+            "File Creation Time: 1113202621:31||||||",
+            "File Creation Time: 1113202621:31|WRONG|||||",
+        ),
+    ):
+        m = manifest(tmp_path, source(
+            tmp_path / "otherlisted.txt", bad, kind="NYSE_DIRECTORY",
+        ))
+        with pytest.raises(ValueError):
+            preview_listing_snapshot(m)
+
+
 def test_invalid_hash_and_malformed_source_rejected(tmp_path: Path) -> None:
     entry = source(tmp_path / "nasdaqlisted.txt", NASDAQ, kind="NASDAQ_DIRECTORY")
     m = manifest(tmp_path, entry)
