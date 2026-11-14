@@ -83,7 +83,7 @@ def test_local_gemma_returns_conditional_news_pressure_not_stock_target() -> Non
     assert signal.market_prices_used is False
     assert signal.predicts_stock_return is False
     assert signal.predicts_stock_price is False
-    assert signal.price_prediction_owned_by == "DonghakStockVision"
+    assert signal.price_prediction_owned_by == "DonghakStockVision"\n    assessment = signal.evidence_assessment\n    assert assessment is not None\n    assert assessment.reported_fact == impact().evidence_excerpt\n    assert assessment.conditional_mechanism == impact().rationale\n    assert assessment.strength_basis == "HEURISTIC_UNCALIBRATED"\n    assert assessment.fact_status == "VERIFIED"
 
 
 @pytest.mark.parametrize("reply", [
@@ -184,3 +184,52 @@ def test_valid_unassessed_with_unsupported_quote_is_still_rejected() -> None:
             event(), impact(), generated_at="2026-11-15T01:00:00+00:00",
         )
     assert exc.value.code == "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE"
+
+
+def test_unverified_service_outage_shows_verification_gaps(
+) -> None:
+    source = EventInput(
+        69, "SERVICE_INCIDENT", "UNVERIFIED", None, None,
+        "A Microsoft outage is affecting services including Teams, Outlook and AI software Copilot.",
+        "bbc", "https://example.org/news/outage",
+        "2026-11-15T00:00:00+00:00", "REPORTED",
+    )
+    hypothesis = Impact(
+        market="GLOBAL", sector="TECH", direction="NEGATIVE",
+        horizon="SHORT_TERM",
+        rationale=(
+            "If the reported outage persists, service disruption may increase "
+            "business costs, but effects on users and earnings are not confirmed."
+        ),
+        evidence_excerpt="A Microsoft outage is affecting services including Teams, Outlook and AI software Copilot.",
+        uncertainty="HIGH", drivers=["service disruption"],
+    )
+    result = provider(model_reply(
+        grade="MODERATE", score=55,
+        excerpt=hypothesis.evidence_excerpt,
+    )).analyze(source, hypothesis, generated_at="2026-11-15T01:00:00+00:00")
+    assess = result.evidence_assessment
+    assert assess is not None
+    assert assess.fact_status == "UNVERIFIED"
+    assert assess.reported_fact == hypothesis.evidence_excerpt
+    assert assess.conditional_mechanism == hypothesis.rationale
+    assert "CONFIRM_OUTAGE_DURATION" in assess.verification_needed
+    assert "CONFIRM_AFFECTED_USER_SCOPE" in assess.verification_needed
+    assert "CONFIRM_SERVICE_RECOVERY_STATUS" in assess.verification_needed
+    assert "CONFIRM_MATERIAL_BUSINESS_IMPACT" in assess.verification_needed
+    assert result.intensity == "MODERATE"
+    assert result.intensity_score == 55
+    with pytest.raises(ImpactAnalysisError) as exc:
+        provider(model_reply(
+            grade="HIGH", score=85, excerpt=hypothesis.evidence_excerpt,
+        )).analyze(source, hypothesis, generated_at="2026-11-15T01:00:00+00:00")
+    assert exc.value.code == "NEWS_HIGH_INTENSITY_REQUIRES_VERIFICATION"
+
+
+def test_unassessed_signal_separates_facts_and_uncalibrated_strength() -> None:
+    signal = provider(model_reply(
+        "UNASSESSED", None, None,
+        reason="Magnitude cannot be assessed from the available announcement.",
+    )).analyze(event(), impact(), generated_at="2026-11-15T01:00:00+00:00")
+    assert signal.evidence_assessment is not None
+    assert signal.evidence_assessment.strength_basis == "NOT_ASSESSED"
