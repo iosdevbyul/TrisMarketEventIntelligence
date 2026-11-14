@@ -161,3 +161,37 @@ def test_report_input_feature_times_use_exchange_local_zone() -> None:
         [shifted], [link], [result], cutoff=CUTOFF,
     )
     assert dataset["samples"][0]["features"]["hour_of_day"] == 10
+
+
+def test_earliest_duplicate_is_selected_independent_of_input_order() -> None:
+    stamp = datetime(2026, 11, 16, 10, tzinfo=NY)
+    first = item(1, stamp, url="https://example.org/a")
+    later = item(2, stamp + timedelta(minutes=2), url="https://example.org/a?utm_source=feed")
+    dataset = split([later, first])
+    assert dataset["counts"]["DUPLICATE_SOURCE"] == 5
+    assert {sample["event_id"] for sample in dataset["samples"]} == {1}
+
+
+def test_forged_result_entry_after_publication_is_rejected() -> None:
+    event, link, result = item(1, datetime(2026, 11, 16, 10, tzinfo=NY))
+    forged = IntradayResult(
+        result.event_id, result.market, result.symbol, result.benchmark_symbol,
+        (datetime.fromisoformat(result.entry_at) - timedelta(minutes=1)).isoformat(),
+        result.status, result.latency_seconds, result.labels,
+    )
+    with pytest.raises(ValueError, match="Entry timestamp"):
+        build_walkforward_dataset([event], [link], [forged], cutoff=CUTOFF)
+
+
+def test_completed_nan_target_is_not_a_valid_training_sample() -> None:
+    event, link, result = item(1, datetime(2026, 11, 16, 10, tzinfo=NY))
+    altered = IntradayLabel(
+        1, result.labels[0].exit_at, 0.1, 0.0, float("nan"), "COMPLETED",
+    )
+    forged = IntradayResult(
+        result.event_id, result.market, result.symbol, result.benchmark_symbol,
+        result.entry_at, "PARTIAL", result.latency_seconds,
+        (altered, *result.labels[1:]),
+    )
+    with pytest.raises(ValueError, match="Nonfinite target"):
+        build_walkforward_dataset([event], [link], [forged], cutoff=CUTOFF)
