@@ -206,7 +206,13 @@ class NewsStore:
         etag: str | None,
         last_modified: str | None,
     ) -> int:
-        """Atomically persist evidence, articles and successful fetch checkpoint."""
+        """Atomically persist evidence, articles and successful fetch checkpoint.
+
+        A changing RSS GUID cannot create another article for the same
+        source and exact URL. Keep historical duplicates and original captures
+        untouched; URL equality is deliberately exact, not a risky guess at
+        semantic equivalence across tracking links or publishers.
+        """
         inserted = 0
         with self.connect() as db:
             capture_id = None
@@ -228,10 +234,15 @@ class NewsStore:
                         INSERT OR IGNORE INTO articles
                         (source, external_id, url, title, summary, published_at,
                          detected_at, capture_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        SELECT ?, ?, ?, ?, ?, ?, ?, ?
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM articles
+                            WHERE source = ? AND url = ?
+                        )
                         """,
                         (a.source, a.external_id, a.url, a.title, a.summary,
-                         a.published_at, a.detected_at, capture_id),
+                         a.published_at, a.detected_at, capture_id,
+                         a.source, a.url),
                     )
                     inserted += cursor.rowcount
             db.execute(
