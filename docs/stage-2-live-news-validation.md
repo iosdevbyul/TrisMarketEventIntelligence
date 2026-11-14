@@ -147,3 +147,50 @@ Any older duplicate articles and associated event IDs remain immutable.
 A current successful polling checkpoint does not prove complete news
 coverage, the 15-minute scheduler is active, or historical market impact.
 The real data counts must be checked on the owner's Mac after deployment.
+
+
+## Stage 2-E: opt-in post-snapshot event materialization
+
+The prior pipeline audit identified a real integration distinction: the
+ordinary scheduled RSS collection cycle records claims and story groups,
+but the separate integrated pipeline performs economic event extraction.
+A successful collection cycle is **not** proof of new economic event IDs.
+
+The existing Mac validation script now supports **explicit** bounded
+materialization of previously stored articles received after the issuer
+snapshot:
+
+```bash
+bash scripts/validate-listings.sh --update --materialize-new-events
+```
+
+This deliberately **writes** to the existing local `news.sqlite3`:
+it may append `economic_events`, `event_metadata` and
+`extraction_runs` records for at most **500 previously unprocessed
+post-snapshot articles** per invocation. This is not the original
+read-only validation mode. It retains all old articles, old event IDs
+and review state. It never replays old news by backdating listing
+evidence, and it does not approve issuer relationships.
+
+The execution obtains the same `.pipeline.lock` used by the
+integrated collector, verifies the actual listing manifest and
+source-file digests, restricts article `detected_at` to the observation
+window, performs existing rule-based event extraction only, and then
+runs the existing **read-only post-snapshot ticker review validation**.
+Its JSON result distinguishes articles processed, events created,
+and name-matched review candidates. Repeating the command is
+checkpoint-idempotent; hitting the 500-article cap explicitly signals
+that more backlog may exist.
+
+The mode does **not** make RSS network requests, invoke Gemma/Ollama,
+start launchd, alter the collector schedule or claim historical
+listing coverage. It is intentionally **manual**, not another hidden
+scheduler. The separate existing command remains fully read-only:
+
+```bash
+bash scripts/validate-listings.sh --post-snapshot-only
+```
+
+Operators should inspect the explicit `event_extraction` counts and
+`validation_summary` in the private output folder rather than
+interpreting a successful fetch as successful event materialization.
