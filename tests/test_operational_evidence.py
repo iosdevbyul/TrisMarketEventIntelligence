@@ -90,7 +90,7 @@ def test_all_metrics_in_single_report_with_read_only_db(tmp_path: Path) -> None:
     assert result["missing_headline_recall_measured"] is False
     assert result["four_stage_product_complete"] is False
     assert set(result["checks"]) == {
-        "news_latency", "event_lifecycle", "recent_freshness", "source_health",
+        "news_latency", "event_lifecycle", "recent_freshness", "source_health",\n        "gemma_timing",
     }
     assert result["checks"]["event_lifecycle"]["data"]["model_checkpoints"] == 1
     assert result["checks"]["event_lifecycle"]["data"]["sources"][0][
@@ -109,7 +109,7 @@ def test_missing_db_not_misreported_as_zero_events(tmp_path: Path) -> None:
     result = build_operational_evidence(path, as_of=NOW, sources=(SOURCE,))
     assert result["status"] == "UNVERIFIED"
     assert set(result["blocked_checks"]) == {
-        "news_latency", "event_lifecycle", "source_health", "recent_freshness",
+        "news_latency", "event_lifecycle", "source_health", "recent_freshness",\n        "gemma_timing",
         "exchange_sessions",
     }
     assert result["checks"]["news_latency"] == {
