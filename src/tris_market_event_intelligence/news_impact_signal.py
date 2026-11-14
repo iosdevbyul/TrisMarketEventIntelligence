@@ -56,7 +56,17 @@ class NewsImpactSignal(BaseModel):
             raise ValueError("Unassessed signal cannot have a strength score")
         if self.intensity != "UNASSESSED" and self.intensity_score is None:
             raise ValueError("Assessed signal requires an explicit intensity score")
-        if self.evidence_assessment is not None:\n            assessment = self.evidence_assessment\n            if assessment.reported_fact != self.evidence_excerpt:\n                raise ValueError("Reported fact must equal validated event excerpt")\n            expected = (\n                "NOT_ASSESSED" if self.intensity == "UNASSESSED"\n                else "HEURISTIC_UNCALIBRATED"\n            )\n            if assessment.strength_basis != expected:\n                raise ValueError("Strength basis conflicts with intensity")\n        if self.direction == "UNCERTAIN" and self.intensity != "UNASSESSED":
+        if self.evidence_assessment is not None:
+            assessment = self.evidence_assessment
+            if assessment.reported_fact != self.evidence_excerpt:
+                raise ValueError("Reported fact must equal validated event excerpt")
+            expected = (
+                "NOT_ASSESSED" if self.intensity == "UNASSESSED"
+                else "HEURISTIC_UNCALIBRATED"
+            )
+            if assessment.strength_basis != expected:
+                raise ValueError("Strength basis conflicts with intensity")
+        if self.direction == "UNCERTAIN" and self.intensity != "UNASSESSED":
             raise ValueError("Uncertain direction cannot assert directional strength")
         return self
 
