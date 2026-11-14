@@ -9,12 +9,18 @@ update=0
 materialize=0
 integrated=0
 params=()
+reentry_args=()
 bundle_set=0
 news_set=0
 output_set=0
 for arg in "$@"; do
   if [[ "$arg" == "--update" ]]; then
     update=1
+  else
+    reentry_args+=("$arg")
+  fi
+  if [[ "$arg" == "--update" ]]; then
+    :
   elif [[ "$arg" == "--materialize-new-events" ]]; then
     materialize=1
   elif [[ "$arg" == "--integrated-new-news" ]]; then
@@ -34,6 +40,10 @@ if [[ "$integrated" -eq 1 && "$materialize" -eq 1 ]]; then
 fi
 if [[ "$update" -eq 1 ]]; then
   bash scripts/verify.sh --update
+  # Bash continues executing the OLD parsed script after git pull. Re-enter
+  # the freshly updated file with the original argument order, minus --update.
+  # exec prevents a recursive update and preserves the final exit status.
+  exec bash scripts/validate-listings.sh "${reentry_args[@]}"
 fi
 
 module="tris_market_event_intelligence.listing_news_validation_cli"
