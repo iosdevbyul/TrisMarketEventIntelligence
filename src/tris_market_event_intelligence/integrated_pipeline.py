@@ -217,6 +217,7 @@ def run_integrated_pass(
                         "alias_hints": review["diagnostic_alias_mentions"],
                         "has_more_events": review["has_more_events"],
                         "news_stage_transitions": review["news_stage_transitions"],
+                        "news_classification_evidence": review["news_classification_evidence"],
                         "automatic_approvals": 0,
                         "human_review_required": True,
                         "historical_listing_verified": False,
