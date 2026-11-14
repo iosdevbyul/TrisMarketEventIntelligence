@@ -72,3 +72,28 @@ alone does not establish empirical calibration or real-world accuracy.
   trade executions, or return-forecast accuracy.
 - Independent empirical calibration must occur on the price-model
   side using genuine observations and temporal holdouts.
+
+
+## Opt-in Gemma 2 news-pressure assessment (next milestone)
+
+`GemmaNewsPressureProvider` is an **additional, opt-in** second-stage
+native Ollama provider. It accepts an eligible `EventInput` and an
+existing evidence-validated `Impact`, then asks the locally configured
+Gemma model to grade the conditional **news transmission strength**
+as `LOW`, `MODERATE`, `HIGH`, or `UNASSESSED`. The system prompt
+explicitly prohibits stock prices, percentage returns, targets and
+market consensus. An assessment must cite an exact substring from the
+underlying event's source evidence; strength index and category must
+agree (1–33 LOW, 34–66 MODERATE, 67–100 HIGH). This 0–100 **heuristic
+news-pressure index** is subjective and **not calibrated** to equity
+returns. When the direction is uncertain the provider skips a second
+model call and produces `UNASSESSED` with no index.
+
+For backward compatibility this PR does **not** enable the model in
+the existing 15-minute LaunchAgent, alter `market-impact-v8`, change
+the impact_runs checkpoint keys, rewrite the SQLite schema, or alter
+existing consumer API contracts. Its behavior is testable with an
+injected HTTP client; live Gemma 2 quality and inference speed on the
+Mac remain unverified. Next: controlled pilot, persisted strength
+records, then an additive versioned API. Until that validation, no
+new pressure values are advertised as operational model output.
