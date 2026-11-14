@@ -187,6 +187,16 @@ The Gemma checkpoint does **not** prove first usable inference, publisher
 breaking time or real-time KR/US coverage.
 See `docs/stage-1-news-to-gemma-lifecycle-latency.md`.
 
+## Stage 1: Naver/GDELT first-response receipt measurements
+
+The Naver and GDELT discovery adapters now timestamp first receipt
+after successful HTTP response rather than at request start, and persist
+per-query success, failure and duration to the existing fetch-attempts
+table. The existing latency audit can report all news source categories.
+The GDELT `seendate` is an index-seen timestamp, **not independently
+authenticated original publisher breaking time**. See
+`docs/stage-1-discovery-first-receipt.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
