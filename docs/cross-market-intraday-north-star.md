@@ -276,6 +276,17 @@ no real tickers are auto-approved, no database is mutated and no
 learning labels are created. See
 `docs/stage-2-reviewed-ticker-proposals.md`.
 
+## Stage 2: explicit post-hoc ticker candidate review
+
+A separate `market-event-ticker-review` read-only command now accepts
+operator decisions explicitly bound to the SHA-256 of a previously
+generated ticker proposal JSON. Duplicate, unknown or tampered
+decisions fail closed. An approved match remains a **post-hoc research
+association**, not news-time available evidence or a training link.
+No SQLite changes, news service changes, model calls or approved
+EventTickerLink exports occur. See
+`docs/stage-2-manual-ticker-review.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
