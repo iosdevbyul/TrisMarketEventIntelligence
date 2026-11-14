@@ -242,6 +242,17 @@ reported as unavailable, never as zero latency or verified success.
 Actual Mac runtime verification is **still outstanding**.
 See `docs/stage-1-operational-evidence-packet.md`.
 
+## Stage 1: measured local Gemma queue versus actual provider latency
+
+The analysis processor now appends timing records for real model calls,
+including failures, and separates extraction→model-queue delay,
+provider wall time, and result-validation/checkpoint overhead.
+The read-only `market-event-operational-evidence` report exposes
+these breakdowns by source. Pre-instrumentation historical analysis
+checkpoints are **not** reinterpreted as actual Ollama inference
+duration, and no first-token latency or live-market success is claimed.
+See `docs/stage-1-gemma-runtime-attribution.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
