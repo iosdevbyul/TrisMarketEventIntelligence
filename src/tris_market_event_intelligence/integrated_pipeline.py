@@ -114,13 +114,13 @@ def run_integrated_pass(
         raise ValueError("Ticker review requires both listing bundle and output folder")
     if listing_bundle is not None and (enable_local_analysis or model is not None):
         raise ValueError("Ticker review pass must not invoke a local model")
+    if enable_v3_cutover_catchup and enable_v3_for_new_articles:
+        raise ValueError("Select only one v3 extraction operating mode")
     if enable_v3_for_new_articles and (
         listing_bundle is None or review_output_root is None
         or model is not None or enable_local_analysis
     ):
         raise ValueError("Fresh v3 requires pinned listings and no local model")
-    if enable_v3_cutover_catchup and enable_v3_for_new_articles:
-        raise ValueError("Select only one v3 extraction operating mode")
     if enable_v3_cutover_catchup and (
         listing_bundle is None or review_output_root is None
         or model is not None or enable_local_analysis
