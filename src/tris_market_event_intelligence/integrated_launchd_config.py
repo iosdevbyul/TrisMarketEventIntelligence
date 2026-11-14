@@ -34,8 +34,8 @@ def integrated_launchd_configuration(
         raise ValueError("Interval must be 300..86400 seconds")
     if any(not path.is_absolute() for path in (python_path, db_path, status_path)):
         raise ValueError("All paths must be absolute")
-    if any(path.is_symlink() for path in (python_path, db_path, status_path)):
-        raise ValueError("Symlinked executable, DB or status paths are not supported")
+    if any(path.is_symlink() for path in (db_path, status_path)):
+        raise ValueError("Symlinked DB or status paths are not supported")
     if not sources or len(set(sources)) != len(sources) or set(sources) - set(OPERATIONAL_SOURCES):
         raise ValueError("Select unique existing operational RSS source IDs")
     if enable_local_analysis:
@@ -85,7 +85,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         config = integrated_launchd_configuration(
-            Path(sys.executable).absolute(),
+            Path(sys.executable).resolve(),
             db_path=args.db.expanduser().absolute(),
             status_path=args.status.expanduser().absolute(),
             interval_seconds=args.interval,
