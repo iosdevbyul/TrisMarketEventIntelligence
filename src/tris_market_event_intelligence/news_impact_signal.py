@@ -11,6 +11,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class NewsEvidenceAssessment(BaseModel):
+    """Explicit epistemic separation; not independent claim verification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reported_fact: str = Field(min_length=8, max_length=1000)
+    conditional_mechanism: str = Field(min_length=10, max_length=2000)
+    verification_needed: tuple[str, ...] = Field(default=(), max_length=8)
+    fact_status: Literal["VERIFIED", "UNVERIFIED", "CANDIDATE"]
+    strength_basis: Literal["HEURISTIC_UNCALIBRATED", "NOT_ASSESSED"]
+
+
 class NewsImpactSignal(BaseModel):
     """Strict downstream contract, separate from stock-price forecasting."""
 
@@ -31,6 +43,7 @@ class NewsImpactSignal(BaseModel):
     model_id: str = Field(min_length=1, max_length=120)
     prompt_version: str = Field(min_length=1, max_length=80)
     generated_at: str = Field(min_length=10, max_length=64)
+    evidence_assessment: NewsEvidenceAssessment | None = None
     price_prediction_owned_by: Literal["DonghakStockVision"] = "DonghakStockVision"
     market_prices_used: Literal[False] = False
     predicts_stock_return: Literal[False] = False
@@ -43,7 +56,7 @@ class NewsImpactSignal(BaseModel):
             raise ValueError("Unassessed signal cannot have a strength score")
         if self.intensity != "UNASSESSED" and self.intensity_score is None:
             raise ValueError("Assessed signal requires an explicit intensity score")
-        if self.direction == "UNCERTAIN" and self.intensity != "UNASSESSED":
+        if self.evidence_assessment is not None:\n            assessment = self.evidence_assessment\n            if assessment.reported_fact != self.evidence_excerpt:\n                raise ValueError("Reported fact must equal validated event excerpt")\n            expected = (\n                "NOT_ASSESSED" if self.intensity == "UNASSESSED"\n                else "HEURISTIC_UNCALIBRATED"\n            )\n            if assessment.strength_basis != expected:\n                raise ValueError("Strength basis conflicts with intensity")\n        if self.direction == "UNCERTAIN" and self.intensity != "UNASSESSED":
             raise ValueError("Uncertain direction cannot assert directional strength")
         return self
 
