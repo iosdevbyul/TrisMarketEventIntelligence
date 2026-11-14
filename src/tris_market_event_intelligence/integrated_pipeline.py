@@ -184,6 +184,8 @@ def run_integrated_pass(
                     report["status"] = "degraded"
                 if report["analysis"]["deferred"]:
                     report["status"] = "degraded"
+                if report["analysis"].get("already_running"):
+                    report["status"] = "blocked"
         except (OSError, ValueError, TypeError, sqlite3.Error) as exc:
             report["status"] = "failed"
             report["error_code"] = type(exc).__name__

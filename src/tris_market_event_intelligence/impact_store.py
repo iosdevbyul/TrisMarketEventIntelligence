@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -30,6 +32,7 @@ class AnalysisStats:
     impacts: int
     failed: int
     deferred: int = 0
+    already_running: bool = False
 
 
 class ImpactProcessor:
@@ -101,6 +104,50 @@ class ImpactProcessor:
                 )
 
     def process_pending(
+        self, batch_size: int = 100, *, event_ids: tuple[int, ...] | None = None,
+        live_freshness_seconds: int | None = None,
+        source_success_seconds: int = 900,
+    ) -> AnalysisStats:
+        """Hold a nonblocking per-DB lock across selection, model calls and checkpoint.
+
+        This prevents separate CLI/process invocations from invoking the same
+        uncheckpointed event concurrently, without touching main launchd.
+        """
+        if not 1 <= batch_size <= 1000:
+            raise ValueError("batch_size must be 1..1000")
+        if event_ids is not None and (
+            not 1 <= len(event_ids) <= 3
+            or len(set(event_ids)) != len(event_ids)
+            or any(type(i) is not int or i < 1 for i in event_ids)
+            or batch_size < len(event_ids)
+        ):
+            raise ValueError("Select 1..3 unique positive event IDs within batch size")
+        if live_freshness_seconds is not None and (
+            type(live_freshness_seconds) is not int or live_freshness_seconds < 1
+        ):
+            raise ValueError("live_freshness_seconds must be positive")
+        if type(source_success_seconds) is not int or source_success_seconds < 1:
+            raise ValueError("source_success_seconds must be positive")
+        if not self.provider.model_id.strip():
+            raise ValueError("Provider requires a stable model_id")
+        path = self.store.store.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = path.with_name(path.name + ".analysis.lock")
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        with os.fdopen(fd, "w") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return AnalysisStats(
+                    processed=0, impacts=0, failed=0, already_running=True,
+                )
+            return self._process_pending_unlocked(
+                batch_size, event_ids=event_ids,
+                live_freshness_seconds=live_freshness_seconds,
+                source_success_seconds=source_success_seconds,
+            )
+
+    def _process_pending_unlocked(
         self, batch_size: int = 100, *, event_ids: tuple[int, ...] | None = None,
         live_freshness_seconds: int | None = None,
         source_success_seconds: int = 900,
@@ -182,10 +229,14 @@ class ImpactProcessor:
             if not is_eligible(event):
                 continue
             if live_freshness_seconds is not None:
+                # Every model request gets its OWN current-clock check.
+                # An earlier slow Ollama call must not cause a later, now-stale
+                # event to be sent based on a frozen batch-start timestamp.
+                current = datetime.now(UTC)
                 decision = assess_live_event(
                     detected_at=event.detected_at,
                     published_at=record[12],
-                    now=live_now,
+                    now=current,
                     max_received_age_seconds=live_freshness_seconds,
                     max_declared_publish_age_seconds=live_freshness_seconds,
                 )
