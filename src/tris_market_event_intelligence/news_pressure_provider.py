@@ -20,7 +20,10 @@ from tris_market_event_intelligence.impact import (
     is_eligible,
     validate_result,
 )
-from tris_market_event_intelligence.news_impact_signal import (\n    NewsEvidenceAssessment,\n    NewsImpactSignal,\n)
+from tris_market_event_intelligence.news_impact_signal import (
+    NewsEvidenceAssessment,
+    NewsImpactSignal,
+)
 
 NEWS_PRESSURE_PROMPT_VERSION = "news-pressure-intensity-v1"
 
