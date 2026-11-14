@@ -18,10 +18,10 @@ from tris_market_event_intelligence.event_ticker_proposals import (
     propose_event_tickers,
 )
 from tris_market_event_intelligence.issuer_alias_diagnostics import inspect_alias_coverage
-from tris_market_event_intelligence.news_pipeline_evidence import inspect_news_pipeline
 from tris_market_event_intelligence.listing_snapshot_import import (
     preview_listing_snapshot,
 )
+from tris_market_event_intelligence.news_pipeline_evidence import inspect_news_pipeline
 from tris_market_event_intelligence.ticker_review_queue import (
     reconcile_ticker_review_queue,
 )
