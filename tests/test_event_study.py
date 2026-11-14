@@ -1,5 +1,5 @@
 """Event study historical labels must never use the publication day's closing price."""
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -91,7 +91,7 @@ def test_duplicate_events_horizons_and_missing_benchmark_rejected() -> None:
     with pytest.raises(ValueError, match="Horizons must be unique"):
         study_events([e], observations(), benchmark_symbol="KOSPI", horizons=(1, 1))
     assert study_events([e], observations(), benchmark_symbol="NONE")[0].status == (
-        "NO_ENTRY_SESSION"
+        "BENCHMARK_ENTRY_MISSING"
     )
 
 
@@ -125,3 +125,28 @@ def test_csv_adapter_rejects_missing_or_invalid_inputs(tmp_path: Path) -> None:
     prices_csv.write_text("symbol,date,adjusted_close\n", encoding="utf-8")
     with pytest.raises(ValueError, match="missing required headers"):
         study_csv(event_csv, prices_csv, benchmark="KOSPI")
+
+
+def test_missing_benchmark_exit_does_not_shift_horizon() -> None:
+    event = PublishedEvent(8, "005930", datetime(2026, 11, 13, tzinfo=KST))
+    closes = [
+        bar for bar in observations()
+        if not (bar.symbol == "KOSPI" and bar.day == date(2026, 11, 17))
+    ]
+    item = study_events(
+        [event], closes, benchmark_symbol="KOSPI", horizons=(1, 2),
+    )[0]
+    assert item.labels[0].status == "BENCHMARK_EXIT_MISSING"
+    assert item.labels[0].exit_day == "2026-11-17"
+    assert item.labels[0].excess_return is None
+    assert item.labels[1].status == "COMPLETED"
+    assert item.labels[1].exit_day == "2026-11-18"
+
+
+def test_utc_publication_converted_to_exchange_local_date() -> None:
+    # Nov 13 16:30 UTC is already Nov 14 in KST, thus Monday is first entry.
+    event = PublishedEvent(10, "005930", datetime(2026, 11, 13, 16, 30, tzinfo=UTC))
+    item = study_events(
+        [event], observations(), benchmark_symbol="KOSPI", horizons=(1,),
+    )[0]
+    assert item.entry_day == "2026-11-16"
