@@ -49,6 +49,9 @@ case "$action" in
   test-usage)
     module="tris_market_event_intelligence.news_test_usage_ledger_cli"
     ;;
+  near-duplicates)
+    module="tris_market_event_intelligence.news_near_duplicate_audit_cli"
+    ;;
   *)
     usage >&2
     exit 2
