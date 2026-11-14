@@ -107,6 +107,7 @@ def test_pilot_model_output_and_rejection_are_isolated(tmp_path: Path) -> None:
     report = run_pressure_pilot(path, analyzer=analyzer)
     assert analyzer.calls == 1
     assert report["status"] == "PILOT_OUTPUT_VALIDATED"
+    assert report["model_call_attempts"] == 1
     assert report["items"][0]["intensity_score"] == 45
     assert report["items"][0]["signal"]["predicts_stock_return"] is False
     assert report["live_model_quality_verified"] is False
@@ -141,3 +142,41 @@ def test_out_of_scope_event_and_invalid_pilot_limit_are_rejected(
     assert select_pressure_pilot(path) == []
     with pytest.raises(ValueError, match="1..3"):
         select_pressure_pilot(path, limit=4)
+
+
+def test_uncertain_only_existing_impact_does_not_claim_gemma_was_invoked(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "news.sqlite3"
+    fixture_db(path)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE market_impacts SET direction='UNCERTAIN' WHERE id=1")
+        before = tuple(db.iterdump())
+    analyzer = MockPressure()
+    report = run_pressure_pilot(path, analyzer=analyzer)
+    assert analyzer.calls == 0
+    assert report["status"] == "NO_MODEL_CALLS_UNCERTAIN_DIRECTION"
+    assert report["model_call_attempts"] == 0
+    assert report["model_calls_skipped_uncertain"] == 1
+    assert report["items"][0]["status"] == "SKIPPED_UNCERTAIN_DIRECTION"
+    assert report["items"][0]["model_call_attempted"] is False
+    assert report["items"][0]["intensity"] == "UNASSESSED"
+    with sqlite3.connect(path) as db:
+        assert tuple(db.iterdump()) == before
+
+
+def test_directional_candidate_is_prioritized_over_uncertain_one(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "news.sqlite3"
+    fixture_db(path)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE market_impacts SET direction='UNCERTAIN' WHERE id=1")
+        db.execute(
+            "INSERT INTO market_impacts SELECT 2, event_id, market, sector, "
+            "'NEGATIVE', horizon, rationale, evidence_excerpt, uncertainty, "
+            "drivers_json, entities_json FROM market_impacts WHERE id=1"
+        )
+    selected = select_pressure_pilot(path, limit=1)
+    assert selected[0][0] == 2
+    assert selected[0][2].direction == "NEGATIVE"
