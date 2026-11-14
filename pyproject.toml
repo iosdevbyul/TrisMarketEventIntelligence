@@ -57,6 +57,7 @@ market-event-cutover-preflight = "tris_market_event_intelligence.integrated_cuto
 market-event-ticker-proposals = "tris_market_event_intelligence.event_ticker_proposals_cli:main"
 market-event-ticker-review = "tris_market_event_intelligence.ticker_human_review_cli:main"
 market-event-ticker-ledger = "tris_market_event_intelligence.ticker_review_ledger_cli:main"
+market-event-ticker-ledger-audit = "tris_market_event_intelligence.ticker_review_ledger_audit_cli:main"
 market-event-listing-snapshot = "tris_market_event_intelligence.listing_snapshot_import_cli:main"
 market-event-ops-readiness = "tris_market_event_intelligence.session_operations_cli:main"
 market-event-operational-evidence = "tris_market_event_intelligence.operational_evidence_cli:main"
