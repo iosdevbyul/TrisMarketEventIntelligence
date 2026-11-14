@@ -83,7 +83,13 @@ def test_local_gemma_returns_conditional_news_pressure_not_stock_target() -> Non
     assert signal.market_prices_used is False
     assert signal.predicts_stock_return is False
     assert signal.predicts_stock_price is False
-    assert signal.price_prediction_owned_by == "DonghakStockVision"\n    assessment = signal.evidence_assessment\n    assert assessment is not None\n    assert assessment.reported_fact == impact().evidence_excerpt\n    assert assessment.conditional_mechanism == impact().rationale\n    assert assessment.strength_basis == "HEURISTIC_UNCALIBRATED"\n    assert assessment.fact_status == "VERIFIED"
+    assert signal.price_prediction_owned_by == "DonghakStockVision"
+    assessment = signal.evidence_assessment
+    assert assessment is not None
+    assert assessment.reported_fact == impact().evidence_excerpt
+    assert assessment.conditional_mechanism == impact().rationale
+    assert assessment.strength_basis == "HEURISTIC_UNCALIBRATED"
+    assert assessment.fact_status == "VERIFIED"
 
 
 @pytest.mark.parametrize("reply", [
