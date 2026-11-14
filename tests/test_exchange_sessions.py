@@ -93,7 +93,7 @@ def test_trading_halt_blocks_label_even_if_vendor_has_forward_filled_bars() -> N
         "XNYS", "NVDA", stamp("XNYS", 27, 12, 58),
         stamp("XNYS", 27, 12, 59),
     )
-    calendar = SessionCalendar([session()], [halt])
+    calendar = SessionCalendar([session(close_hour=16)], [halt])
     row = study_intraday([news()], minutes(), calendar=calendar)[0]
     assert row.labels[0].status == "COMPLETED"
     assert row.labels[1].status == "TRADING_HALTED_WINDOW"
@@ -102,7 +102,7 @@ def test_trading_halt_blocks_label_even_if_vendor_has_forward_filled_bars() -> N
 
 def test_halt_at_entry_blocks_every_horizon() -> None:
     calendar = SessionCalendar([
-        session(),
+        session(close_hour=16),
     ], [TradingHalt(
         "XNYS", "NVDA", stamp("XNYS", 27, 12, 56), stamp("XNYS", 27, 12, 58),
     )])
@@ -113,7 +113,7 @@ def test_halt_at_entry_blocks_every_horizon() -> None:
 
 def test_halt_on_benchmark_also_blocks_labels() -> None:
     calendar = SessionCalendar([
-        session(),
+        session(close_hour=16),
     ], [TradingHalt(
         "XNYS", "SPY", stamp("XNYS", 27, 12, 58), stamp("XNYS", 27, 12, 59),
     )])
