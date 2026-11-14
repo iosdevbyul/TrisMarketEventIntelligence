@@ -49,6 +49,7 @@ market-event-cpu-baseline = "tris_market_event_intelligence.cpu_baseline_cli:mai
 market-event-minute-source-audit = "tris_market_event_intelligence.market_minute_source_cli:main"
 market-event-news-latency = "tris_market_event_intelligence.news_latency_cli:main"
 market-event-lifecycle-latency = "tris_market_event_intelligence.event_lifecycle_latency_cli:main"
+market-event-source-health = "tris_market_event_intelligence.source_health_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
