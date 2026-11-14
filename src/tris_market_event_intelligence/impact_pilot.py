@@ -5,6 +5,11 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from tris_market_event_intelligence.impact_candidate_hygiene import (
+    article_key,
+    evidence_key,
+    insufficient_evidence,
+)
 from tris_market_event_intelligence.impact import (
     PROMPT_VERSION,
     EventInput,
@@ -41,8 +46,8 @@ def pilot_candidates(
                     "quality_verified": False,
                 }
             rows = db.execute(
-                """SELECT e.id, e.classification, e.status, m.claim_kind,
-                          r.outcome, err.last_error,
+                """SELECT e.id, e.classification, e.status, e.source_url,
+                          e.evidence, m.claim_kind, r.outcome, err.last_error,
                           EXISTS (
                               SELECT 1 FROM impact_runs old
                               WHERE old.event_id=e.id AND old.model_id=?
@@ -67,6 +72,21 @@ def pilot_candidates(
     failed: list[dict[str, object]] = []
     eligible = 0
     completed = 0
+    skipped_duplicate = 0
+    skipped_sparse = 0
+    # Prevent selecting a second copy of a previously attempted article,
+    # irrespective of its source feed or prompt version.
+    used_urls: set[str] = set()
+    used_evidence: set[str] = set()
+    if new_only:
+        for record in rows:
+            if record["previously_completed_other_version"] or record["previously_failed_any_version"]:
+                url = article_key(record["source_url"])
+                evidence = evidence_key(record["evidence"])
+                if url:
+                    used_urls.add(url)
+                if evidence:
+                    used_evidence.add(evidence)
     for row in rows:
         event = EventInput(
             event_id=row["id"], classification=row["classification"],
@@ -84,6 +104,19 @@ def pilot_candidates(
             row["previously_completed_other_version"] or row["previously_failed_any_version"]
         ):
             continue
+        if new_only:
+            url = article_key(row["source_url"])
+            evidence = evidence_key(row["evidence"])
+            if url and url in used_urls or evidence and evidence in used_evidence:
+                skipped_duplicate += 1
+                continue
+            if insufficient_evidence(row["classification"], row["evidence"]):
+                skipped_sparse += 1
+                continue
+            if url:
+                used_urls.add(url)
+            if evidence:
+                used_evidence.add(evidence)
         item = {
             "event_id": row["id"], "classification": row["classification"],
             "status": row["status"],
@@ -116,6 +149,8 @@ def pilot_candidates(
         "already_checkpointed_events": completed,
         "fresh_pending_events": len(fresh),
         "pending_with_prior_failure": len(failed),
+        "skipped_duplicate_sources": skipped_duplicate,
+        "skipped_sparse_evidence": skipped_sparse,
         "candidates": selected,
         "quality_verified": False,
         "note": "Read-only cohort suggestion; explicit model invocation is required",
