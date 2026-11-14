@@ -96,8 +96,12 @@ def _us_rows(raw: bytes, kind: str) -> tuple[list[tuple[str, str, str]], dict[st
         name = item["Security Name"].strip()
         # Listing files include warrants, debt, rights, units, ADRs etc.
         # Fail closed: do not assume that 'ETF=N' means common stock.
-        suffix = " - Common Stock"
-        if not name.endswith(suffix):
+        # Nasdaq uses " - Common Stock"; NYSE typically uses
+        # "Acme Inc. Common Stock" without the dash. Both are explicit
+        # common-equity suffixes in the official directory, not ETF flags.
+        suffixes = (" - Common Stock", " Common Stock")
+        suffix = next((value for value in suffixes if name.endswith(value)), None)
+        if suffix is None:
             counts["unsupported"] += 1
             continue
         candidate = name[:-len(suffix)].strip()
