@@ -10,7 +10,6 @@ import hashlib
 import io
 import json
 import re
-from datetime import datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.event_ticker_proposals import (
