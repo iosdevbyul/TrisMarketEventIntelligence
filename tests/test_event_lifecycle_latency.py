@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from tris_market_event_intelligence.event_store import EventProcessor
 from tris_market_event_intelligence.event_lifecycle_latency import audit_event_lifecycle
+from tris_market_event_intelligence.event_store import EventProcessor
 
 
 NOW = datetime(2026, 11, 18, tzinfo=UTC)
