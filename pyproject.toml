@@ -47,6 +47,7 @@ market-event-krx-readiness = "tris_market_event_intelligence.krx_snapshot_cli:ma
 market-event-intraday-study = "tris_market_event_intelligence.intraday_event_study_cli:main"
 market-event-cpu-baseline = "tris_market_event_intelligence.cpu_baseline_cli:main"
 market-event-minute-source-audit = "tris_market_event_intelligence.market_minute_source_cli:main"
+market-event-news-latency = "tris_market_event_intelligence.news_latency_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
