@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tris_market_event_intelligence.impact import Impact, ImpactResult
+from tris_market_event_intelligence.impact import Impact, ImpactAnalysisError, ImpactResult
 from tris_market_event_intelligence.news_impact_signal import NewsImpactSignal
 from tris_market_event_intelligence.news_two_stage_pilot import run_two_stage_pilot
 
@@ -147,6 +147,8 @@ def test_invalid_first_stage_source_quote_prevents_strength(
     assert second.calls == 0
     assert report["items"][0]["status"] == "REJECTED_OR_FAILED"
     assert report["items"][0]["failure_code"] == "EVIDENCE_MISMATCH"
+    assert report["items"][0]["failed_stage"] == "DIRECTION"
+    assert report["failure_code_counts"] == {"EVIDENCE_MISMATCH": 1}
 
 
 def test_preview_not_checkpointed_and_existing_processed_event_excluded(
@@ -186,3 +188,31 @@ def test_missing_database_and_one_sided_model_configuration_fail(
         run_two_stage_pilot(
             path, direction_model=Direction(), strength_model=None,
         )
+
+
+def test_strength_quote_failure_is_reported_without_raw_model_content(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "real.sqlite3"
+    db_seed(path)
+
+    class RejectingStrength(Strength):
+        def analyze(self, event, impact, *, generated_at):
+            self.calls += 1
+            raise ImpactAnalysisError(
+                "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE", "Sensitive model excerpt"
+            )
+
+    first, second = Direction(), RejectingStrength()
+    report = run_two_stage_pilot(
+        path, direction_model=first, strength_model=second,
+    )
+    assert first.calls == second.calls == 1
+    item = report["items"][0]
+    assert item["status"] == "REJECTED_OR_FAILED"
+    assert item["failed_stage"] == "INTENSITY"
+    assert item["failure_code"] == "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE"
+    assert report["failure_code_counts"] == {
+        "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE": 1,
+    }
+    assert "Sensitive model excerpt" not in str(report)
