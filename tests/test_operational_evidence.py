@@ -184,3 +184,84 @@ def test_malformed_event_audit_does_not_destroy_other_evidence(tmp_path: Path) -
     assert report["checks"]["event_lifecycle"]["status"] == "UNAVAILABLE"
     assert report["checks"]["recent_freshness"]["status"] == "OBSERVED"
     assert report["checks"]["source_health"]["status"] == "OBSERVED"
+
+
+def test_mixed_timezone_offsets_are_filtered_by_true_utc_window(tmp_path: Path) -> None:
+    """SQLite ISO string comparisons may omit qualifying mixed-offset dates."""
+    path = tmp_path / "mixed.db"
+    store = NewsStore(path)
+    store.initialize()
+    store.save(
+        SOURCE, "https://example.org/feed", b"<a/>",
+        [Article(
+            SOURCE, "offset", "https://example.org/offset", "sample",
+            None, "2026-11-16T23:55:00+09:00",
+            "2026-11-17T00:00:00+09:00",
+        )],
+        NOW.isoformat(), None, None,
+    )
+    store.record_attempt(
+        SOURCE, observed(-2), observed(-1), observed(-1), 1.0, "ok", 1, 1,
+    )
+    result = build_operational_evidence(
+        path, as_of=NOW, sources=(SOURCE,),
+        window_hours=1, calendar=calendar(), markets=("XNAS",),
+    )
+    recent = result["checks"]["recent_freshness"]["data"]
+    assert recent["total_articles"] == 1
+    assert recent["sources"][0]["articles"] == 1
+
+
+def test_stage_one_review_exposes_missing_real_runtime_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "sample.db"
+    seed(path)
+    result = build_operational_evidence(
+        path, as_of=NOW, sources=(SOURCE,), calendar=calendar(),
+        markets=("XNAS",),
+    )
+    review = result["stage_1_evidence_review"]
+    assert review["status"] == "NOT_VERIFIED"
+    assert review["reviewed_local_evidence_present"] is True
+    assert review["first_core_stage_complete"] is False
+    assert "INDEPENDENT_NEWS_COVERAGE_UNVERIFIED" in review["blockers"]
+
+
+def test_stage_one_review_identifies_no_recent_news_or_checkpoints(tmp_path: Path) -> None:
+    path = tmp_path / "empty.db"
+    store = NewsStore(path)
+    store.initialize()
+    with store.connect() as db:
+        db.executescript(
+            """CREATE TABLE IF NOT EXISTS economic_events (
+                id INTEGER PRIMARY KEY,
+                article_id INTEGER NOT NULL,
+                source TEXT NOT NULL, detected_at TEXT NOT NULL,
+                processed_at TEXT NOT NULL, published_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS impact_runs (
+                event_id INTEGER NOT NULL,
+                model_id TEXT NOT NULL,
+                prompt_version TEXT NOT NULL, processed_at TEXT NOT NULL,
+                outcome TEXT NOT NULL
+            );"""
+        )
+    report = build_operational_evidence(
+        path, as_of=NOW, sources=(SOURCE,), calendar=calendar(),
+        markets=("XNAS",),
+    )
+    reasons = report["stage_1_evidence_review"]["blockers"]
+    assert "NO_RECENT_ARTICLES:" + SOURCE in reasons
+    assert "NO_MODEL_CHECKPOINTS" in reasons
+    assert "SOURCE_HEALTH_NOT_READY" in reasons
+
+
+def test_stage_one_review_missing_db_never_invents_observations(tmp_path: Path) -> None:
+    result = build_operational_evidence(
+        tmp_path / "nonexistent.db", as_of=NOW,
+        sources=(SOURCE,),
+    )
+    review = result["stage_1_evidence_review"]
+    assert "RECENT_NEWS_DATA_UNAVAILABLE" in review["blockers"]
+    assert "MODEL_TIMELINE_UNAVAILABLE" in review["blockers"]
+    assert "REVIEWED_SESSION_CALENDAR_NOT_SUPPLIED" in review["blockers"]
+    assert review["reviewed_local_evidence_present"] is False
