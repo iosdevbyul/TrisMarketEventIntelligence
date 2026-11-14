@@ -21,14 +21,14 @@ NASDAQ = (
     b"MSFT|Microsoft Corporation - Common Stock|Q|N|N|100|N|N\n"
     b"ETFX|Some Fund|Q|N|N|100|Y|N\n"
     b"File Creation Time: 1115202612:00|||||||\n"
-).encode()
+)
 OTHER = (
     b"ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|"
     b"NASDAQ Symbol\n"
     b"ACME|Acme Corporation - Common Stock|N|ACME|N|100|N|ACME\n"
     b"OTHER|Another Corp - Common Stock|P|OTHER|N|100|N|OTHER\n"
     b"File Creation Time: 1115202612:00|||||||\n"
-).encode()
+)
 KRX = (
     "market,symbol,company_name,security_type\n"
     "XKRX,005930,삼성전자,COMMON\n"
