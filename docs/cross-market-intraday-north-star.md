@@ -167,6 +167,15 @@ OHLCV API into an intraday feed, nor does it prove an independently
 authenticated 1-minute US or Korean source. Details and blockers:
 `docs/stage-4-cross-market-minute-source-contract.md`.
 
+## Stage 1: HTTP-response first-seen time, not request-start time
+
+The RSS collector now timestamps each article's first known receipt
+**after** the HTTP response arrives, records individual fetch-attempt
+durations/outcomes, and offers a read-only source latency audit. The
+feed-declared publication date is not independently authenticated;
+RSS feed coverage and market-breaking-news freshness are not yet
+verified. See `docs/stage-1-news-first-seen-latency.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
