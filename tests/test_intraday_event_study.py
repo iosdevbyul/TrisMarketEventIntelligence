@@ -213,3 +213,20 @@ def test_intraday_csv_with_two_sides_and_no_source_mutation(tmp_path: Path) -> N
     assert report["causal_effect_estimated"] is False
     assert report["items"][0]["labels"][0]["excess_return"] == pytest.approx(0.005)
     assert originals == (news.read_bytes(), prices.read_bytes())
+
+
+def test_news_at_exact_open_uses_first_completed_minute() -> None:
+    for market, open_hour, open_minute in [
+        ("XKRX", 9, 0), ("XNYS", 9, 30), ("XNAS", 9, 30),
+    ]:
+        opening = instant(market, open_hour, open_minute)
+        e = IntradayNews(2, market, "STOCK", "BENCHMARK", opening, opening, opening)
+        entry = opening + timedelta(minutes=1)
+        rows = [
+            MinuteClose(market, symbol, entry + timedelta(minutes=i), 100.0 + i)
+            for symbol in ("STOCK", "BENCHMARK") for i in range(2)
+        ]
+        item = study_intraday([e], rows, horizons=(1,))[0]
+        assert item.status == "COMPLETED"
+        assert item.entry_at == entry.astimezone(UTC).isoformat()
+        assert item.labels[0].excess_return == pytest.approx(0.0)
