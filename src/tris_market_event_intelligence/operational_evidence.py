@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from tris_market_event_intelligence.event_lifecycle_latency import audit_event_lifecycle
+from tris_market_event_intelligence.gemma_timing import audit_gemma_timing
 from tris_market_event_intelligence.news_latency import audit_news_latency
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES
 from tris_market_event_intelligence.session_operations import (
@@ -24,7 +25,7 @@ from tris_market_event_intelligence.source_health import (
 )
 
 MAX_RECENT_ARTICLES = 50_000
-EXPECTED_METRICS = ("news_latency", "event_lifecycle", "source_health", "recent_freshness")
+EXPECTED_METRICS = ("news_latency", "event_lifecycle", "source_health", "recent_freshness", "gemma_timing")
 
 
 def _recent_freshness(
@@ -120,6 +121,7 @@ def build_operational_evidence(
         actions = {
             "news_latency": lambda: audit_news_latency(db_path, as_of=now),
             "event_lifecycle": lambda: audit_event_lifecycle(db_path, as_of=now),
+            "gemma_timing": lambda: audit_gemma_timing(db_path, as_of=now),
             "recent_freshness": lambda: _recent_freshness(
                 db_path, now=now, since=since, sources=sources,
                 freshness_seconds=freshness_minutes * 60,
@@ -134,7 +136,7 @@ def build_operational_evidence(
                 }
                 errors.append(name)
     else:
-        for name in ("news_latency", "event_lifecycle", "recent_freshness"):
+        for name in ("news_latency", "event_lifecycle", "recent_freshness", "gemma_timing"):
             checks[name] = {"status": "UNAVAILABLE", "reason": "DATABASE_NOT_AVAILABLE"}
             errors.append(name)
     try:
@@ -215,6 +217,9 @@ def _evidence_acceptance(
         blockers.append("MODEL_TIMELINE_UNAVAILABLE")
     elif not event["data"]["model_checkpoints"]:
         blockers.append("NO_MODEL_CHECKPOINTS")
+    timed = checks.get("gemma_timing", {})
+    if timed.get("status") != "OBSERVED" or timed["data"]["timed_attempts"] == 0:
+        blockers.append("GEMMA_PROVIDER_DURATION_NOT_YET_OBSERVED")
     if not calendar_supplied:
         blockers.append("REVIEWED_SESSION_CALENDAR_NOT_SUPPLIED")
     if checks.get("source_health", {}).get("status") != "OBSERVED":
