@@ -138,7 +138,7 @@ def test_tmux_base_python_falls_back_to_named_conda_env(tmp_path: Path) -> None:
 
 
 def test_no_environment_has_actionable_message(tmp_path: Path) -> None:
-    script, env, calls = _setup(tmp_path)
+    script, env, _calls = _setup(tmp_path)
     bin_path = tmp_path / "fakebin"
     python = bin_path / "python"
     python.write_text(
