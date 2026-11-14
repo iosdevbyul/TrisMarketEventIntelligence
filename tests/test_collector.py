@@ -104,7 +104,7 @@ def test_atomic_save_rolls_back_on_invalid_article(tmp_path: Path) -> None:
     with pytest.raises(sqlite3.IntegrityError, match="bad article"):
         store.save(
             "fed", "https://example.org/feed", RSS,
-            [parse_rss("fed", RSS, "now")[0], replace(parse_rss("fed", RSS, "now")[0], external_id="bad")],
+            [parse_rss("fed", RSS, "now")[0], replace(parse_rss("fed", RSS, "now")[0], external_id="bad", url="https://example.org/bad")],
             "now", None, None,
         )
     assert store.stats() == {"articles": 0, "captures": 0}
@@ -118,3 +118,38 @@ def test_atom_support() -> None:
     articles = parse_rss("bok", atom, "2026-11-14T02:00:00Z")
     assert len(articles) == 1
     assert articles[0].published_at == "2026-11-14T01:00:00+00:00"
+
+
+def test_rotating_rss_guids_for_same_source_url_are_idempotent(tmp_path: Path) -> None:
+    store = NewsStore(tmp_path / "news.sqlite3")
+    initial = parse_rss("bbc_business", RSS, "2026-11-14T00:00:00+00:00")[0]
+    second = replace(
+        initial, external_id="new-guid-from-next-poll",
+        title="Rewritten title from the same URL",
+        detected_at="2026-11-15T02:00:00+00:00",
+    )
+    store.initialize()
+    assert store.save("bbc_business", "https://example.org/rss", RSS, [initial],
+                      initial.detected_at, None, None) == 1
+    assert store.save("bbc_business", "https://example.org/rss", b"updated feed",
+                      [second], second.detected_at, None, None) == 0
+    with store.connect() as db:
+        articles = db.execute(
+            "SELECT external_id, title, detected_at FROM articles"
+        ).fetchall()
+    assert articles == [(
+        initial.external_id, initial.title, initial.detected_at,
+    )]
+    assert store.stats() == {"articles": 1, "captures": 2}
+
+
+def test_exact_url_dedup_preserves_source_boundaries(tmp_path: Path) -> None:
+    store = NewsStore(tmp_path / "news.sqlite3")
+    article = parse_rss("bbc_business", RSS, "2026-11-14T00:00:00+00:00")[0]
+    store.initialize()
+    assert store.save("bbc_business", "https://example.org/feed", RSS, [article],
+                      article.detected_at, None, None) == 1
+    distinct = replace(article, source="bbc_world")
+    assert store.save("bbc_world", "https://example.org/feed", RSS, [distinct],
+                      distinct.detected_at, None, None) == 1
+    assert store.stats()["articles"] == 2
