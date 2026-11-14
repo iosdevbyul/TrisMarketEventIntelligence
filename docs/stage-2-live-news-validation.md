@@ -434,3 +434,55 @@ cross-source same-URL duplicates, repeated execution and no-model guard.
 create newly classified economic events for future articles. Run only
 when that is intended. Stage 2-I's historic two cases remain preview
 evidence, not automatically created v3 production events.
+
+
+## Stage 2-K: durable opt-in v3 activation and scheduled-collector catch-up
+
+The operator's Stage 2-J real Mac run succeeded with
+`event_extractor_version=multi-v3`, but 0 freshly inserted articles.
+A prior 15-minute poll had already saved article 20604, illustrating
+why the manual `--v3-fresh-only` ID fence intentionally skips
+collector-first news.
+
+The safe alternative is explicit activation **from now onward**:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news --v3-cutover-catchup
+```
+
+On the first explicit invocation, while the pinned listing source and
+private report destination have been verified and the integrated
+pipeline lock is held, the service records an immutable SQLite
+`event_extractor_rollout` fence for `multi-v3`: UTC activation time
+and the greatest existing article ID. Later executions of this same
+command reuse that original fence, even when the ordinary 15-minute
+collector has already inserted articles. They process only records
+with **both** article ID above the activation fence **and** received
+timestamp on/after activation, with no extraction checkpoint from
+*any* previous version.
+
+Existing v2 records, historic 70 events and older Stage 2-I preview
+articles cannot be replayed merely by running this command. In
+particular, article 20604 already existed **before** cutover and
+remains excluded. A new unrelated article collected after cutover
+can be picked up by the next manual v3 catch-up **only if** no v2
+checkpoint was created first. If the existing scheduler processed
+it with v2 already, the v3 catch-up intentionally skips it instead
+of silently reclassifying previously analyzed source data.
+
+Operator-visible integrated JSON adds:
+`v3_cutover_catchup`, `v3_cutover_created`,
+`v3_cutover_activated_at`, `v3_cutover_article_floor`,
+`event_extractor_version=multi-v3`. During a later run
+`collection.new_articles=0` and `event_extraction.processed>0`
+can both legitimately hold: earlier scheduled collection inserted
+the articles, and the current manual invocation extracted them.
+
+This explicit option **does not** modify or add any LaunchAgent,
+change the default v2 pipeline, scrape remote article pages, activate
+Ollama or allow ticker auto-approval. `--v3-fresh-only` remains an
+independent opt-in and cannot be combined with catch-up.
+The activation fence is persistent and cannot be reset by a repeated
+invocation, so do not run this option until you intend to activate
+v3 for subsequently received news. No earlier stored article will
+receive a v3 event solely because this flag was introduced.
