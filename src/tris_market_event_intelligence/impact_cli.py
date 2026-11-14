@@ -140,7 +140,10 @@ def main() -> None:
         )
     except ValueError as exc:
         parser.error(str(exc))
-    print(json.dumps(asdict(stats)))
+    output = asdict(stats)
+    if args.live_freshness_minutes is None:
+        output.pop("deferred")  # Preserve the legacy three-field JSON CLI contract.
+    print(json.dumps(output))
 
 
 if __name__ == "__main__":
