@@ -135,10 +135,14 @@ def test_invalid_paths_or_limits_leave_database_untouched(tmp_path: Path) -> Non
     db = tmp_path / "news.sqlite3"
     store = NewsStore(db)
     store.initialize()
-    original = db.read_bytes()
+    with sqlite3.connect(db) as connection:
+        original = tuple(connection.iterdump())
     with pytest.raises(ValueError, match="batch_size"):
         materialize_post_snapshot_events(bundle, db, tmp_path / "bad", batch_size=1000)
     with pytest.raises(ValueError, match="new directory"):
         materialize_post_snapshot_events(bundle, db, tmp_path, as_of=CUTOFF)
     assert not (tmp_path / "bad").exists()
-    assert db.read_bytes() == original
+    # SQLite WAL checkpoints can change file bytes without changing a row.
+    # Compare schema and table content instead of physical page layout.
+    with sqlite3.connect(db) as connection:
+        assert tuple(connection.iterdump()) == original
