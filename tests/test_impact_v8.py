@@ -17,7 +17,6 @@ from tris_market_event_intelligence.impact import (
 )
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 
-
 SOURCE = "□ 2026년 2/4분기 외감기업의 성장성, 수익성, 안정성이 모두 개선"
 
 
