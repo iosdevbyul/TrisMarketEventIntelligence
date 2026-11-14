@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from tris_market_event_intelligence.exchange_sessions import utc
@@ -72,8 +72,8 @@ def screen_intraday_links(
     news = list(events)
     calculated = list(results)
     given = list(links)
-    if not horizons:
-        raise ValueError("Expected at least one horizon")
+    if not horizons or any(type(h) is not int or h < 1 for h in horizons):
+        raise ValueError("Expected positive minute horizons")
     by_event: dict[tuple[int, str, str], EventTickerLink] = {}
     for link in given:
         key = (link.event_id, link.market, link.symbol)
