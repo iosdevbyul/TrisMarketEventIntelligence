@@ -9,6 +9,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from tris_market_event_intelligence.impact_semantic_review import semantic_review_packet
 from tris_market_event_intelligence.news_pilot_checklist_ledger import (
     validate_checklist_row,
 )
@@ -115,6 +116,12 @@ class NewsPilotReviewPacket:
         # so a large original report does not flood a terminal or audit packet.
         before = max(0, offset - 300)
         after = min(len(evidence), offset + len(selected) + 300)
+        review_context = evidence[before:after]
+        semantic_review = semantic_review_packet(
+            source_text=review_context,
+            evidence_excerpt=selected,
+            rationale=assessment.conditional_mechanism,
+        )
         return {
             "schemaVersion": "news_pilot_review_packet_v1",
             "auditStatus": audit["status"],
@@ -125,7 +132,7 @@ class NewsPilotReviewPacket:
                 "url": url,
                 "classification": classification,
                 "factStatus": fact_status,
-                "reportedEvidenceContext": evidence[before:after],
+                "reportedEvidenceContext": review_context,
                 "contextTruncated": before > 0 or after < len(evidence),
                 "literalEvidenceQuote": selected,
             },
@@ -141,6 +148,13 @@ class NewsPilotReviewPacket:
                 "uncertainty": signal.uncertainty,
                 "strengthBasis": assessment.strength_basis,
                 "scoreIsCalibratedToReturns": False,
+            },
+            "semanticContextReview": {
+                **semantic_review,
+                "scope": "BOUNDED_ORIGINAL_SOURCE_CONTEXT",
+                "reviewTarget": "CONDITIONAL_MECHANISM",
+                "sourceContextTruncated": before > 0 or after < len(evidence),
+                "published": False,
             },
             "independentVerificationChecklist": [
                 {"check": check, "verified": False, "manualEvidence": reviewed_checks.get(check)}
