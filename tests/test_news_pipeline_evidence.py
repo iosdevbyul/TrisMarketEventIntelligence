@@ -34,7 +34,7 @@ def test_audit_existing_duplicate_provenance_without_modification(tmp_path: Path
             (2, "bbc_business", "https://example.org/story?utm_source=rss",
              "Microsoft reports outage", "2026-11-13T20:12:00+00:00"),
             (3, "bbc_world", "https://example.org/story?utm_source=other",
-             "Microsoft reports outage", "2026-11-15T00:00:00+09:00"),
+             "Microsoft reports outage", "2026-11-15T01:00:00+09:00"),
             (4, "bbc_world", "https://example.org/new",
              "New market results", "2026-11-14T18:00:00+00:00"),
         ]:
