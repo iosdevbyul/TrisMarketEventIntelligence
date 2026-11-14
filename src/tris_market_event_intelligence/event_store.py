@@ -143,9 +143,9 @@ class EventProcessor:
         created = 0
         verified = 0
         with self.store.connect() as db:
-            # v3 never replays an article already checkpointed by ANY version,
-            # and never processes articles present before this integrated run.
-            # No old v2 event receives a second derived row.
+            # v3 never replays ANY prior checkpoint, while v2 respects its
+            # own checkpoints plus completed v3 checkpoints. Rollback to the
+            # original v2 schedule must not duplicate v3 economic events.
             representative: dict[tuple[str, str], int] = {}
             if extractor_version == V3_PRODUCTION_VERSION:
                 existing = db.execute(
@@ -169,7 +169,11 @@ class EventProcessor:
                 WHERE NOT EXISTS (
                     SELECT 1 FROM extraction_runs r
                     WHERE r.article_id = a.id
-                      AND (? = ? OR r.extractor_version = ?)
+                      AND (
+                        ? = ?
+                        OR r.extractor_version = ?
+                        OR r.extractor_version = ?
+                      )
                 )
                   AND (? IS NULL OR a.id > ?)
                   AND (? IS NULL OR julianday(a.detected_at) >= julianday(?))
@@ -180,6 +184,7 @@ class EventProcessor:
                     extractor_version,
                     V3_PRODUCTION_VERSION,
                     extractor_version,
+                    V3_PRODUCTION_VERSION,
                     after_article_id,
                     after_article_id,
                     received_since.isoformat() if received_since else None,
