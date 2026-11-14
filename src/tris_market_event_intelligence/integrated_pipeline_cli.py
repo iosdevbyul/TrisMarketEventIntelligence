@@ -32,6 +32,12 @@ def main() -> None:
     parser.add_argument("--sources", default=",".join(OPERATIONAL_SOURCES))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--enable-local-analysis", action="store_true")
+    parser.add_argument("--enable-ticker-review", action="store_true",
+                        help="Explicitly capture a review-only ticker report for new news")
+    parser.add_argument("--listing-bundle", type=Path,
+                        help="Already downloaded, pinned real listings")
+    parser.add_argument("--review-output-root", type=Path,
+                        help="Existing private folder for create-only review results")
     parser.add_argument("--live-freshness-minutes", type=int, default=15)
     parser.add_argument("--source-success-minutes", type=int, default=15)
     parser.add_argument("--max-extraction", type=int, default=1000)
@@ -40,6 +46,13 @@ def main() -> None:
     parser.add_argument("--markets", default="XKRX,XNYS,XNAS",
                         help="Target exchanges with --sessions")
     args = parser.parse_args()
+    if args.enable_ticker_review:
+        if not args.listing_bundle or not args.review_output_root:
+            parser.error("--enable-ticker-review requires a listing bundle and output root")
+        if args.enable_local_analysis:
+            parser.error("Ticker review cannot activate Ollama/local analysis")
+    elif args.listing_bundle or args.review_output_root:
+        parser.error("Ticker inputs require explicit --enable-ticker-review")
     sources = tuple(s.strip() for s in args.sources.split(","))
     if not sources or len(set(sources)) != len(sources) or (
         set(sources) - set(OPERATIONAL_SOURCES)
@@ -70,6 +83,7 @@ def main() -> None:
             "model_invoked": False,
             "local_model_requested": args.enable_local_analysis,
             "background_service_installed": False,
+            "ticker_review_requested": args.enable_ticker_review,
             "session_plan": plan,
         }))
         return
@@ -109,6 +123,10 @@ def main() -> None:
         source_success_seconds=args.source_success_minutes * 60,
         max_event_extraction=args.max_extraction,
         session_calendar=calendar, target_markets=targets,
+        listing_bundle=args.listing_bundle.expanduser().absolute()
+        if args.listing_bundle else None,
+        review_output_root=args.review_output_root.expanduser().absolute()
+        if args.review_output_root else None,
     )
     print(json.dumps(report, ensure_ascii=False))
     if report["status"] not in {"healthy"}:

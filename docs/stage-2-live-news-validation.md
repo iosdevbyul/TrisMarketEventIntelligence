@@ -194,3 +194,59 @@ bash scripts/validate-listings.sh --post-snapshot-only
 Operators should inspect the explicit `event_extraction` counts and
 `validation_summary` in the private output folder rather than
 interpreting a successful fetch as successful event materialization.
+
+
+## Stage 2-F: one operator-invoked integrated RSS → ticker review pass
+
+Instead of creating another competing collector or modifying the existing
+15-minute LaunchAgent, Stage 2-F reuses the existing `run_integrated_pass`
+implementation (which already collects RSS and materializes economic events)
+and links **previously captured, digest-verified** listed issuers to its
+newly extracted news. The new mode is deliberately **not** installed in
+launchd and never enables model inference.
+
+After this PR is merged, the owner's existing script can pull, test,
+collect, extract, and generate private ticker-review artifacts in one run:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news
+```
+
+This command performs actual RSS network requests and can append **new**
+articles, extraction checkpoints, and economic events to the existing
+`news.sqlite3`. It is **not** the normal read-only audit. The opt-in
+switch is required; the legacy script and LaunchAgent defaults are
+unchanged. It requires an already-captured `observed-*` listing bundle,
+verifies the source SHA-256 and registry before requesting RSS, uses the
+same integration lock to avoid concurrent executions, and restricts
+event extraction to articles first received after that listing capture.
+There is no historical backdating or automatic human ticker approval.
+
+The integrated result adds `ticker_review` fields: exact report
+`summary_path`, `events_inspected`, `candidates`, `alias_hints`,
+`has_more_events`, and `automatic_approvals=0`. Every run emits a
+new create-only `integrated-*` private folder inside
+`~/Library/Application Support/TrisMarketEventIntelligence/listing-research/`.
+An empty candidate set is a valid result, especially when publishers
+supply no new issuer-related articles. A candidate still requires
+independent human review and cannot be used as a verified training label.
+
+The CLI refuses model inference alongside issuer review; it never calls
+Ollama for this mode. Existing `--enable-local-analysis` behavior
+outside the new option is preserved and still requires explicit
+activation. No services, secrets, market-minute feeds or scheduled
+tasks are created. The integrated RSS stage should not be invoked
+concurrently with an existing scheduler without first checking its
+operational status; the lock prevents two integrated passes, while
+the ordinary collector retains its separate lock.
+
+Read-only alternatives remain:
+`bash scripts/validate-listings.sh --update` for all existing events
+and `bash scripts/validate-listings.sh --post-snapshot-only` for newer
+events already stored. Unlike those modes, `--integrated-new-news`
+can write append-only data.
+
+**Evidence gap:** This release is CI-tested with mock RSS and source
+snapshots. Real live publisher results, actual ticker candidates,
+ongoing scheduler state and market coverage must be checked using the
+owner's Mac logs before declaring production readiness.
