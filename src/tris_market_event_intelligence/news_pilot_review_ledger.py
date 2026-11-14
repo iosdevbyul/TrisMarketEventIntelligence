@@ -6,7 +6,6 @@ the reported event externally, edits the source DB, or invokes an AI model.
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
