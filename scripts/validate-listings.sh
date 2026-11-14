@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Inspect previously captured real US/KRX listing files against local news.
-# No HTTP requests, no live SQLite writes, no inference or LaunchAgent changes.
+# Read-only by default; --materialize-new-events explicitly allows bounded event writes.
+# No HTTP, model or LaunchAgent changes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 update=0
+materialize=0
 params=()
 bundle_set=0
 news_set=0
@@ -12,6 +14,8 @@ output_set=0
 for arg in "$@"; do
   if [[ "$arg" == "--update" ]]; then
     update=1
+  elif [[ "$arg" == "--materialize-new-events" ]]; then
+    materialize=1
   else
     params+=("$arg")
   fi
@@ -26,6 +30,10 @@ if [[ "$update" -eq 1 ]]; then
 fi
 
 module="tris_market_event_intelligence.listing_news_validation_cli"
+if [[ "$materialize" -eq 1 ]]; then
+  module="tris_market_event_intelligence.post_snapshot_materialization_cli"
+  params+=(--apply)
+fi
 runner=()
 if command -v python >/dev/null 2>&1 && \
    python -c "import ${module}" >/dev/null 2>&1; then
