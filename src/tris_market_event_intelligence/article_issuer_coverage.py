@@ -49,6 +49,17 @@ def inspect_article_issuer_coverage(
         db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5,
     )) as db:
         db.execute("PRAGMA query_only=ON")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(articles)")}
+        if not {"id", "source", "url", "title", "detected_at"}.issubset(columns):
+            return {
+                "status": "UNAVAILABLE_ARTICLE_SCHEMA",
+                "missing_columns": sorted(
+                    {"id", "source", "url", "title", "detected_at"} - columns
+                ),
+                "database_modified": False,
+                "approved_links_created": 0,
+                "training_dataset_eligible": False,
+            }
         count = db.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
         if count > MAX_ARTICLES:
             return {
