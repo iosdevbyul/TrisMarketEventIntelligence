@@ -144,7 +144,7 @@ class GemmaNewsPressureProvider:
 
         # The pressure model has no price data. Reject numeric percentages in
         # its explanation rather than letting a return forecast slip through.
-        if re.search(r"\\b\\d+(?:\\.\\d+)?\\s*%", grade.reason):
+        if re.search(r"\b\d+(?:\.\d+)?\s*%", grade.reason):
             raise ImpactAnalysisError(
                 "NEWS_PRICE_FORECAST_FORBIDDEN",
                 "News intensity explanation cannot contain percentage forecasts",
