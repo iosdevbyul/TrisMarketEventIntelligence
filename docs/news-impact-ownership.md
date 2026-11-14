@@ -324,3 +324,44 @@ source text, URL, verification status or archived signal hash block decisions.
 The list command exposes a derived editorial state but always
 `published=false`. No production DB write, API exposure, scheduler change,
 automatic decision, or downstream repository access is performed.
+
+
+## Read-only audit and status-filtered research review queue
+
+The research evidence journal can be inspected without making a review
+decision or changing the production news database. After installing the
+latest package, run:
+
+```bash
+"$HOME/opt/anaconda3/envs/tris-market-event/bin/python3.11" \
+  -m tris_market_event_intelligence.news_pilot_review_audit_cli
+```
+
+Filter to a single editorial state and page over journal **row IDs**:
+
+```bash
+"$HOME/opt/anaconda3/envs/tris-market-event/bin/python3.11" \
+  -m tris_market_event_intelligence.news_pilot_review_audit_cli \
+  --status REQUIRES_HUMAN_REVIEW --after-id 0 --limit 25
+```
+
+Supported states are `REQUIRES_HUMAN_REVIEW`,
+`APPROVED_FOR_RESEARCH`, and `REJECTED`. A research approval never
+represents independently verified economic facts and never publishes a
+signal to the production API. All audit outputs include
+`published=false`, `productionDbModified=false` and
+`journalModified=false`. Counts cover the **entire** journal while the
+paginated items reflect the filter and cursor.
+
+For every entry, even when filtering or using a small page, the audit
+checks the original news evidence (SQLite read-only), the stored
+payload SHA-256, evidence SHA-256, decision-to-evidence hashes, review
+metadata and timestamp. Orphaned, altered, or structurally invalid
+decisions fail the audit without showing a misleading partial success.
+
+A deterministic local evidence digest is for **consistency checks only**:
+a person capable of editing both content and hashes can also recompute
+it. This is not cryptographic authenticity, a complete independent
+fact check, proof of real-world impact, or a release authorization.
+The 15-minute collector, all live tables and all downstream
+repositories remain unchanged.

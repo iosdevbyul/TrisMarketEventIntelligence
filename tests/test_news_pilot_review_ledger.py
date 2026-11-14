@@ -200,3 +200,140 @@ def test_live_source_path_as_journal_prohibited(tmp_path: Path) -> None:
     source, _ = seeded(tmp_path)
     with pytest.raises(ValueError, match="production"):
         NewsPilotReviewLedger(source_db=source, journal_db=source)
+
+
+def test_review_audit_reports_pending_and_approved_without_publishing(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+
+    source, journal = seeded(tmp_path)
+    auditor = NewsPilotReviewAuditor(source_db=source, journal_db=journal)
+    before = auditor.audit()
+    assert before["status"] == "LOCAL_CONSISTENCY_VERIFIED"
+    assert before["counts"]["REQUIRES_HUMAN_REVIEW"] == 1
+    assert before["counts"]["APPROVED_FOR_RESEARCH"] == 0
+    assert before["items"][0]["published"] is False
+    assert before["reportIsCryptographicallyAuthentic"] is False
+    assert before["independentSourceVerification"] is False
+    assert before["journalModified"] is False
+    assert before["productionDbModified"] is False
+    assert auditor.audit(status="REJECTED")["items"] == []
+
+    ledger = NewsPilotReviewLedger(source_db=source, journal_db=journal)
+    ledger.decide(
+        evidence_id=1, decision="APPROVED_FOR_RESEARCH",
+        reviewer="local-reviewer",
+        reason="The reported outage quote is intact; economic effects remain speculative.",
+        commit=True,
+    )
+    after = auditor.audit(status="APPROVED_FOR_RESEARCH")
+    assert after["counts"]["REQUIRES_HUMAN_REVIEW"] == 0
+    assert after["counts"]["APPROVED_FOR_RESEARCH"] == 1
+    assert after["reviewDecisions"] == 1
+    assert len(after["items"]) == 1
+    assert after["items"][0]["review_status"] == "APPROVED_FOR_RESEARCH"
+    assert after["items"][0]["reviewer"] == "local-reviewer"
+    assert after["items"][0]["published"] is False
+    assert auditor.audit(status="REQUIRES_HUMAN_REVIEW")["items"] == []
+    assert auditor.audit(after_id=1)["items"] == []
+    assert auditor.audit(after_id=1)["nextCursor"] == 1
+
+
+def test_review_audit_keeps_rejected_signals_separate(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+
+    source, journal = seeded(tmp_path)
+    NewsPilotReviewLedger(source_db=source, journal_db=journal).decide(
+        evidence_id=1, decision="REJECTED",
+        reviewer="human",
+        reason="No independent materiality or magnitude evidence was supplied.",
+        commit=True,
+    )
+    auditor = NewsPilotReviewAuditor(source_db=source, journal_db=journal)
+    report = auditor.audit(status="REJECTED")
+    assert report["counts"]["REJECTED"] == 1
+    assert len(report["items"]) == 1
+    assert report["items"][0]["review_status"] == "REJECTED"
+    assert auditor.audit(status="APPROVED_FOR_RESEARCH")["items"] == []
+
+
+@pytest.mark.parametrize("change", [
+    "decision_source_sha", "decision_signal_sha",
+    "orphan_decision", "invalid_review_reason", "invalid_reviewed_at",
+    "mutated_source", "mutated_signal",
+])
+def test_review_audit_fails_closed_on_inconsistent_history(
+    tmp_path: Path, change: str,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+
+    source, journal = seeded(tmp_path)
+    ledger = NewsPilotReviewLedger(source_db=source, journal_db=journal)
+    ledger.decide(
+        evidence_id=1, decision="APPROVED_FOR_RESEARCH",
+        reviewer="human",
+        reason="The facts are quoted but financial impact remains speculative.",
+        commit=True,
+    )
+    if change == "mutated_source":
+        with sqlite3.connect(source) as db:
+            db.execute("UPDATE economic_events SET evidence='incorrect' WHERE id=69")
+    elif change == "mutated_signal":
+        with sqlite3.connect(journal) as db:
+            db.execute(
+                "UPDATE news_pilot_evidence SET signal_json='{}' WHERE id=1"
+            )
+    else:
+        column, value = {
+            "decision_source_sha": ("source_evidence_sha256", "a" * 64),
+            "decision_signal_sha": ("signal_sha256", "b" * 64),
+            "orphan_decision": ("evidence_id", 999),
+            "invalid_review_reason": ("reason", "short"),
+            "invalid_reviewed_at": ("reviewed_at", "invalid"),
+        }[change]
+        with sqlite3.connect(journal) as db:
+            db.execute("PRAGMA foreign_keys=OFF")
+            db.execute(
+                f"UPDATE news_pilot_review_decisions SET {column}=? WHERE id=1",
+                (value,),
+            )
+    with pytest.raises(ValueError):
+        NewsPilotReviewAuditor(source_db=source, journal_db=journal).audit()
+
+
+def test_audit_cursor_validation_and_source_db_isolation(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+
+    source, journal = seeded(tmp_path)
+    auditor = NewsPilotReviewAuditor(source_db=source, journal_db=journal)
+    with sqlite3.connect(source) as db:
+        source_snapshot = tuple(db.iterdump())
+    with sqlite3.connect(journal) as db:
+        journal_snapshot = tuple(db.iterdump())
+    report = auditor.audit(after_id=0, limit=1)
+    assert report["nextCursor"] == 1
+    assert report["hasMore"] is False
+    for invalid in [
+        {"status": "PUBLISHED"},
+        {"limit": 0},
+        {"limit": 501},
+        {"after_id": -1},
+        {"after_id": True},
+    ]:
+        with pytest.raises(ValueError):
+            auditor.audit(**invalid)
+    with sqlite3.connect(source) as db:
+        assert tuple(db.iterdump()) == source_snapshot
+    with sqlite3.connect(journal) as db:
+        assert tuple(db.iterdump()) == journal_snapshot
