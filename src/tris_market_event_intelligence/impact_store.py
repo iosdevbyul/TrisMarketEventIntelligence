@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -66,6 +67,20 @@ class ImpactProcessor:
                     entities_json TEXT NOT NULL DEFAULT '[]',
                     UNIQUE(event_id, model_id, prompt_version, market, sector, horizon)
                 );
+                CREATE TABLE IF NOT EXISTS impact_attempt_timings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL REFERENCES economic_events(id),
+                    model_id TEXT NOT NULL,
+                    prompt_version TEXT NOT NULL,
+                    attempted_at TEXT NOT NULL,
+                    provider_returned_at TEXT,
+                    completed_at TEXT NOT NULL,
+                    provider_elapsed_ms REAL,
+                    processing_elapsed_ms REAL NOT NULL,
+                    outcome TEXT NOT NULL CHECK(outcome IN ('COMPLETED','NO_HYPOTHESIS','ERROR'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_impact_attempt_timings_event
+                  ON impact_attempt_timings(event_id, attempted_at);
                 CREATE TABLE IF NOT EXISTS impact_errors (
                     event_id INTEGER NOT NULL REFERENCES economic_events(id),
                     model_id TEXT NOT NULL,
@@ -180,8 +195,16 @@ class ImpactProcessor:
                     # Deferred: never call the model or checkpoint a stale event.
                     deferred += 1
                     continue
+            started_at = utc_now()
+            started_mono = time.monotonic()
+            provider_returned_at: str | None = None
+            provider_elapsed_ms: float | None = None
+            outcome = "ERROR"
             try:
-                result = validate_result(event, self.provider.analyze(event))
+                raw_result = self.provider.analyze(event)
+                provider_returned_at = utc_now()
+                provider_elapsed_ms = max(0.0, (time.monotonic() - started_mono) * 1000)
+                result = validate_result(event, raw_result)
                 keys = [(i.market, i.sector, i.horizon) for i in result.impacts]
                 if len(keys) != len(set(keys)):
                     raise ImpactAnalysisError(
@@ -216,6 +239,7 @@ class ImpactProcessor:
                     )
                 processed += 1
                 impacts += len(result.impacts)
+                outcome = "COMPLETED" if result.impacts else "NO_HYPOTHESIS"
             except (ValueError, sqlite3.Error, KeyError, IndexError, TypeError) as exc:
                 self._record_error(event.event_id, exc)
                 failed += 1
@@ -223,6 +247,25 @@ class ImpactProcessor:
                 # Isolate arbitrary pluggable provider failures; never checkpoint them.
                 self._record_error(event.event_id, exc)
                 failed += 1
+            finally:
+                # Append only, preserving precise duration even if a model
+                # produced invalid output or database checkpointing failed.
+                completed_at = utc_now()
+                with self.store.store.connect() as db:
+                    db.execute(
+                        """INSERT INTO impact_attempt_timings (
+                            event_id,model_id,prompt_version,attempted_at,
+                            provider_returned_at,completed_at,provider_elapsed_ms,
+                            processing_elapsed_ms,outcome
+                        ) VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (
+                            event.event_id, self.provider.model_id, PROMPT_VERSION,
+                            started_at, provider_returned_at, completed_at,
+                            provider_elapsed_ms,
+                            max(0.0, (time.monotonic() - started_mono) * 1000),
+                            outcome,
+                        ),
+                    )
         return AnalysisStats(processed=processed, impacts=impacts, failed=failed, deferred=deferred)
 
     def _record_error(self, event_id: int, error: Exception) -> None:
