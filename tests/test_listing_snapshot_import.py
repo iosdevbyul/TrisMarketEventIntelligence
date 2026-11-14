@@ -105,7 +105,7 @@ def test_snapshot_only_never_backdates_news_links(tmp_path: Path) -> None:
     csv_path = tmp_path / "review.csv"
     export_snapshot_registry(m, csv_path, write=True)
     issuers = load_reviewed_issuers(csv_path)
-    db = database(tmp_path / "news.db", "Microsoft reports quarterly results")
+    db = database(tmp_path / "news.db", "Microsoft Corporation reports quarterly results")
     older = propose_event_tickers(db, issuers, as_of=datetime(2026, 11, 14, 15, 5, tzinfo=UTC))
     assert older["proposals"] == 0
     assert older["items"][0]["status"] == "FUTURE_REGISTRY_EVIDENCE"
@@ -115,9 +115,11 @@ def test_invalid_hash_and_malformed_source_rejected(tmp_path: Path) -> None:
     entry = source(tmp_path / "nasdaqlisted.txt", NASDAQ, kind="NASDAQ_DIRECTORY")
     m = manifest(tmp_path, entry)
     entry["sha256"] = "0" * 64
+    manifest(tmp_path, entry)
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         preview_listing_snapshot(m)
     entry["sha256"] = hashlib.sha256(NASDAQ.encode()).hexdigest()
+    manifest(tmp_path, entry)
     (tmp_path / "nasdaqlisted.txt").write_text(NASDAQ.replace(
         "File Creation Time: 111420261500|||||||\n", "",
     ))
@@ -125,6 +127,7 @@ def test_invalid_hash_and_malformed_source_rejected(tmp_path: Path) -> None:
         preview_listing_snapshot(m)
     raw = (tmp_path / "nasdaqlisted.txt").read_bytes()
     entry["sha256"] = hashlib.sha256(raw).hexdigest()
+    manifest(tmp_path, entry)
     with pytest.raises(ValueError, match="footer"):
         preview_listing_snapshot(m)
 
