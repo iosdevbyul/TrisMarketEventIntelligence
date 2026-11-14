@@ -52,6 +52,7 @@ market-event-lifecycle-latency = "tris_market_event_intelligence.event_lifecycle
 market-event-source-health = "tris_market_event_intelligence.source_health_cli:main"
 market-event-integrated = "tris_market_event_intelligence.integrated_pipeline_cli:main"
 market-event-ops-readiness = "tris_market_event_intelligence.session_operations_cli:main"
+market-event-operational-evidence = "tris_market_event_intelligence.operational_evidence_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
