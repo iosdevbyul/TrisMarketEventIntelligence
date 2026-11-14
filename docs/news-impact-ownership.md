@@ -287,3 +287,40 @@ The API and 15-minute operational cycle are not changed. No
 automated imports, stock data, Donghak access, or production release
 occur. A distinct approved review and publish workflow must be
 implemented before a news signal can become operational.
+
+
+## Human editorial review of the isolated pilot journal (opt-in)
+
+After archiving a real pilot report into `news-pilot-review.sqlite3`,
+review the stored evidence without invoking any model:
+
+```bash
+"$HOME/opt/anaconda3/envs/tris-market-event/bin/python3.11" \
+  -m tris_market_event_intelligence.news_pilot_review_ledger_cli --list
+```
+
+Select an evidence **journal row ID**, not the source event ID (for the first
+archived signal this is normally 1). Review approval is **editorial research
+approval**, NOT independent source verification, portfolio advice, publication,
+or readiness to expose a production API. A self-declared reviewer string
+is recorded but is **not authenticated identity**.
+
+Preview an approval, then record it explicitly:
+
+```bash
+"$HOME/opt/anaconda3/envs/tris-market-event/bin/python3.11" \
+  -m tris_market_event_intelligence.news_pilot_review_ledger_cli \
+  --approve 1 --reviewer local-reviewer \
+  --reason "Source quotation checked; conditional effect and uncertainty acknowledged"
+```
+
+Add `--commit` to the same command **only after human review**.
+For unsupported hypotheses use `--reject 1` in place of `--approve 1`
+with a specific explanation. Both write to a new append-only
+`news_pilot_review_decisions` table **inside the separate research
+journal**; the original signal is not rewritten. The same decision
+is idempotent and conflicting decisions are rejected. Changes to the
+source text, URL, verification status or archived signal hash block decisions.
+The list command exposes a derived editorial state but always
+`published=false`. No production DB write, API exposure, scheduler change,
+automatic decision, or downstream repository access is performed.
