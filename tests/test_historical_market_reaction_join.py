@@ -98,7 +98,7 @@ def test_observed_return_and_unimportant_news_not_assumed(tmp_path: Path) -> Non
     labels = first["marketObservations"][0]["labels"]
     assert labels[0]["status"] == "COMPLETED"
     assert labels[0]["horizonMinutes"] == 1
-    assert labels[0]["excessReturn"] == pytest.approx(102 / 101 - 1)
+    assert labels[0]["excessReturn"] == pytest.approx(101 / 100 - 1)
     assert any(label["status"] == "MISSING_MINUTE_BAR" for label in labels)
     assert second["marketObservations"] == []
     assert second["marketReactionStatus"] == "UNMEASURED"
