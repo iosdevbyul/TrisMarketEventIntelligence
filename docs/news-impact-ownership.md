@@ -365,3 +365,32 @@ it. This is not cryptographic authenticity, a complete independent
 fact check, proof of real-world impact, or a release authorization.
 The 15-minute collector, all live tables and all downstream
 repositories remain unchanged.
+
+
+## Read-only full evidence packet for a human reviewer
+
+The audit queue is concise. To view the real source context, the quoted
+reported fact, first-stage conditional mechanism, full final model rationale,
+second-stage intensity/uncertainty, and unverified follow-up checks, use:
+
+```bash
+"$HOME/opt/anaconda3/envs/tris-market-event/bin/python3.11" \
+  -m tris_market_event_intelligence.news_pilot_review_packet_cli \
+  --evidence-id 1
+```
+
+The ID is the **journal evidence row ID**, not the upstream event ID.
+The command validates **all** journal records before displaying the selected
+packet. It rereads the source database in SQLite read-only mode and checks
+provenance; it shows a bounded section of the original event evidence
+surrounding the literal quotation rather than fetching a web article.
+Source text remains an untrusted report. Its quote check does not
+verify the underlying event happened. The independent verification
+checklist always shows `verified=false` because no external fact-check
+has been performed.
+
+The packet is read-only and shows `published=false` even when
+`APPROVED_FOR_RESEARCH`. It does not approve anything, write to
+the pilot journal or production DB, call an LLM, or interact with
+price prediction. The 0-100 intensity score is subjective news
+pressure, not a forecast of stock returns.
