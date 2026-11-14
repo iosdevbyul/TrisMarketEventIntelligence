@@ -5,12 +5,12 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from test_local_impact import insert_fixture
+
 from tris_market_event_intelligence.gemma_timing import audit_gemma_timing
 from tris_market_event_intelligence.impact import ImpactResult
 from tris_market_event_intelligence.impact_store import ImpactProcessor
 from tris_market_event_intelligence.operational_evidence import build_operational_evidence
-
-from test_local_impact import insert_fixture
 
 
 class TimedMockProvider:
