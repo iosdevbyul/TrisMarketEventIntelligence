@@ -17,6 +17,7 @@ import httpx
 
 from tris_market_event_intelligence.collector import utc_now
 from tris_market_event_intelligence.event_store import EventProcessor
+from tris_market_event_intelligence.exchange_sessions import SessionCalendar
 from tris_market_event_intelligence.impact import ImpactProvider
 from tris_market_event_intelligence.impact_store import ImpactProcessor
 from tris_market_event_intelligence.operations import (
@@ -24,7 +25,6 @@ from tris_market_event_intelligence.operations import (
     _write_status,
     run_cycle,
 )
-from tris_market_event_intelligence.exchange_sessions import SessionCalendar
 from tris_market_event_intelligence.session_operations import market_session_plan
 from tris_market_event_intelligence.source_health import audit_source_health
 
