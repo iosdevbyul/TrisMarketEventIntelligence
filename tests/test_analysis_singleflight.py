@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from test_local_impact import StubLocalModel, insert_fixture
-from test_source_health_gates import NoImpactProvider, observed, seed_event
+from test_source_health_gates import NoImpactProvider, seed_event
 
 from tris_market_event_intelligence.collector import Article
 from tris_market_event_intelligence.impact_store import ImpactProcessor
