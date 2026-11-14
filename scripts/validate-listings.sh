@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 update=0
 materialize=0
+integrated=0
 params=()
 bundle_set=0
 news_set=0
@@ -16,6 +17,8 @@ for arg in "$@"; do
     update=1
   elif [[ "$arg" == "--materialize-new-events" ]]; then
     materialize=1
+  elif [[ "$arg" == "--integrated-new-news" ]]; then
+    integrated=1
   else
     params+=("$arg")
   fi
@@ -25,6 +28,10 @@ for arg in "$@"; do
     --output-dir) output_set=1 ;;
   esac
 done
+if [[ "$integrated" -eq 1 && "$materialize" -eq 1 ]]; then
+  echo "[listing-validation] Choose only one write workflow" >&2
+  exit 2
+fi
 if [[ "$update" -eq 1 ]]; then
   bash scripts/verify.sh --update
 fi
@@ -33,6 +40,9 @@ module="tris_market_event_intelligence.listing_news_validation_cli"
 if [[ "$materialize" -eq 1 ]]; then
   module="tris_market_event_intelligence.post_snapshot_materialization_cli"
   params+=(--apply)
+fi
+if [[ "$integrated" -eq 1 ]]; then
+  module="tris_market_event_intelligence.integrated_pipeline_cli"
 fi
 runner=()
 if command -v python >/dev/null 2>&1 && \
@@ -76,6 +86,21 @@ if [[ "$news_set" -eq 0 ]]; then
     exit 2
   fi
   params+=(--news-db "$root/news.sqlite3")
+fi
+if [[ "$integrated" -eq 1 ]]; then
+  # Explicitly integrated workflow: makes RSS network requests and may append
+  # new articles/events. The preexisting scheduled LaunchAgent is untouched.
+  if [[ "$bundle_set" -ne 0 || "$news_set" -ne 0 || "$output_set" -ne 0 ]]; then
+    echo "[listing-validation] Integrated mode uses default pinned bundle and news DB" >&2
+    exit 2
+  fi
+  if [[ ! -d "$newest" || ! -f "$root/news.sqlite3" ]]; then
+    echo "[listing-validation] Pinned capture and existing news DB required" >&2
+    exit 2
+  fi
+  exec "${runner[@]}" -m "$module" \
+    --enable-ticker-review --listing-bundle "$newest" \
+    --review-output-root "$folder" --db "$root/news.sqlite3" "${params[@]}"
 fi
 if [[ "$output_set" -eq 0 ]]; then
   stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
