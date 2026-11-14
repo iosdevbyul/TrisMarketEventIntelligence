@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
