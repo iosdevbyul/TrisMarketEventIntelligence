@@ -463,13 +463,13 @@ def test_manual_checklist_preview_commit_packet_and_audit_no_publication(
 
     source, journal = seeded(tmp_path)
     ledger = NewsPilotChecklistLedger(source_db=source, journal_db=journal)
-    kwargs = dict(
-        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
-        review_status="SOURCE_DOCUMENTED", reviewer="local-editor",
-        note="The external report describes a duration, but independent checks remain pending.",
-        source_url="https://example.org/follow-up",
-        source_excerpt="The outage lasted approximately two hours.",
-    )
+    kwargs = {
+        "evidence_id": 1, "check_code": "CONFIRM_OUTAGE_DURATION",
+        "review_status": "SOURCE_DOCUMENTED", "reviewer": "local-editor",
+        "note": "The external report describes a duration, but independent checks remain pending.",
+        "source_url": "https://example.org/follow-up",
+        "source_excerpt": "The outage lasted approximately two hours.",
+    }
     with sqlite3.connect(source) as db:
         before_source = tuple(db.iterdump())
     with sqlite3.connect(journal) as db:
@@ -536,13 +536,13 @@ def test_checklist_invalid_or_unsupported_evidence_never_writes(
     )
 
     source, journal = seeded(tmp_path)
-    kwargs = dict(
-        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
-        review_status="SOURCE_DOCUMENTED", reviewer="local-editor",
-        note="Independent supporting source still needs manual assessment.",
-        source_url="https://example.org/follow-up",
-        source_excerpt="The outage lasted approximately two hours.",
-    )
+    kwargs = {
+        "evidence_id": 1, "check_code": "CONFIRM_OUTAGE_DURATION",
+        "review_status": "SOURCE_DOCUMENTED", "reviewer": "local-editor",
+        "note": "Independent supporting source still needs manual assessment.",
+        "source_url": "https://example.org/follow-up",
+        "source_excerpt": "The outage lasted approximately two hours.",
+    }
     change = {
         "bad_check": {"check_code": "FABRICATED_CHECK"},
         "bad_url": {"source_url": "http://insecure.example.org"},
@@ -574,11 +574,11 @@ def test_checklist_conflict_and_corruption_rejected_by_auditor(
 
     source, journal = seeded(tmp_path)
     ledger = NewsPilotChecklistLedger(source_db=source, journal_db=journal)
-    kwargs = dict(
-        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
-        review_status="NOT_CONFIRMED", reviewer="local-editor",
-        note="The source did not provide sufficient timing confirmation.",
-    )
+    kwargs = {
+        "evidence_id": 1, "check_code": "CONFIRM_OUTAGE_DURATION",
+        "review_status": "NOT_CONFIRMED", "reviewer": "local-editor",
+        "note": "The source did not provide sufficient timing confirmation.",
+    }
     ledger.record(**kwargs, commit=True)
     with pytest.raises(ValueError, match="Immutable"):
         ledger.record(**{**kwargs, "review_status": "CONFLICTING_SOURCE"}, commit=True)
