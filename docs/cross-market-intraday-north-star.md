@@ -253,6 +253,18 @@ checkpoints are **not** reinterpreted as actual Ollama inference
 duration, and no first-token latency or live-market success is claimed.
 See `docs/stage-1-gemma-runtime-attribution.md`.
 
+## Stage 1 candidate macOS integrated operational schedule
+
+The existing RSS-only LaunchAgent is **not modified or automatically
+replaced**. A separate opt-in generator can preview a replacement
+LaunchAgent for the integrated RSS→economic-event→optional Gemma
+path, with explicit model consent and a legacy plist conflict guard.
+A bounded read-only watchdog verifies recent successful pipeline
+checkpoints and per-source outcomes. No service was installed,
+activated or run on the owner's Mac in this PR. Sleep/wake, real
+schedule performance and actual Gemma latency remain unverified.
+See `docs/stage-1-opt-in-integrated-schedule.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
