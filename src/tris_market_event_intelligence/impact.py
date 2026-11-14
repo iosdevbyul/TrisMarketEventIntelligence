@@ -203,17 +203,17 @@ def validate_result(event: EventInput, result: ImpactResult) -> ImpactResult:
         quality_code = rationale_quality_code(impact.rationale)
         if quality_code:
             raise ImpactAnalysisError(quality_code, "Rationale ends with an unfinished clause")
-        mechanism_code = mechanism_quality_code(impact.sector, impact.rationale)
-        if mechanism_code:
-            raise ImpactAnalysisError(
-                mechanism_code, "Broad-market rationale contains no explicit market transmission"
-            )
         if impact.evidence_excerpt not in event.evidence:
             raise ImpactAnalysisError("EVIDENCE_MISMATCH", "Impact references evidence absent from the original event")
         if any(entity not in event.evidence for entity in impact.entities):
             raise ImpactAnalysisError("ENTITY_MISMATCH", "Impact mentions entities absent from the original event")
         if event.status != "VERIFIED" and impact.uncertainty != "HIGH":
             raise ImpactAnalysisError("UNCERTAINTY_MISMATCH", "Unverified events require HIGH uncertainty")
+        mechanism_code = mechanism_quality_code(impact.sector, impact.rationale)
+        if mechanism_code:
+            raise ImpactAnalysisError(
+                mechanism_code, "Broad-market rationale contains no explicit market transmission"
+            )
     return result
 
 
