@@ -19,24 +19,24 @@ PREVIEW_EXTRACTOR_VERSION = "multi-v3-preview"
 # being "restored" alone is not a service incident, and an outage mention
 # alone does not imply recovery.
 SERVICE_RECOVERY = re.compile(
-    r"(?i)\\b(?:services?|outlook|teams|azure|cloud|network)\\b.{0,100}"
-    r"\\b(?:restored|recovered|back online)\\b.{0,100}"
-    r"\\b(?:outages?|disruptions?)\\b"
-    r"|\\b(?:outages?|disruptions?)\\b.{0,100}"
-    r"\\b(?:services?|outlook|teams|azure|cloud|network)\\b.{0,100}"
-    r"\\b(?:restored|recovered|back online)\\b"
+    r"(?i)\b(?:services?|outlook|teams|azure|cloud|network)\b.{0,100}"
+    r"\b(?:restored|recovered|back online)\b.{0,100}"
+    r"\b(?:outages?|disruptions?)\b"
+    r"|\b(?:outages?|disruptions?)\b.{0,100}"
+    r"\b(?:services?|outlook|teams|azure|cloud|network)\b.{0,100}"
+    r"\b(?:restored|recovered|back online)\b"
 )
 # Materially sized monetary sanctions, not vague allegations, smaller traffic
 # fines or an unquantified policy discussion.
 SANCTION = re.compile(
-    r"(?i)\\b(?:fines?|fined|penaliz(?:es|ed))\\b.{0,85}"
-    r"(?:[€$£]\\s?\\d+(?:[.,]\\d+)?\\s?(?:m|bn|million|billion)"
-    r"|\\d+(?:[.,]\\d+)?\\s?(?:million|billion)\\s?"
-    r"(?:euros?|dollars?|pounds?))\\b"
+    r"(?i)\b(?:fines?|fined|penaliz(?:es|ed))\b.{0,85}"
+    r"(?:[€$£]\s?\d+(?:[.,]\d+)?\s?(?:m|bn|million|billion)"
+    r"|\d+(?:[.,]\d+)?\s?(?:million|billion)\s?"
+    r"(?:euros?|dollars?|pounds?))\b"
 )
 NEGATION = re.compile(
-    r"(?i)\\b(?:not|never|did not|has not|was not|weren't|denies|denied)\\b"
-    r".{0,25}\\b(?:fines?|fined|penaliz(?:es|ed)|restored|recovered)\\b"
+    r"(?i)\b(?:not|never|did not|has not|was not|weren't|denies|denied)\b"
+    r".{0,25}\b(?:fines?|fined|penaliz(?:es|ed)|restored|recovered)\b"
 )
 
 
