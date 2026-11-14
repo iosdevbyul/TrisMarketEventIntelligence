@@ -64,9 +64,43 @@ all records inside their 50,000-row limits, not just the selected
 24 hours. These are different populations and must not be directly
 compared as though denominators matched.
 
+## Stage 1 acceptance evidence, without fabricated completion
+
+The report additionally carries `stage_1_evidence_review`. This field
+distinguishes observable data from actual KR/US real-time news coverage.
+It names missing recent source articles, absent model checkpoints,
+unavailable audited timelines, source-health failures, and missing
+reviewed exchange sessions. Even when local observations exist,
+`first_core_stage_complete=false`: real-time news completeness,
+true first release and local market-session latency require
+independent supervised review. A 24-hour window may legitimately
+contain zero news during holidays or weekends, so zero articles
+is not automatically a collector failure or proof of no news.
+
+The recent freshness window now parses ISO datetimes into UTC
+**before** applying the interval. Mixed KST/EST/UTC offsets no
+longer cause misleading counts from SQLite lexical string comparisons.
+A maximum 50,000 historical article timestamps are inspected;
+larger history fails visibly rather than silently truncating a
+coverage estimate.
+
 ## Operator commands
 
-A local Mac with an already populated DB can inspect its own records:
+A local Mac with an already populated DB can inspect its own records.
+The helper reuses the installed Conda/venv interpreter selected by
+`scripts/verify.sh` and optionally fast-forwards a **clean main
+branch only**. It does not send article content or credentials anywhere:
+
+```sh
+bash scripts/audit-operations.sh --update
+```
+
+A blocked or unverified report is still printed as JSON and exits
+with code 2; that is diagnostic evidence, not a failed install.
+This report alone does not fetch news, start Ollama, migrate the
+database, or contact a live market API.
+
+The explicit lower-level command remains available:
 
 ```sh
 market-event-operational-evidence \
