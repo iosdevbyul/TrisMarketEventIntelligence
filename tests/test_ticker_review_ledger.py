@@ -70,7 +70,7 @@ def test_news_database_refused_before_any_write(tmp_path: Path) -> None:
         connection.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY, title TEXT)")
         connection.execute("INSERT INTO articles VALUES (1, 'Original')")
     before = news_db.read_bytes()
-    with pytest.raises(ValueError, match="review"):
+    with pytest.raises(ValueError, match="ledger identity"):
         import_review_decisions(news_db, proposals, decisions)
     assert news_db.read_bytes() == before
     with pytest.raises(ValueError, match="review"):
