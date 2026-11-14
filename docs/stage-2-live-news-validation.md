@@ -291,3 +291,48 @@ This is a diagnostic addition, not a background scheduler or notification
 service; the existing LaunchAgent schedule is unchanged. Real live
 transitions remain unverified until new articles arrive and the owner
 runs a Mac capture.
+
+
+## Stage 2-H: real stored-headline classification review and cross-source repetition
+
+The operator's first post-snapshot run observed five stored BBC article records,
+all with extraction checkpoints but no economic events. Two records were the
+same canonical BBC URL across `bbc_technology` and `bbc_world`.
+These observations do not prove that every headline was an economic event
+or that those records should be physically merged.
+
+The existing Mac command remains:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news
+```
+
+The private report now contains `news_classification_evidence` and
+the integrated output includes
+`ticker_review.news_classification_evidence`. This is a new *read-only*
+classification quality diagnostic over actual locally stored article titles
+and summaries **received after the listing capture**. It classifies each
+bounded sample as awaiting extraction, currently having an event, no
+supported lexical event cue, clause-level claim only, educational headline,
+or a disagreement between the latest lexical rules and the stored
+extraction result. The report includes actual article IDs, source,
+receipt timestamp, source URL, bounded stored headline/summary excerpts,
+and counts by reason. It does not fetch copyrighted article bodies.
+
+Cross-source records with an equal canonical URL are included as
+`cross_source_group_samples` with the member IDs and sources.
+The existing `story_index.canonical_url` normalization is reused for
+review-only grouping. We do not collapse the original BBC article IDs
+or corresponding economic event IDs, make assumptions about why
+the article appears under more than one feed, or suppress
+historical API delivery without an independently specified consumer
+policy. This is an actionable identity review, not an automatic merge.
+
+Stored articles were processed by a particular extractor version. Replaying
+the *current* rules against their persisted RSS text can reveal an
+unsupported wording gap, but must not be mistaken for a historical
+extractor re-run, reclassification or proof of the publisher's full
+content. No new rule phrases are introduced merely to force those five
+unverified articles into market events. The extraction database,
+classification model, scheduler and ticker human-review ledger remain
+unchanged.
