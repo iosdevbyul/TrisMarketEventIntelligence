@@ -8,12 +8,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from test_news_pilot_review_ledger import seeded
 
 from tris_market_event_intelligence.news_semantic_gold import (
-    evaluate_gold, load_gold,
+    evaluate_gold,
+    load_gold,
 )
-
-from test_news_pilot_review_ledger import seeded
 
 
 def adjudication(journal: Path, **overrides: object) -> dict[str, object]:
@@ -135,7 +135,7 @@ def test_invalid_or_unverifiable_gold_rejected(
 
 
 def test_duplicate_or_symlink_gold_rejected(tmp_path: Path) -> None:
-    source, journal = seeded(tmp_path)
+    _source, journal = seeded(tmp_path)
     gold = tmp_path / "gold.json"
     label = adjudication(journal)
     write_gold(gold, label, label)
