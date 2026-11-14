@@ -5,15 +5,15 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from tris_market_event_intelligence.impact_candidate_hygiene import (
-    article_key,
-    evidence_key,
-    insufficient_evidence,
-)
 from tris_market_event_intelligence.impact import (
     PROMPT_VERSION,
     EventInput,
     is_eligible,
+)
+from tris_market_event_intelligence.impact_candidate_hygiene import (
+    article_key,
+    evidence_key,
+    insufficient_evidence,
 )
 
 
