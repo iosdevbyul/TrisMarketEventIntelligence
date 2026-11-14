@@ -184,8 +184,9 @@ def test_reviewed_listing_mode_does_not_process_pre_snapshot_article(
 
 
 def test_cli_requires_explicit_review_opt_in(tmp_path: Path) -> None:
-    from tris_market_event_intelligence.integrated_pipeline_cli import main
     import sys
+
+    from tris_market_event_intelligence.integrated_pipeline_cli import main
     with patch.object(sys, "argv", [
         "market-event-integrated", "--listing-bundle", str(tmp_path),
         "--dry-run",
