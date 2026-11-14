@@ -6,11 +6,14 @@ relationships remain an explicit source of uncertainty and are never certified.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from tris_market_event_intelligence.news_importance_review import _cohort, _instant
+from tris_market_event_intelligence.news_importance_review import (
+    _cohort, _instant, _read, score_review,
+)
 from tris_market_event_intelligence.story_index import canonical_url
 
 
@@ -31,7 +34,7 @@ class _Groups:
 
 def plan_news_holdout(
     cohort_path: Path, *, train_end: datetime, validation_end: datetime,
-    embargo_hours: int = 24,
+    embargo_hours: int = 24, review_path: Path | None = None,
 ) -> dict[str, object]:
     """Partition a full news cohort without exposing label content.
 
@@ -48,6 +51,16 @@ def plan_news_holdout(
     if not train + embargo < validation:
         raise ValueError("Validation boundary must follow training and embargo")
     cohort_raw, cohort = _cohort(cohort_path)
+    review_labels: dict[int, dict[str, object]] | None = None
+    review_sha: str | None = None
+    if review_path is not None:
+        # Reuse the full Learning-02 gold/provenance validation; do not
+        # assume file contents are authenticated human truth.
+        score_review(cohort_path, review_path)
+        review_raw = _read(review_path)
+        judgments = json.loads(review_raw)["judgments"]
+        review_labels = {row["articleId"]: row for row in judgments}
+        review_sha = hashlib.sha256(review_raw).hexdigest()
     rows = cohort["items"]
     ids = [item["articleId"] for item in rows]
     links = _Groups(ids)
@@ -106,7 +119,23 @@ def plan_news_holdout(
             else assigned[article_id]
         )
         counts[status] += 1
-        items.append({
+        # Label visibility is computed only for the TRAIN split; later
+        # reviews cannot be retroactively supplied to training. Validation
+        # and TEST never expose human labels or reasons in this plan.
+        eligibility = None
+        if review_labels is not None:
+            human = review_labels[article_id]
+            if status != "TRAIN":
+                eligibility = "NOT_TRAIN_LABEL"
+            elif human["importance"] is None:
+                eligibility = "UNREVIEWED"
+            elif human["importance"] == "UNCERTAIN":
+                eligibility = "HUMAN_UNCERTAIN"
+            elif _instant(human["reviewedAt"]) > train:
+                eligibility = "REVIEWED_AFTER_TRAIN_END"
+            else:
+                eligibility = "LABEL_AVAILABLE_BY_TRAIN_END_NOT_AUDITED"
+        entry = {
             "articleId": article_id,
             "textSha256": item["textSha256"],
             "firstObservedAt": item["firstObservedAt"],
@@ -115,7 +144,10 @@ def plan_news_holdout(
             if status == "QUARANTINED" else (
                 "TEMPORAL_EMBARGO" if status == "EMBARGO" else None
             ),
-        })
+        }
+        if eligibility is not None:
+            entry["trainGoldAvailability"] = eligibility
+        items.append(entry)
     return {
         "schemaVersion": "news_holdout_plan_v1",
         "status": "PLANNED_NOT_AUDITED",
@@ -127,6 +159,10 @@ def plan_news_holdout(
         "groupsConsidered": len(by_group),
         "quarantinedArticles": len(quarantine),
         "items": items,
+        "humanReviewSha256": review_sha,
+        "humanReviewTimeGateApplied": review_labels is not None,
+        "humanGoldValuesExposed": False,
+        "trainingLabelsIndependentlyAudited": False,
         "testSetReservedForFinalIndependentEvaluation": True,
         "crossSplitExactIdentitiesQuarantined": True,
         "nearDuplicateDetectionComplete": False,
