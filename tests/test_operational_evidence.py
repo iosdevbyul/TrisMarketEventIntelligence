@@ -1,7 +1,6 @@
 """Integrated evidence report is truthful about missing/legacy data."""
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -9,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from tris_market_event_intelligence.collector import Article, NewsStore
-from tris_market_event_intelligence.event_lifecycle_latency import audit_event_lifecycle
 from tris_market_event_intelligence.exchange_sessions import SessionCalendar, SessionDay
 from tris_market_event_intelligence.operational_evidence import build_operational_evidence
 
