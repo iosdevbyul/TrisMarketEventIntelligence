@@ -123,9 +123,9 @@ def main() -> None:
         source_success_seconds=args.source_success_minutes * 60,
         max_event_extraction=args.max_extraction,
         session_calendar=calendar, target_markets=targets,
-        listing_bundle=args.listing_bundle.expanduser().resolve()
+        listing_bundle=args.listing_bundle.expanduser().absolute()
         if args.listing_bundle else None,
-        review_output_root=args.review_output_root.expanduser().resolve()
+        review_output_root=args.review_output_root.expanduser().absolute()
         if args.review_output_root else None,
     )
     print(json.dumps(report, ensure_ascii=False))
