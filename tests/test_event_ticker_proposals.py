@@ -175,3 +175,31 @@ def test_cli_json_output_is_read_only(tmp_path: Path, capsys: pytest.CaptureFixt
     assert result["proposals"] == 1
     assert result["training_dataset_eligible"] is False
     assert db.read_bytes() == before
+
+
+def test_forward_cursor_reads_every_new_event_without_skipping_old_pages(tmp_path: Path) -> None:
+    listed = load_reviewed_issuers(registry(
+        tmp_path / "list.csv", record("XNAS", "MSFT", "Microsoft"),
+    ))
+    db = database(
+        tmp_path / "events.db",
+        "Microsoft first report", "No name in title",
+        "Microsoft later report", "Microsoft final report",
+    )
+    first = propose_event_tickers(
+        db, listed, limit=2, after_event_id=0, as_of=OBSERVED,
+    )
+    second = propose_event_tickers(
+        db, listed, limit=2, after_event_id=first["next_cursor"], as_of=OBSERVED,
+    )
+    assert [item["event_id"] for item in first["items"]] == [1, 2]
+    assert [item["event_id"] for item in second["items"]] == [3, 4]
+    assert first["has_more"] is True
+    assert second["has_more"] is False
+    assert first["next_cursor"] == 2
+    assert second["next_cursor"] == 4
+    assert first["items"][0]["article_detected_at"] == RECEIVED
+    assert first["proposals"] == 1
+    assert second["proposals"] == 2
+    with pytest.raises(ValueError, match="after_event_id"):
+        propose_event_tickers(db, listed, after_event_id=-1)
