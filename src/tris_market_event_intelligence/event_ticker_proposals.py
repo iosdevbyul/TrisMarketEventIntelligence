@@ -6,6 +6,7 @@ This module does not create training labels or mutate SQLite.
 from __future__ import annotations
 
 import csv
+import itertools
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -108,7 +109,7 @@ def load_reviewed_issuers(path: Path) -> tuple[ListedIssuer, ...]:
         by_symbol.setdefault((issuer.market, issuer.symbol), []).append(issuer)
     for versions in by_symbol.values():
         ordered = sorted(versions, key=lambda x: x.valid_from)
-        for old, new in zip(ordered, ordered[1:]):
+        for old, new in itertools.pairwise(ordered):
             if old.valid_until is None or old.valid_until > new.valid_from:
                 raise ValueError("Overlapping listing validity for one ticker")
     return tuple(issuers)
