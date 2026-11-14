@@ -125,3 +125,32 @@ Gemma calls, production enablement, price labels, model calibration,
 or live Mac execution are implied. The subsequent separately
 authorized pilot must measure real Gemma quality before enabling any
 periodic writes.
+
+
+## Real Gemma 2 pilot — explicit, small, read-only
+
+The following commands are required only on a Mac with an installed
+local Ollama model. Update the checkout before running.
+
+```bash
+bash scripts/verify.sh --update
+market-event-news-pressure-pilot --limit 3
+market-event-news-pressure-pilot --limit 3 --run --model gemma2:latest \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-pressure-pilot-$(date +%Y%m%dT%H%M%S).json"
+```
+
+Preview only reads up to three distinct, eligible **already persisted**
+impact analyses from the existing news SQLite DB. `--run` makes explicit
+bounded local Ollama calls to `127.0.0.1:11434` and writes one new report
+with model output, duration and deterministic rejection codes.
+It **does not initialize `news_pressure_signals`**, persist a signal,
+modify existing records/checkpoints, touch the 15-minute LaunchAgent,
+or invoke any price feed. It does not retroactively extract events.
+
+A `PILOT_OUTPUT_VALIDATED` status means the response met *structural*
+and source-excerpt constraints, **not** that its strength is accurate.
+Manual review of source support and consistency is still required.
+If the report says `NO_EXISTING_ELIGIBLE_IMPACTS`, there is no
+defensible live source observation to score; do not fabricate one.
+The diagnostic report may contain news excerpts and should be kept
+under the user's private Application Support folder.
