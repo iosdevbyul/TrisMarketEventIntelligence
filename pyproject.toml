@@ -54,6 +54,7 @@ market-event-integrated = "tris_market_event_intelligence.integrated_pipeline_cl
 market-event-integrated-launchd = "tris_market_event_intelligence.integrated_launchd_config:main"
 market-event-integrated-watchdog = "tris_market_event_intelligence.integrated_watchdog_cli:main"
 market-event-cutover-preflight = "tris_market_event_intelligence.integrated_cutover_preflight:main"
+market-event-ticker-proposals = "tris_market_event_intelligence.event_ticker_proposals_cli:main"
 market-event-ops-readiness = "tris_market_event_intelligence.session_operations_cli:main"
 market-event-operational-evidence = "tris_market_event_intelligence.operational_evidence_cli:main"
 

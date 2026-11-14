@@ -265,6 +265,17 @@ activated or run on the owner's Mac in this PR. Sleep/wake, real
 schedule performance and actual Gemma latency remain unverified.
 See `docs/stage-1-opt-in-integrated-schedule.md`.
 
+## Stage 2: read-only issuer candidate proposals
+
+The `market-event-ticker-proposals` command can inspect existing economic
+event headlines and an explicitly supplied historical KR/US issuer registry
+to propose **review-only** symbol links. Validity and evidence-observed
+timestamps must predate the locally received article; ambiguous alias
+collisions are excluded. No real issuer listing registry is bundled,
+no real tickers are auto-approved, no database is mutated and no
+learning labels are created. See
+`docs/stage-2-reviewed-ticker-proposals.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
