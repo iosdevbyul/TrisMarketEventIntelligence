@@ -12,6 +12,9 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
+from tris_market_event_intelligence.article_issuer_coverage import (
+    inspect_article_issuer_coverage,
+)
 from tris_market_event_intelligence.event_ticker_proposals import (
     _when,
     load_reviewed_issuers,
@@ -243,6 +246,9 @@ def validate_existing_listing_news(
             "news_classification_evidence": classification,
             "v3_cutover_audit": audit_v3_cutover(news_db, as_of=cutoff),
             "v3_event_integrity": inspect_v3_event_integrity(news_db, as_of=cutoff),
+            "article_issuer_coverage": inspect_article_issuer_coverage(
+                news_db, issuers, observed_at=first_seen, as_of=cutoff,
+            ),
             "candidate_samples": samples,
             "report_only": True,
             "source_origin_independently_authenticated": False,
