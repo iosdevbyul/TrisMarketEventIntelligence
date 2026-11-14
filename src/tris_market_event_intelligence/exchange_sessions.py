@@ -7,6 +7,7 @@ All instants are timezone-aware and represented in absolute UTC.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
@@ -85,9 +86,7 @@ class SessionCalendar:
             )
         for intervals in self._halts.values():
             intervals.sort()
-            if any(left[1] > right[0] for left, right in zip(
-                intervals, intervals[1:], strict=False,
-            )):
+            if any(left[1] > right[0] for left, right in pairwise(intervals)):
                 raise ValueError("Overlapping halt intervals for one exchange symbol")
 
     def session(self, market: str, instant: datetime) -> SessionDay | None:
