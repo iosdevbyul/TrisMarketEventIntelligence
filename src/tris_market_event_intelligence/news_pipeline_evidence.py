@@ -34,6 +34,24 @@ def inspect_news_pipeline(
         required = {"articles", "economic_events"}
         if not required.issubset(names):
             raise ValueError("Operational article/event tables not present")
+        article_columns = {row[1] for row in db.execute("PRAGMA table_info(articles)")}
+        event_columns = {row[1] for row in db.execute(
+            "PRAGMA table_info(economic_events)"
+        )}
+        # Older research fixtures have a deliberately minimal schema and
+        # cannot support operational provenance. Do not misreport 0 duplicates.
+        if not {"id", "source", "url", "title", "detected_at"}.issubset(
+            article_columns
+        ) or not {"id", "article_id", "source", "source_url"}.issubset(
+            event_columns
+        ):
+            return {
+                "schema_version": "news_pipeline_evidence_v1",
+                "status": "UNAVAILABLE_SCHEMA",
+                "database_modified": False,
+                "historical_duplicates_modified": False,
+                "note": "Required operational article/event columns are absent",
+            }
         article_count = db.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
         event_count = db.execute("SELECT COUNT(*) FROM economic_events").fetchone()[0]
         if article_count > MAX_AUDIT_ROWS or event_count > MAX_AUDIT_ROWS:
@@ -42,7 +60,7 @@ def inspect_news_pipeline(
             "SELECT id, source, url, title, detected_at FROM articles ORDER BY id"
         ).fetchall()
         events = db.execute(
-            "SELECT id, article_id, extractor_version, source, source_url "
+            "SELECT id, article_id, source, source_url "
             "FROM economic_events ORDER BY id"
         ).fetchall()
         attempts: list[tuple] = []
