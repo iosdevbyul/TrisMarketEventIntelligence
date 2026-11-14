@@ -250,3 +250,44 @@ can write append-only data.
 snapshots. Real live publisher results, actual ticker candidates,
 ongoing scheduler state and market coverage must be checked using the
 owner's Mac logs before declaring production readiness.
+
+
+## Stage 2-G: evidence-based new-news stage transitions
+
+The owner's first live integrated run after PR #84 returned `healthy` with
+8/8 sources reachable, but `collection.new_articles=0`,
+`event_extraction.events=0`, `ticker_review.candidates=0`. Zero new
+articles is neither an error nor evidence of comprehensive publisher news
+coverage. A real new-article transition must be observed before end-to-end
+live candidate success can be claimed.
+
+The current Mac one-command workflow remains:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news
+```
+
+It now exposes `ticker_review.news_stage_transitions` and also stores
+`news_stage_transitions` in the immutable private `summary.json`.
+The read-only stage audit uses actual article `detected_at`, extraction
+checkpoint rows and event rows, scoped to the pinned issuer snapshot time.
+It separates `new_articles`, `pending_extraction_articles`,
+`extraction_checkpointed_articles`,
+`processed_without_classified_event`, `articles_with_events`,
+`event_rows` and observed event-processing delay, plus bounded unresolved
+article IDs and per-source counts. It does not invent missing articles,
+guess whether publishers issued new stories, auto-approve issuer links,
+or declare training eligibility.
+
+The same stage evidence is available in the read-only run:
+
+```bash
+bash scripts/validate-listings.sh --post-snapshot-only
+```
+
+Legacy reduced-schema research DBs explicitly report
+`UNAVAILABLE_SCHEMA`, instead of falsely claiming no extraction backlog.
+This is a diagnostic addition, not a background scheduler or notification
+service; the existing LaunchAgent schedule is unchanged. Real live
+transitions remain unverified until new articles arrive and the owner
+runs a Mac capture.
