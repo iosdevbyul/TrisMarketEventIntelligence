@@ -386,3 +386,51 @@ does not authenticate external publishers. Explicit, separately
 reviewed promotion of v3 to a production extractor remains a
 future decision; no automatic historical replay or background
 model activation is added.
+
+
+## Stage 2-J: explicit production v3, only articles inserted in this run
+
+Stage 2-I's real Mac validation reported 3 v3 matches representing two
+distinct canonical stories (Microsoft service recovery and Meta's monetary
+sanction), with **zero DB writes**. Stage 2-J introduces an optional
+production path without rewriting those five historic observed articles,
+their `multi-v2` checkpoints, or the earlier 70 events.
+
+Run the existing one-command CLI with explicit v3 opt-in:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news --v3-fresh-only
+```
+
+The default existing command `--integrated-new-news` still runs
+`multi-v2`. The new mode requires a verified listing bundle, refuses
+Ollama, obtains the existing pipeline lock, and records the maximum
+article ID **before** collection. It processes only articles with higher
+IDs received after the pinned listing observation. No previously stored
+article, including the five Stage 2-I examples, is reprocessed for
+v3; no bulk backfill option is provided here. The result includes
+`event_extractor_version=multi-v3`,
+`v3_fresh_only=true`, and the previous maximum article ID.
+
+The v3 classifier retains existing v2 rules and adds the previously
+previewed exact recovery and monetary-sanction language. Event rows
+created by the new path identify `extractor_version=multi-v3` and
+retain status/direction/metadata safeguards. Before writing new
+events, the processor groups articles by **canonical URL + exact
+casefolded headline** and selects the lowest article ID; only that
+representative may create an event, and duplicate copies receive an
+extraction checkpoint without an event. Original article records
+and independently sourced captures are never altered or deleted.
+
+The same invocation returns the verified snapshot issuer proposal
+report and remains read-only for ticker approval. Article equivalence
+is still heuristic rather than independently proven. No historic
+market price impacts, training labels, or predictions are created.
+The normal scheduler is **not switched** to v3 by this change. CI
+covers version selection, first-run-only inclusion, old v2 checkpoints,
+cross-source same-URL duplicates, repeated execution and no-model guard.
+
+**Operational caution:** v3 is a real append-only write path and can
+create newly classified economic events for future articles. Run only
+when that is intended. Stage 2-I's historic two cases remain preview
+evidence, not automatically created v3 production events.
