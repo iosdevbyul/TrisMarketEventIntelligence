@@ -47,6 +47,7 @@ market-event-news-two-stage-pilot = "tris_market_event_intelligence.news_two_sta
 market-event-pilot-evidence = "tris_market_event_intelligence.news_pilot_evidence_journal_cli:main"
 market-event-pilot-review = "tris_market_event_intelligence.news_pilot_review_ledger_cli:main"
 market-event-pilot-review-audit = "tris_market_event_intelligence.news_pilot_review_audit_cli:main"
+market-event-pilot-review-packet = "tris_market_event_intelligence.news_pilot_review_packet_cli:main"
 market-event-study = "tris_market_event_intelligence.event_study_cli:main"
 market-event-krx-readiness = "tris_market_event_intelligence.krx_snapshot_cli:main"
 market-event-intraday-study = "tris_market_event_intelligence.intraday_event_study_cli:main"
