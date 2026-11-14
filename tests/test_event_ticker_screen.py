@@ -17,7 +17,6 @@ from tris_market_event_intelligence.intraday_event_study import (
 )
 from tris_market_event_intelligence.intraday_event_study_cli import intraday_csv
 
-
 ZONE = ZoneInfo("America/New_York")
 
 
