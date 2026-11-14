@@ -691,3 +691,32 @@ or price training automatically. Existing event matching, review
 decisions, cutover fence, integrated schedule, and SQLite remain
 untouched. This diagnostic does not establish issuer authenticity,
 article relevance, causation, or price direction.
+
+## Stage 3-A: complete bounded article issuer review artifact
+
+Article matching now emits an isolated `article-issuer-review.json` inside
+the existing **new** private validation output folder. This fixes the
+25-sample visibility ceiling: all matching direct company-name candidates
+and individually eligible legal-suffix alias hints are included, up to
+1,000 review records. The report explicitly exposes `items_total`,
+`items_truncated`, and `post_snapshot_articles_inspected` to prevent
+incomplete scans from being interpreted as exhaustive. The bundled file
+includes the SHA-256 fingerprints of the previously observed listing
+manifest and registry, observed/evaluation times, source article IDs,
+URLs, titles, receipt times, the market and symbol, matched wording,
+registry source and source-observation timestamps. The adjacent
+`article_issuer_coverage.review_bundle_path` and `review_bundle_sha256`
+allow later exact-file verification.
+
+The file is **not** the legacy `event_ticker_proposals_v1` contract and
+cannot be fed to its existing approval ledger. Its entries are tagged
+either `EXACT_REVIEWED_NAME` or `DERIVED_ALIAS_REVIEW_HINT`, and all
+remain `human_review_required=true`, `approved=false`,
+`point_in_time_training_eligible=false`. No price association,
+historical issuer identity authentication, model inference, existing
+news database write, or automatic approval occurs.
+
+GitHub CI tests use controlled local SQLite and pinned offline KRX
+research fixtures. Mac execution is not required to validate this
+pure-Python report export; fresh live data can be inspected during
+the existing automatic integrated run after deployment.
