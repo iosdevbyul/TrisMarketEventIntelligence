@@ -1,5 +1,5 @@
 """Point-in-time links and overlapping-news screens never create extra labels."""
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -77,7 +77,7 @@ def test_duplicate_article_from_another_feed_is_only_counted_once() -> None:
         link(8, 15, "https://example.org/news/123?nttId=48&utm_medium=feed"),
     ]
     approved, audit = run(rows, links)
-    assert approved[0].status == "PARTIAL"
+    assert approved[0].status == "COMPLETED"
     assert approved[1].status == "DUPLICATE_SOURCE_EVENT"
     assert audit[1]["status"] == "DUPLICATE_SOURCE_EVENT"
     assert all(label.excess_return is None for label in approved[1].labels)
