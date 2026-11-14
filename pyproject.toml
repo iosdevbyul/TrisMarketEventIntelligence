@@ -41,6 +41,7 @@ market-event-runtime-audit = "tris_market_event_intelligence.runtime_audit:main"
 market-event-bridge = "tris_market_event_intelligence.claim_bridge_cli:main"
 market-event-impact-audit = "tris_market_event_intelligence.impact_review_cli:main"
 market-event-impact-coverage = "tris_market_event_intelligence.impact_coverage_cli:main"
+market-event-pilot-report = "tris_market_event_intelligence.impact_pilot_report_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
