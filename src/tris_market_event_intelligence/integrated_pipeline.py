@@ -9,6 +9,7 @@ from __future__ import annotations
 import fcntl
 import os
 import sqlite3
+import time
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +21,10 @@ from tris_market_event_intelligence.event_store import EventProcessor
 from tris_market_event_intelligence.exchange_sessions import SessionCalendar
 from tris_market_event_intelligence.impact import ImpactProvider
 from tris_market_event_intelligence.impact_store import ImpactProcessor
+from tris_market_event_intelligence.listing_news_validation import (
+    _verified_bundle,
+    validate_existing_listing_news,
+)
 from tris_market_event_intelligence.operations import (
     OPERATIONAL_SOURCES,
     _write_status,
@@ -79,6 +84,8 @@ def run_integrated_pass(
     max_event_extraction: int = MAX_EVENT_EXTRACTION,
     session_calendar: SessionCalendar | None = None,
     target_markets: tuple[str, ...] = ("XKRX", "XNYS", "XNAS"),
+    listing_bundle: Path | None = None,
+    review_output_root: Path | None = None,
 ) -> dict[str, object]:
     """Finite pass with separate pipeline lock; defaults to *zero* LLM calls.
 
@@ -98,6 +105,19 @@ def run_integrated_pass(
         raise ValueError("Source poll age must be 1..86400 seconds")
     if not 1 <= max_event_extraction <= MAX_EVENT_EXTRACTION:
         raise ValueError("Extraction batch must be 1..1000")
+    if (listing_bundle is None) != (review_output_root is None):
+        raise ValueError("Ticker review requires both listing bundle and output folder")
+    if listing_bundle is not None and (enable_local_analysis or model is not None):
+        raise ValueError("Ticker review pass must not invoke a local model")
+    first_seen = None
+    if listing_bundle is not None:
+        # Validate the pinned source and write destination before network or DB
+        # work. Never enable lookahead by silently changing source observation.
+        _, _, first_seen, _ = _verified_bundle(listing_bundle)
+        assert review_output_root is not None
+        if (review_output_root.is_symlink() or not review_output_root.is_dir()
+                or not review_output_root.is_absolute()):
+            raise ValueError("Existing absolute non-symlink private review folder required")
     if session_calendar is not None:
         plan = market_session_plan(
             session_calendar, now=datetime.now(UTC),
@@ -151,6 +171,12 @@ def run_integrated_pass(
             "mac_runtime_verified": False,
             "market_coverage_verified": False,
             "prediction_model_trained": False,
+            "ticker_review": {
+                "enabled": listing_bundle is not None,
+                "status": "NOT_REQUESTED" if listing_bundle is None else "PENDING",
+                "candidates": 0,
+                "automatic_approvals": 0,
+            },
         }
         try:
             if collector["status"] in {"failed", "already_running"}:
@@ -158,13 +184,42 @@ def run_integrated_pass(
             else:
                 processor = EventProcessor(db_path)
                 # Intentional bounded pass; never silently drain unlimited backlog.
-                extraction = processor.process_pending(batch_size=max_event_extraction)
+                extraction = processor.process_pending(
+                    batch_size=max_event_extraction,
+                    received_since=first_seen,
+                )
                 report["event_extraction"] = asdict(extraction)
                 report["source_health"] = audit_source_health(
                     db_path, expected_sources=selected_sources,
                     now=datetime.now(UTC),
                     max_success_age_seconds=source_success_seconds,
                 )
+                if listing_bundle is not None:
+                    assert review_output_root is not None
+                    # All writer calls use the same .pipeline.lock. The
+                    # validation is independently read-only and create-only.
+                    folder = review_output_root / (
+                        f"integrated-{datetime.now(UTC):%Y%m%dT%H%M%S}-"
+                        f"{os.getpid()}-{time.time_ns()}"
+                    )
+                    review = validate_existing_listing_news(
+                        listing_bundle, db_path, folder,
+                        as_of=datetime.now(UTC), post_snapshot_only=True,
+                    )
+                    report["ticker_review"] = {
+                        "enabled": True,
+                        "status": "REVIEW_REQUIRED" if review["candidate_count"]
+                                  else "NO_CANDIDATES",
+                        "summary_path": str(folder / "summary.json"),
+                        "source_observed_at": first_seen.isoformat(),
+                        "events_inspected": review["events_inspected"],
+                        "candidates": review["candidate_count"],
+                        "alias_hints": review["diagnostic_alias_mentions"],
+                        "has_more_events": review["has_more_events"],
+                        "automatic_approvals": 0,
+                        "human_review_required": True,
+                        "historical_listing_verified": False,
+                    }
                 if enable_local_analysis:
                     event_ids = _fresh_event_ids(db_path, before, selected_sources)
                     report["analysis"]["selected_event_ids"] = list(event_ids)
