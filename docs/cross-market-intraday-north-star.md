@@ -197,6 +197,16 @@ The GDELT `seendate` is an index-seen timestamp, **not independently
 authenticated original publisher breaking time**. See
 `docs/stage-1-discovery-first-receipt.md`.
 
+## Stage 1 integrated operational source health and live gates
+
+The read-only `market-event-source-health` command audits failed/stale
+polls, rate limiting, missing source telemetry, and per-source recovery.
+`market-event-analyze --live-freshness-minutes` can opt in to
+blocking Gemma invocation for stale or source-unhealthy events without
+discarding them or altering the historical research path. This is not
+verification of market-wide news coverage or global publication times.
+See `docs/stage-1-source-health-and-live-gates.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
