@@ -84,7 +84,9 @@ def test_missing_not_attempted_and_model_isolation(tmp_path: Path) -> None:
     db = tmp_path / "news.sqlite3"
     setup(db)
     result = pilot_outcomes(db, event_ids=(6, 8, 999), model_id="other-model")
-    assert result["outcome_counts"] == {"EVENT_NOT_FOUND": 1, "NOT_ATTEMPTED": 2}
+    assert result["outcome_counts"] == {
+        "EVENT_NOT_FOUND": 1, "NOT_ATTEMPTED": 1, "FAILED_PENDING_RETRY": 1,
+    }
     assert all(item["stored_impacts"] == 0 for item in result["items"])
 
 
