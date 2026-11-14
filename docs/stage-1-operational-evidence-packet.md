@@ -7,6 +7,18 @@ mapping → learn stock/benchmark one-minute responses → calibrated
 future price-impact prediction. No stage is complete until actual runtime
 evidence meets a documented acceptance bar.
 
+## Gemma delay attribution (new evidence)
+
+The report now includes `checks.gemma_timing`: the precise
+extraction-to-model-attempt queue wait, measured provider wall time
+(including Ollama HTTP and parsing), and validation/commit overhead
+for **new model attempts only**. Older checkpoints cannot be split
+into inference and queue time; they appear as
+`LEGACY_TIMING_UNAVAILABLE`, not zero-duration inference.
+`GEMMA_PROVIDER_DURATION_NOT_YET_OBSERVED` remains an explicit
+stage-one blocker until a measured provider call is available.
+See `docs/stage-1-gemma-runtime-attribution.md`.
+
 ## This integrated bundle
 
 The optional, one-shot **read-only** `market-event-operational-evidence`
