@@ -214,3 +214,35 @@ without printing model outputs or modifying SQLite or the LaunchAgent.
 This is a prompt and error-diagnostics improvement, **not evidence** that
 Gemma 2's assessed news intensity is accurate. A subsequent explicit
 real Mac pilot is still necessary before enabling automated scoring.
+
+
+## Epistemic separation after the first valid real outage result
+
+The 2026-11-15 local Gemma pilot produced a **structurally valid** hypothesis
+for a reported Microsoft service outage: NEGATIVE / MODERATE / 55,
+SHORT_TERM, HIGH uncertainty. This does **not** establish financial losses,
+customer attrition or a justified 55-point market reaction.
+
+Additive `evidence_assessment` fields in `news_impact_signal_v1` keep
+three distinct kinds of information:
+- `reported_fact`: the literal already source-validated event excerpt,
+  **reported**, not independently verified just because the source wrote it
+- `conditional_mechanism`: the previously validated *hypothesis* from
+  first-stage news analysis, not an established market reaction
+- `verification_needed`: fixed independent-check checklist for service
+  incidents (duration, affected user scope, restoration, business materiality),
+  **not assertions that the cited article lacks those facts**
+- `fact_status`: existing source event status, including UNVERIFIED
+- `strength_basis`: HEURISTIC_UNCALIBRATED or NOT_ASSESSED
+
+These fields are **constructed from already validated source/provenance and a
+fixed checklist**, never from additional LLM facts. The legacy signal adapter
+remains valid with no assessment, preserving existing read paths. For
+UNVERIFIED or CANDIDATE service incidents a HIGH impact-strength grade is
+rejected, not automatically down-scored; independently verified evidence
+would be required for HIGH. MODERATE remains a subjective uncalibrated
+news-pressure score, not an expected stock return.
+
+The local pilot and automatic 15-minute jobs remain independent; this change
+does not populate SQLite or certify Gemma 2's real-world accuracy. A new
+manual Mac run is required to observe the upgraded fields in real responses.
