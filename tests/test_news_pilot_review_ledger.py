@@ -21,12 +21,13 @@ def seeded(tmp_path: Path) -> tuple[Path, Path]:
         db.executescript(
             """CREATE TABLE economic_events (
                 id INTEGER PRIMARY KEY, evidence TEXT,
-                source_url TEXT, status TEXT
+                source_url TEXT, status TEXT, classification TEXT
             );"""
         )
         db.execute(
-            "INSERT INTO economic_events VALUES (?,?,?,?)",
-            (69, evidence, "https://example.org/69", "UNVERIFIED"),
+            "INSERT INTO economic_events VALUES (?,?,?,?,?)",
+            (69, evidence, "https://example.org/69", "UNVERIFIED",
+             "SERVICE_INCIDENT"),
         )
     signal = {
         "event_id": 69, "market": "GLOBAL", "sector": "TECH",
