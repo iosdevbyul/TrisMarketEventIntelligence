@@ -77,3 +77,41 @@ def test_existing_impacts_are_not_given_fabricated_strength() -> None:
     assert output.intensity_score is None
     assert output.predicts_stock_return is False
     assert output.model_id == "gemma2:latest"
+
+
+def test_additive_evidence_assessment_prevents_fact_and_hypothesis_confusion() -> None:
+    from tris_market_event_intelligence.news_impact_signal import NewsEvidenceAssessment
+
+    row = base()
+    row["evidence_assessment"] = NewsEvidenceAssessment(
+        reported_fact=row["evidence_excerpt"],
+        conditional_mechanism=row["rationale"],
+        verification_needed=("CONFIRM_OUTAGE_DURATION",),
+        fact_status="UNVERIFIED",
+        strength_basis="HEURISTIC_UNCALIBRATED",
+    )
+    parsed = NewsImpactSignal.model_validate(row)
+    assert parsed.evidence_assessment.reported_fact == parsed.evidence_excerpt
+    assert parsed.evidence_assessment.conditional_mechanism == parsed.rationale
+    assert NewsImpactSignal.model_validate_json(parsed.model_dump_json()) == parsed
+    row["evidence_assessment"] = parsed.evidence_assessment.model_copy(
+        update={"reported_fact": "Made up outage news fact"},
+    )
+    with pytest.raises(ValidationError, match="Reported fact must equal"):
+        NewsImpactSignal.model_validate(row)
+
+
+def test_additive_evidence_assessment_must_not_claim_calibration_on_unassessed() -> None:
+    from tris_market_event_intelligence.news_impact_signal import NewsEvidenceAssessment
+
+    row = base()
+    row["intensity"] = "UNASSESSED"
+    row["intensity_score"] = None
+    row["evidence_assessment"] = NewsEvidenceAssessment(
+        reported_fact=row["evidence_excerpt"],
+        conditional_mechanism=row["rationale"],
+        fact_status="VERIFIED",
+        strength_basis="HEURISTIC_UNCALIBRATED",
+    )
+    with pytest.raises(ValidationError, match="Strength basis conflicts"):
+        NewsImpactSignal.model_validate(row)
