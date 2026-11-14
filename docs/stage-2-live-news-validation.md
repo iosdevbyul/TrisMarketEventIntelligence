@@ -574,11 +574,8 @@ Rollback: boot out the v3 integrated job, **preserve its new v3
 checkpoints and events**, restore the backed-up original integrated
 v2 plist, and bootstrap that single original job. Rolling back does
 not delete any historical or v3 data. Check both service labels
-for unloaded/loaded state before and after the transition. Since v2
-uses version-specific checkpoints, a later v2 run may be eligible to
-process **v3-only** articles again; therefore operational rollback
-must be reviewed for cross-version duplicate events. The safe
-fallback is disabling the v3 scheduler and keeping the existing
-RSS-only collector while this is audited; **do not automatically
-reactivate the integrated v2 event processor** over v3 history.
+for unloaded/loaded state before and after the transition. The v2 extractor now excludes records already checkpointed by
+v3, preventing duplicate events after switching back. Any v2-created
+events remain append-only, and the operator must verify the resulting
+v2/v3 stage audit before treating rollback as fully complete.
 No synthetic post-cutover events or live coverage are claimed.
