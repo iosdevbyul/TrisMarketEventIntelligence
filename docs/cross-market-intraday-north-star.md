@@ -115,6 +115,18 @@ fallback is flagged as unverified, **not** a production calendar.
 See `docs/stage-4-explicit-exchange-sessions.md`. The schedule's content
 and source authenticity must still be independently checked before training.
 
+## Subsequent slice: point-in-time ticker links and overlapping news
+
+The optional `--links` CSV now gates a news-to-ticker assertion by
+the evidence's **actual observed timestamp** (no future discovered
+link may be used at prior inference time), source-URL duplicate feeds,
+and overlapping independent news at the same exchange and symbol.
+Contaminated future return labels are nulled rather than treated as
+training targets. These link assertions are **not yet independently
+source authenticated** and actual corporate ticker identity validity
+periods still need verification. See
+`docs/stage-4-event-ticker-point-in-time.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
