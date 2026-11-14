@@ -21,6 +21,7 @@ from tris_market_event_intelligence.intraday_event_study import (
     MinuteClose,
     study_intraday,
 )
+from tris_market_event_intelligence.walkforward_dataset import build_walkforward_dataset
 
 
 def _csv_rows(path: Path, required: set[str]) -> list[dict[str, str]]:
@@ -67,6 +68,7 @@ def intraday_csv(
     news_path: Path, prices_path: Path, *,
     sessions_path: Path | None = None, halts_path: Path | None = None,
     links_path: Path | None = None,
+    split_at: datetime | None = None, embargo_minutes: int = 60,
 ) -> dict[str, object]:
     """Read only explicitly adjusted, minute-end prices and timestamped news."""
     news = [
@@ -98,6 +100,9 @@ def intraday_csv(
     calendar = _calendar_csv(sessions_path, halts_path)
     results = study_intraday(news, prices, calendar=calendar)
     screening = []
+    if split_at is not None and (links_path is None or sessions_path is None):
+        raise ValueError("Walk-forward split requires explicit --links and --sessions")
+    links = []
     if links_path is not None:
         links = [
             EventTickerLink(
@@ -116,7 +121,13 @@ def intraday_csv(
         results, screening = screen_intraday_links(
             news, links, results, horizons=(1, 5, 15, 30, 60),
         )
+    split_report = (
+        build_walkforward_dataset(
+            news, links, results, cutoff=split_at, embargo_minutes=embargo_minutes,
+        ) if split_at is not None else None
+    )
     return {
+        "walkforward_dataset": split_report,
         "schema_version": "intraday_event_study_v1",
         "markets": ["XKRX", "XNYS", "XNAS"],
         "horizons_minutes": [1, 5, 15, 30, 60],
@@ -155,12 +166,18 @@ def main() -> None:
                         help="Optional date-time bounded stock/benchmark halt CSV")
     parser.add_argument("--links", type=Path, default=None,
                         help="Optional point-in-time event-to-ticker evidence CSV")
+    parser.add_argument("--split-at", default=None,
+                        help="Timezone-aware holdout cutoff for purged research samples")
+    parser.add_argument("--embargo-minutes", type=int, default=60,
+                        help="Temporal embargo >= max horizon (default: 60)")
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
     try:
         report = intraday_csv(
             args.news, args.prices, sessions_path=args.sessions, halts_path=args.halts,
             links_path=args.links,
+            split_at=datetime.fromisoformat(args.split_at) if args.split_at else None,
+            embargo_minutes=args.embargo_minutes,
         )
         if args.output is None:
             print(json.dumps(report, ensure_ascii=False))

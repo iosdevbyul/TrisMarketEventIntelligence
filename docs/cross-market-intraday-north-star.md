@@ -127,6 +127,15 @@ source authenticated** and actual corporate ticker identity validity
 periods still need verification. See
 `docs/stage-4-event-ticker-point-in-time.md`.
 
+## Research-only chronological holdout construction
+
+The optional `--split-at` plus `--embargo-minutes` path in
+`market-event-intraday-study` builds strictly point-in-time feature rows and
+matured historical excess-return targets from screened source-linked events.
+Only reviewed session and ticker link inputs can enable it; rejected labels
+remain excluded, and no training or verified prediction is claimed.
+See `docs/stage-4-walkforward-dataset.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
