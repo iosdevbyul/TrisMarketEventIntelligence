@@ -109,6 +109,7 @@ def inspect_article_issuer_coverage(
         proposals: list[dict[str, object]] = []
         ambiguous_names: set[str] = set()
         future_evidence = False
+        article_alias_hints: list[dict[str, object]] = []
         if not duplicates:
             matches: dict[tuple[str, str], tuple[ListedIssuer, set[str]]] = {}
             alias_owners: dict[str, set[tuple[str, str]]] = {}
@@ -175,8 +176,7 @@ def inspect_article_issuer_coverage(
                     else:
                         hint_status = "INACTIVE_ALIAS"
                 alias_counts[hint_status] += 1
-                if len(alias_hints) < MAX_ALIAS_HINTS:
-                    alias_hints.append({
+                hint_record = {
                         "article_id": article_id,
                         "source": source,
                         "detected_at": seen.isoformat(),
@@ -191,7 +191,10 @@ def inspect_article_issuer_coverage(
                         "human_review_required": True,
                         "approved": False,
                         "training_dataset_eligible": False,
-                    })
+                    }
+                article_alias_hints.append(hint_record)
+                if len(alias_hints) < MAX_ALIAS_HINTS:
+                    alias_hints.append(hint_record)
         # The optional complete review artifact is distinct from the
         # 25-row diagnostic samples. It never has approval authority.
         # Each record carries the immutable article ID and source URL needed
@@ -221,10 +224,8 @@ def inspect_article_issuer_coverage(
             # Derived legal-name hints remain a separate, explicitly
             # less trusted class and are never upgraded to exact matches.
             if status == "NO_EXACT_ISSUER_NAME":
-                for hint in alias_hints:
-                    if hint["article_id"] != article_id or (
-                        hint["status"] != "NEEDS_HUMAN_ALIAS_REVIEW"
-                    ):
+                for hint in article_alias_hints:
+                    if hint["status"] != "NEEDS_HUMAN_ALIAS_REVIEW":
                         continue
                     for issuer_hint in hint["possible_issuers"]:
                         review_items_total += 1
