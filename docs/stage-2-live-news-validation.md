@@ -336,3 +336,53 @@ content. No new rule phrases are introduced merely to force those five
 unverified articles into market events. The extraction database,
 classification model, scheduler and ticker human-review ledger remain
 unchanged.
+
+
+## Stage 2-I: preview v3 on real Microsoft and Meta RSS headlines
+
+The operator's Stage 2-H run established five real post-snapshot BBC
+article rows, but no v2 events. In particular, a Microsoft service
+**recovery** headline and an Italy/Meta **€805m regulatory fine** headline
+escaped the existing `multi-v2` event extractor. Two Meta rows from
+BBC World and Technology share a canonical URL and equal title.
+
+A separately versioned classifier `multi-v3-preview` now recognizes
+both precise patterns. The distinction matters: an outage recovery is
+not a new outage, and a regulatory monetary penalty is not a generic
+market movement. The default `EventProcessor` continues using
+`multi-v2`; therefore existing extraction checkpoints and events are
+not reprocessed, rewritten, or upgraded merely by updating this code.
+
+To inspect the **read-only v3 preview** over the owner's existing news:
+
+```bash
+bash scripts/validate-listings.sh --update --post-snapshot-only
+```
+
+The private `summary.json.news_classification_evidence` contains
+`v3_preview_matches_by_category`,
+`v3_preview_article_matches`,
+`v3_preview_distinct_representative_articles`, and per-article
+`v3_preview` fields. The integrated collector also returns the same
+diagnosis under `ticker_review.news_classification_evidence`.
+
+The grouping policy is intentionally narrow: only articles with both
+an equal canonical URL and exactly equal stripped/casefolded title
+share a **hypothetical representative**; the earliest article ID
+is the representative, regardless of RSS source. The grouping is
+not an automatic merge and cannot suppress or rewrite existing
+events, review queue records, or market-impact evidence. Equal URLs
+alone are merely review candidates, and unrelated articles remain
+independent. Both Meta rows can appear as v3 matches, while the
+separate representative count prevents falsely describing them as
+two independent stories.
+
+The preview emits `UNVERIFIED` candidates with no direction, price
+impact or trading label; it cannot approve an issuer association.
+Generic incidents with no restoration, small unrelated traffic fines,
+negated claims, travel advisories and cruise accidents are not
+upgraded. The preview relies only on locally stored RSS text and
+does not authenticate external publishers. Explicit, separately
+reviewed promotion of v3 to a production extractor remains a
+future decision; no automatic historical replay or background
+model activation is added.
