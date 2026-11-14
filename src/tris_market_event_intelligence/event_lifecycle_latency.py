@@ -17,7 +17,7 @@ _MAX_EVENTS = 50_000
 
 def _instant(value: str) -> datetime:
     if not isinstance(value, str):
-        raise ValueError("Lifecycle timestamps must be strings")
+        raise TypeError("Lifecycle timestamps must be strings")
     try:
         timestamp = datetime.fromisoformat(value)
     except ValueError as exc:
