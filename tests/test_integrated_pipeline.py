@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import fcntl
 import json
-import os
 import sys
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -179,7 +178,6 @@ def test_cli_refuses_unknown_sources_before_network_and_model(tmp_path: Path) ->
     with patch.object(sys, "argv", [
         "market-event-integrated", "--sources", "fake",
         "--db", str(tmp_path / "db.sqlite3"), "--enable-local-analysis",
-    ]):
-        with pytest.raises(SystemExit):
-            main()
+    ]), pytest.raises(SystemExit):
+        main()
     assert list(tmp_path.iterdir()) == []
