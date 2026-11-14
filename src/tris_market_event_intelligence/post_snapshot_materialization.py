@@ -35,6 +35,8 @@ def materialize_post_snapshot_events(
     if news_db.is_symlink() or not news_db.is_file():
         raise ValueError("Existing nonsymlink news DB required")
     _, issuers, first_seen, _ = _verified_bundle(bundle)
+    if as_of is not None and as_of.utcoffset() is None:
+        raise ValueError("Evaluation cutoff must have a timezone")
     now = (as_of or datetime.now(UTC)).astimezone(UTC)
     if now < first_seen:
         raise ValueError("Evaluation precedes source acquisition")
