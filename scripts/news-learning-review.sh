@@ -11,6 +11,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] holdout --cohort FILE [--review HUMAN_REVIEW_JSON] --train-end ISO --validation-end ISO --embargo-hours N --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] test-usage --ledger FILE --init|--audit|--reserve PURPOSE ..."
   echo "  bash scripts/news-learning-review.sh [--update] near-duplicates --cohort FILE --holdout FILE --output FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] cross-page --cohort PAGE1 --holdout PLAN1 --cohort PAGE2 --holdout PLAN2 --output FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -51,6 +52,9 @@ case "$action" in
     ;;
   near-duplicates)
     module="tris_market_event_intelligence.news_near_duplicate_audit_cli"
+    ;;
+  cross-page)
+    module="tris_market_event_intelligence.news_cross_page_holdout_audit_cli"
     ;;
   *)
     usage >&2
