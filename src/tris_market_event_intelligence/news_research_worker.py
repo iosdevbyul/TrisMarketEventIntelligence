@@ -101,8 +101,8 @@ def _validate_inputs(
         if partition not in {"TRAIN", "VALIDATION", "TEST", "EMBARGO", "QUARANTINED"}:
             raise ValueError("Unexpected research partition")
         counts[partition] += 1
-        human = labels[identifier]
         if partition == "TRAIN":
+            human = labels[identifier]
             status = item.get("trainGoldAvailability")
             if status == "LABEL_AVAILABLE_BY_TRAIN_END_NOT_AUDITED":
                 if human["importance"] not in CLASSES or (
@@ -116,8 +116,10 @@ def _validate_inputs(
                 raise ValueError("Unrecognized training gold availability")
         elif item.get("trainGoldAvailability") != "NOT_TRAIN_LABEL":
             raise ValueError("Protected research partition has ambiguous gold access")
-        if partition == "VALIDATION" and human["importance"] in CLASSES:
-            validation.append((_tokens(article), human["importance"]))
+        if partition == "VALIDATION":
+            human = labels[identifier]
+            if human["importance"] in CLASSES:
+                validation.append((_tokens(article), human["importance"]))
         # TEST is deliberately never read for labels or prediction metrics.
     if dict(counts) != plan.get("counts") or observed != set(articles):
         raise ValueError("Research plan article counts do not match cohort")
@@ -248,7 +250,7 @@ def research_news_once(
             outcome = "DESCRIPTIVE_RESEARCH_ONLY"
             db.execute(
                 "INSERT INTO news_research_experiments VALUES "
-                "(NULL,?,?,?,?,?,?,?,?,?,?)",
+                "(NULL,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (experiment_sha, hashes["cohortSha256"], hashes["planSha256"],
                  hashes["reviewSha256"], "multinomial_naive_bayes_v1", candidate,
                  outcome, len(train), len(validation), model_metric,
