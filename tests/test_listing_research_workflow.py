@@ -16,18 +16,18 @@ from tris_market_event_intelligence.listing_research_workflow import (
 
 OBSERVED = datetime(2026, 11, 15, 0, 0, tzinfo=UTC)
 NASDAQ = (
-    "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|"
-    "ETF|NextShares\n"
-    "MSFT|Microsoft Corporation - Common Stock|Q|N|N|100|N|N\n"
-    "ETFX|Some Fund|Q|N|N|100|Y|N\n"
-    "File Creation Time: 1115202612:00|||||||\n"
+    b"Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|"
+    b"ETF|NextShares\n"
+    b"MSFT|Microsoft Corporation - Common Stock|Q|N|N|100|N|N\n"
+    b"ETFX|Some Fund|Q|N|N|100|Y|N\n"
+    b"File Creation Time: 1115202612:00|||||||\n"
 ).encode()
 OTHER = (
-    "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|"
-    "NASDAQ Symbol\n"
-    "ACME|Acme Corporation - Common Stock|N|ACME|N|100|N|ACME\n"
-    "OTHER|Another Corp - Common Stock|P|OTHER|N|100|N|OTHER\n"
-    "File Creation Time: 1115202612:00|||||||\n"
+    b"ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|"
+    b"NASDAQ Symbol\n"
+    b"ACME|Acme Corporation - Common Stock|N|ACME|N|100|N|ACME\n"
+    b"OTHER|Another Corp - Common Stock|P|OTHER|N|100|N|OTHER\n"
+    b"File Creation Time: 1115202612:00|||||||\n"
 ).encode()
 KRX = (
     "market,symbol,company_name,security_type\n"
