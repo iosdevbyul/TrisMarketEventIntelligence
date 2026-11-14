@@ -74,6 +74,7 @@ def test_all_observed_articles_survive_even_without_claims(tmp_path: Path) -> No
     with sqlite3.connect(source) as db:
         baseline = tuple(db.iterdump())
     result = run(source)
+    assert result["schemaVersion"] == "historical_news_cohort_v2"
     assert result["totalSourceArticles"] == 4
     assert result["totalObservedByCutoff"] == 3
     assert result["excludedCounts"] == {"AFTER_AS_OF": 1}
@@ -86,8 +87,8 @@ def test_all_observed_articles_survive_even_without_claims(tmp_path: Path) -> No
     assert result["items"][1]["claimCountProcessedByCutoff"] == 0
     assert result["items"][2]["eventCountProcessedByCutoff"] == 0
     assert all(row["importanceHumanGold"] == "UNKNOWN" for row in result["items"])
-    assert all(row["observedMarketReaction"] == "UNMEASURED" for row in result["items"])
-    assert all(row["negativeSampleConfirmed"] is False for row in result["items"])
+    assert all("marketPriceLabel" not in row for row in result["items"])
+    assert all("observedMarketReaction" not in row for row in result["items"])
     assert all(row["trainingEligible"] is False for row in result["items"])
     assert result["trainingDatasetEligible"] is False
     assert result["hasMore"] is False

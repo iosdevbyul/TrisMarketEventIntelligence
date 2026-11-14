@@ -45,11 +45,11 @@ a pretend historical archive or silently treats no data as success.
 - If already populated, `storyGroupId` reuses the existing optional
   story index. A missing group is **not** an independently unique event;
   unindexed duplicates and later corrections must be reviewed separately.
-- Always report `importanceHumanGold=UNKNOWN`,
-  `observedMarketReaction=UNMEASURED`,
-  `negativeSampleConfirmed=false`, `marketPriceLabel=null`,
-  `trainingEligible=false`. Neither heuristic news classification nor
-  no-event status is a measured importance or no-move label.
+- The v2 export retains `importanceHumanGold=UNKNOWN` and
+  `trainingEligible=false`. It contains **no price, market-return, or
+  inferred negative-sample fields**. A missing extractor event is never
+  evidence of low importance. Existing v1 local archives can still be used
+  for purely news-based human review; they are not rewritten.
 - `sourceCountsByCutoff` and `totalObservedByCutoff` describe what the
   stored archive **actually contains**, not real-world RSS recall.
   `excludedCounts.AFTER_AS_OF` includes later arrivals; malformed reported
@@ -62,10 +62,9 @@ It still needs a measured run against the **real Mac archive**, source
 coverage/replay and independent human-gold labels for both material and
 nonmaterial news. Human review cannot be invented in CI.
 
-Learning-02 must provide verified price/benchmark availability, event-time
-joins, observation of no-material-reaction cases, and timestamp-safe labels
-before any automatic training. Current historical event-study, intraday
-windowing, rolling backtests and CPU baselines should be reused, not
-rewritten. Only an approved read-only data handoff can use the separate
-DonghakStockVision-owned market history; this repository does not alter
-that project. This tool is not a market predictor or a retraining worker.
+Learning-02 is NEWS-ONLY: independently reviewed article significance,
+source evidence alignment, context, negations and corrections. Use
+`scripts/news-learning-review.sh` to prepare and validate a blank human
+review queue. Neither this project nor this workflow may ingest or
+evaluate stock prices, bar data, OHLCV, volumes or realized market returns.
+The separate DonghakStockVision project owns price analytics.
