@@ -270,6 +270,7 @@ def run_integrated_pass(
                         "news_stage_transitions": review["news_stage_transitions"],
                         "news_classification_evidence": review["news_classification_evidence"],
                         "v3_cutover_audit": review["v3_cutover_audit"],
+                        "v3_event_integrity": review["v3_event_integrity"],
                         "automatic_approvals": 0,
                         "human_review_required": True,
                         "historical_listing_verified": False,
