@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Inspect previously captured real US/KRX listing files against local news.
 # Read-only by default; --materialize-new-events explicitly allows bounded event writes.
-# No HTTP, model or LaunchAgent changes.
+# Read-only default; integrated mode may make RSS requests and append news events.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -9,10 +9,14 @@ update=0
 materialize=0
 integrated=0
 params=()
+reentry_args=()
 bundle_set=0
 news_set=0
 output_set=0
 for arg in "$@"; do
+  if [[ "$arg" != "--update" ]]; then
+    reentry_args+=("$arg")
+  fi
   if [[ "$arg" == "--update" ]]; then
     update=1
   elif [[ "$arg" == "--materialize-new-events" ]]; then
@@ -34,6 +38,11 @@ if [[ "$integrated" -eq 1 && "$materialize" -eq 1 ]]; then
 fi
 if [[ "$update" -eq 1 ]]; then
   bash scripts/verify.sh --update
+  # Bash continues executing the OLD parsed script after git pull. Re-enter
+  # the freshly updated file with the original argument order, minus --update.
+  # exec prevents a recursive update and preserves the final exit status.
+  # Conditional array expansion is required by macOS Bash 3.2 under set -u.
+  exec bash scripts/validate-listings.sh ${reentry_args[@]+"${reentry_args[@]}"}
 fi
 
 module="tris_market_event_intelligence.listing_news_validation_cli"
@@ -104,10 +113,10 @@ if [[ "$integrated" -eq 1 ]]; then
   fi
   exec "${runner[@]}" -m "$module" \
     --enable-ticker-review --listing-bundle "$newest" \
-    --review-output-root "$folder" --db "$root/news.sqlite3" "${params[@]}"
+    --review-output-root "$folder" --db "$root/news.sqlite3" ${params[@]+"${params[@]}"}
 fi
 if [[ "$output_set" -eq 0 ]]; then
   stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   params+=(--output-dir "$folder/validation-$stamp")
 fi
-exec "${runner[@]}" -m "$module" "${params[@]}"
+exec "${runner[@]}" -m "$module" ${params[@]+"${params[@]}"}
