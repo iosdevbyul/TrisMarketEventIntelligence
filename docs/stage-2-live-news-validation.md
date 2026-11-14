@@ -626,3 +626,41 @@ processed-no-event from pending or v2-first news, and
 `ticker_review.v3_event_integrity` for actual persisted v3 event
 provenance. A successful RSS poll is not proof of full news coverage;
 an internally consistent event is not proof of economic relevance.
+
+
+## Stage 3-A (first milestone): actual article-to-issuer coverage
+
+The existing `event_ticker_proposals` and human review workflow
+remains unchanged. Its input is **classified economic events only**.
+Consequently, a headline can mention a listed company and still never
+reach ticker review when no supported economic event is extracted.
+The Stage 3-A `article_issuer_coverage` report closes this measurement
+gap by inspecting actual **post-observation stored RSS articles** and
+the previously pinned exact issuer registry, whether or not economic
+events exist.
+
+The existing private listing validation `summary.json` and integrated
+status `ticker_review.article_issuer_coverage` contain:
+
+- post-snapshot articles inspected, source-by-source status counts,
+  and explicit limits and uninspected counts
+- `NAME_CANDIDATES` for direct full-name or already reviewed alias
+  occurrences in headlines; candidate market, symbol, pinned source
+  and evidence timing for human review
+- `AMBIGUOUS_ISSUER_NAME` for shared matched aliases, withheld from
+  candidates, and `FUTURE_LISTING_EVIDENCE` for inadmissible future
+  registry entries
+- `CROSS_SOURCE_REPEAT` for equivalent canonical URLs and headlines
+  already observed in an earlier article, without deleting either
+- `NO_EXACT_ISSUER_NAME` for unmatched headlines, with at most
+  25 candidate/ambiguity samples
+
+The article diagnostic is **not a second ticker-approval mechanism**.
+It does not fabricate company short names from legal names, make a
+market-impact prediction, write any database row, approve review
+decisions, authenticate publisher information, or produce
+point-in-time training links. Old articles from before the pinned
+snapshot are excluded rather than backdated. Observed registry
+metadata is not independently validated historical listing coverage.
+This is the first Stage 3-A milestone; linking approved, independently
+verified issuer identities to new events remains separate work.
