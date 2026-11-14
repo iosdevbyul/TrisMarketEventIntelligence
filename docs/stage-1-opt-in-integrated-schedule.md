@@ -49,6 +49,37 @@ does not contact a feed, poll the database, invoke Ollama, call
   effective. No missed-run replay or unbounded historical AI queue
   is introduced.
 
+## Read-only cutover preflight on the operator's Mac
+
+Before removing or replacing any existing RSS collector, inspect macOS
+LaunchAgent state in a **non-mutating** way:
+
+```sh
+python -m tris_market_event_intelligence.integrated_cutover_preflight
+```
+
+This checks each known service via **`launchctl print` only**, examines
+the two named LaunchAgent plist paths without modifying them, and returns
+one JSON report. A launchctl nonzero exit is **not proof the service is
+unloaded**: only the explicit "Could not find service" diagnostic is
+recognized as `NOT_LOADED`; other failures are `UNKNOWN`, which
+blocks automatic cutover. The tool never outputs launchctl service
+details, environment variables, credentials, source URLs, or DB rows.
+It also refuses to treat symlinked, malformed or mismatched plist
+metadata as safely configured.
+
+- `BLOCKED` (exit 2) means a legacy plist or agent still exists,
+  an integrated service is already present, or state cannot be proven
+  from local read-only evidence.
+- `NEEDS_OPERATOR_APPROVAL` (exit 0) means neither known service
+  appears installed or loaded *and* launchctl explicitly confirmed
+  absence for both. **This still does not install or activate a service.**
+
+**Do not execute `launchctl bootout`, delete plists or run the new
+`--write` option automatically.** Review the report first, then
+plan an explicit operator-approved switchover. This also preserves
+the current scheduled RSS collector until its actual Mac state is known.
+
 ## Commands are reference documentation, **not an instruction to run now**
 
 Preview plist XML with **no writes**:
