@@ -61,7 +61,7 @@ def load_gold(path: Path) -> list[dict[str, object]]:
         ):
             raise ValueError("Human reviewer and substantive reason required")
         if not isinstance(row["reviewedAt"], str):
-            raise ValueError("Human review time required")
+            raise TypeError("Human review time required")
         try:
             recorded = datetime.fromisoformat(row["reviewedAt"])
         except ValueError as exc:
