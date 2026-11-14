@@ -154,3 +154,7 @@ If the report says `NO_EXISTING_ELIGIBLE_IMPACTS`, there is no
 defensible live source observation to score; do not fabricate one.
 The diagnostic report may contain news excerpts and should be kept
 under the user's private Application Support folder.
+
+## Pilot distinction: unassessed is not a Gemma inference
+
+The 2026-11-15 real Mac pilot selected one GEOPOLITICAL / GLOBAL / ENERGY impact with UNCERTAIN direction. The pressure provider correctly skips inference, but the original pilot labeled the result PILOT_OUTPUT_VALIDATED. The revised pilot instead reports NO_MODEL_CALLS_UNCERTAIN_DIRECTION, model_call_attempts=0 and SKIPPED_UNCERTAIN_DIRECTION. Eligible directional impacts receive selection priority. Actual local Gemma quality remains unverified until a genuinely eligible directional impact exists in source evidence; never fabricate a directional event simply to pass a pilot.

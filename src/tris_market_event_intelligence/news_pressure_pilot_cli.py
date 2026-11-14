@@ -52,6 +52,7 @@ def main() -> None:
             print(json.dumps({
                 "status": report["status"], "report": str(args.output),
                 "selected": report["selected"], "counts": report["counts"],
+                "model_call_attempts": report["model_call_attempts"],
                 "production_database_modified": False,
             }, ensure_ascii=False))
     except (ValueError, OSError, httpx.HTTPError, KeyError, TypeError) as exc:

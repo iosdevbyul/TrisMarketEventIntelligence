@@ -63,7 +63,7 @@ def select_pressure_pilot(db_path: Path, *, limit: int = 3) -> list[tuple[int, E
                FROM market_impacts i
                JOIN economic_events e ON e.id=i.event_id
                LEFT JOIN event_metadata m ON m.event_id=e.id
-               ORDER BY i.id ASC LIMIT 300"""
+               ORDER BY CASE WHEN i.direction IN ('POSITIVE','NEGATIVE','MIXED')\n                             THEN 0 ELSE 1 END, i.id ASC LIMIT 300"""
         ).fetchall()
     selected: list[tuple[int, EventInput, Impact]] = []
     used_events: set[int] = set()
@@ -109,6 +109,7 @@ def run_pressure_pilot(
     records = select_pressure_pilot(db_path, limit=limit)
     items: list[dict[str, object]] = []
     counts: Counter[str] = Counter()
+    attempted_model_calls = 0
     for impact_id, event, impact in records:
         item: dict[str, object] = {
             "impact_id": impact_id, "event_id": event.event_id,
@@ -118,8 +119,15 @@ def run_pressure_pilot(
         }
         if analyzer is None:
             item["status"] = "PREVIEW_NOT_ANALYZED"
+        elif impact.direction == "UNCERTAIN":
+            item["status"] = "SKIPPED_UNCERTAIN_DIRECTION"
+            item["model_call_attempted"] = False
+            item["intensity"] = "UNASSESSED"
+            item["intensity_score"] = None
         else:
             started = time.monotonic()
+            item["model_call_attempted"] = True
+            attempted_model_calls += 1
             try:
                 signal = analyzer.analyze(
                     event, impact, generated_at=datetime.now(UTC).isoformat()
@@ -155,11 +163,15 @@ def run_pressure_pilot(
         "status": (
             "NO_EXISTING_ELIGIBLE_IMPACTS" if not records
             else "PREVIEW_ONLY" if analyzer is None
+            else "NO_MODEL_CALLS_UNCERTAIN_DIRECTION"
+            if attempted_model_calls == 0
             else "PILOT_COMPLETED_WITH_REJECTIONS"
             if counts["ANALYSIS_REJECTED"] or counts["ANALYSIS_FAILED"]
             else "PILOT_OUTPUT_VALIDATED"
         ),
         "selected": len(records),
+        "model_call_attempts": attempted_model_calls,
+        "model_calls_skipped_uncertain": counts["SKIPPED_UNCERTAIN_DIRECTION"],
         "limit": limit,
         "counts": dict(sorted(counts.items())),
         "model_id": analyzer.model if analyzer is not None else None,
