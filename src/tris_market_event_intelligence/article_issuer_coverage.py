@@ -17,11 +17,13 @@ from tris_market_event_intelligence.event_ticker_proposals import (
     _matches,
     _when,
 )
+from tris_market_event_intelligence.issuer_alias_diagnostics import derived_alias_candidates
 from tris_market_event_intelligence.story_index import canonical_url
 
 MAX_ARTICLES = 50_000
 MAX_POST_SNAPSHOT = 1_000
 MAX_SAMPLES = 25
+MAX_ALIAS_HINTS = 25
 
 
 def inspect_article_issuer_coverage(
@@ -75,7 +77,11 @@ def inspect_article_issuer_coverage(
             "SELECT id, source, url, title, detected_at FROM articles ORDER BY id"
         ).fetchall()
 
+    # Legal suffix variants are hypotheses, never trusted issuer aliases.
+    derived_aliases = derived_alias_candidates(issuers)
     representative: dict[tuple[str, str], int] = {}
+    alias_counts: Counter[str] = Counter()
+    alias_hints: list[dict[str, object]] = []
     inspected = 0
     deferred = 0
     counts: Counter[str] = Counter()
@@ -142,6 +148,46 @@ def inspect_article_issuer_coverage(
                 else "FUTURE_LISTING_EVIDENCE" if future_evidence
                 else "NO_EXACT_ISSUER_NAME"
             )
+        # Only unmatched representative headlines receive extra hints.
+        # This path never promotes duplicates or conflicting exact names.
+        if status == "NO_EXACT_ISSUER_NAME":
+            for alias, owners in derived_aliases.items():
+                if not _matches(title, alias):
+                    continue
+                owner_keys = {(owner.market, owner.symbol) for owner in owners}
+                if len(owner_keys) > 1:
+                    hint_status = "AMBIGUOUS_DERIVED_ALIAS"
+                else:
+                    eligible = [
+                        owner for owner in owners
+                        if owner.evidence_seen_at <= seen
+                        and owner.valid_from <= seen
+                        and (owner.valid_until is None or seen < owner.valid_until)
+                    ]
+                    if eligible:
+                        hint_status = "NEEDS_HUMAN_ALIAS_REVIEW"
+                    elif any(owner.evidence_seen_at > seen for owner in owners):
+                        hint_status = "FUTURE_ALIAS_EVIDENCE"
+                    else:
+                        hint_status = "INACTIVE_ALIAS"
+                alias_counts[hint_status] += 1
+                if len(alias_hints) < MAX_ALIAS_HINTS:
+                    alias_hints.append({
+                        "article_id": article_id,
+                        "source": source,
+                        "detected_at": seen.isoformat(),
+                        "candidate_alias": alias,
+                        "status": hint_status,
+                        "possible_issuers": (
+                            [{"market": owner.market, "symbol": owner.symbol,
+                              "canonical_name": owner.canonical_name}
+                             for owner in owners]
+                            if hint_status == "NEEDS_HUMAN_ALIAS_REVIEW" else []
+                        ),
+                        "human_review_required": True,
+                        "approved": False,
+                        "training_dataset_eligible": False,
+                    })
         counts[status] += 1
         counts["candidate_mentions"] += len(proposals)
         per_source = source_counts.setdefault(source, Counter())
@@ -179,6 +225,17 @@ def inspect_article_issuer_coverage(
             for source, values in sorted(source_counts.items())
         },
         "candidate_samples": samples,
+        "derived_aliases_checked": len(derived_aliases),
+        "derived_alias_hint_counts": {
+            name: alias_counts[name] for name in (
+                "NEEDS_HUMAN_ALIAS_REVIEW", "AMBIGUOUS_DERIVED_ALIAS",
+                "FUTURE_ALIAS_EVIDENCE", "INACTIVE_ALIAS",
+            )
+        },
+        "derived_alias_hints_total": sum(alias_counts.values()),
+        "derived_alias_hints": alias_hints,
+        "derived_alias_hints_truncated": sum(alias_counts.values()) > len(alias_hints),
+        "derived_aliases_approved": 0,
         "samples_truncated": counts["candidate_mentions"] > sum(
             len(sample["candidates"]) for sample in samples
         ),
@@ -194,8 +251,9 @@ def inspect_article_issuer_coverage(
         "model_invoked": False,
         "note": (
             "Observes only post-snapshot local RSS headlines, not full article "
-            "content. Does not derive shortened aliases, infer a causal issuer "
-            "relationship, or override the existing event-level review queue. "
+            "content. Legal-suffix derived aliases are diagnostic-only hints, "
+            "not approved names or identity evidence. No causal issuer "
+            "relationship is inferred and existing event review is unchanged. "
             "Human review plus independent timestamped issuer verification "
             "are required before any link becomes training input."
         ),
