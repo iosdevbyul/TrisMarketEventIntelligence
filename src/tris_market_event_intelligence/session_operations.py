@@ -6,11 +6,10 @@ never from guessed weekdays. A feed can matter cross-border regardless of origin
 from __future__ import annotations
 
 import csv
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.exchange_sessions import (
-    MARKET_ZONES,
     SessionCalendar,
     SessionDay,
     utc,
