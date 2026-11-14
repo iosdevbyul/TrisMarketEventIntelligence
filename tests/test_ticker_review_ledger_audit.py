@@ -88,7 +88,6 @@ def test_cli_success_and_failure_exit_code(
     assert json.loads(capsys.readouterr().out)["records_checked"] == 1
     with patch.object(sys, "argv", [
         "market-event-ticker-ledger-audit", "--ledger", str(tmp_path / "missing.db"),
-    ]):
-        with pytest.raises(SystemExit) as error:
-            main()
+    ]), pytest.raises(SystemExit) as error:
+        main()
     assert error.value.code == 2
