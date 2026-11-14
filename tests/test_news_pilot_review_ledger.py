@@ -364,7 +364,7 @@ def test_full_review_packet_exposes_context_hypothesis_and_gaps_without_writes(
     assert result["hypothesis"]["direction"] == "NEGATIVE"
     assert result["hypothesis"]["intensityScore"] == 55
     assert result["hypothesis"]["scoreIsCalibratedToReturns"] is False
-    assert "financial" in result["hypothesis"]["conditionalMechanism"]
+    assert "costs if prolonged" in result["hypothesis"]["conditionalMechanism"]
     assert result["independentVerificationChecklist"] == [
         {"check": "CONFIRM_OUTAGE_DURATION", "verified": False}
     ]
