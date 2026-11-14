@@ -10,7 +10,6 @@ import json
 import os
 import plistlib
 import subprocess
-import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,7 +27,7 @@ def _read_plist(path: Path) -> dict[str, object]:
     with path.open("rb") as handle:
         data = plistlib.load(handle)
     if not isinstance(data, dict):
-        raise ValueError("LaunchAgent plist must be a dictionary")
+        raise TypeError("LaunchAgent plist must be a dictionary")
     return data
 
 
@@ -148,7 +147,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Read-only macOS LaunchAgent integration preflight",
     )
-    args = parser.parse_args()
+    parser.parse_args()
     try:
         report = audit_launchagent_cutover(home=Path.home(), uid=os.getuid())
     except (ValueError, OSError) as exc:
