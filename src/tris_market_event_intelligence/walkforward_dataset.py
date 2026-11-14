@@ -9,12 +9,14 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from math import isfinite
+from zoneinfo import ZoneInfo
 
 from tris_market_event_intelligence.event_ticker_screen import (
     EventTickerLink,
     source_identity,
 )
-from tris_market_event_intelligence.exchange_sessions import utc
+from tris_market_event_intelligence.exchange_sessions import MARKET_ZONES, utc
 from tris_market_event_intelligence.intraday_event_study import (
     IntradayNews,
     IntradayResult,
@@ -81,7 +83,17 @@ def build_walkforward_dataset(
     if keys != set(by_link):
         raise ValueError("Every news event requires exactly one matching link")
     # Never silently split duplicate stories across train and holdout.
-    canonical_group: dict[tuple[str, str, str], str] = {}
+    # Pick the earliest observable version regardless of input ordering.
+    earliest: dict[tuple[str, str, str], tuple[datetime, int]] = {}
+    for event in event_rows:
+        link = by_link[(event.event_id, event.market, event.symbol)]
+        article = source_identity(link.source_url)
+        if article is None:
+            raise ValueError("Invalid source identity")
+        group = event.market, event.symbol, article
+        candidate = utc(event.available_at), event.event_id
+        if group not in earliest or candidate < earliest[group]:
+            earliest[group] = candidate
     included: list[ResearchSample] = []
     counts: Counter[str] = Counter()
     left_limit = split_at - timedelta(minutes=embargo_minutes)
@@ -100,10 +112,9 @@ def build_walkforward_dataset(
         if article is None:
             raise ValueError("Invalid source identity")
         grouping = (event.market, event.symbol, article)
-        if grouping in canonical_group:
+        if (available, event.event_id) != earliest[grouping]:
             counts["DUPLICATE_SOURCE"] += len(result.labels)
             continue
-        canonical_group[grouping] = str(event.event_id)
         if result.status not in {"COMPLETED", "PARTIAL"}:
             counts[result.status] += len(result.labels)
             continue
@@ -111,6 +122,12 @@ def build_walkforward_dataset(
             label.horizon_minutes for label in result.labels
         } != set(horizons):
             raise ValueError("Result labels do not match the declared horizon contract")
+        if result.entry_at is None:
+            raise ValueError("Eligible result must provide entry timestamp")
+        entry_time = utc(datetime.fromisoformat(result.entry_at))
+        expected_entry = available.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if entry_time != expected_entry:
+            raise ValueError("Entry timestamp must equal first post-availability minute")
         # Temporal provenance is checked for every sample, including
         # times crossing US daylight saving or Korea's midnight UTC boundary.
         for label in result.labels:
@@ -120,10 +137,10 @@ def build_walkforward_dataset(
             if label.exit_at is None:
                 raise ValueError("Completed label must have an exit timestamp")
             exit_at = utc(datetime.fromisoformat(label.exit_at))
-            if exit_at <= available or exit_at - available > timedelta(
-                minutes=label.horizon_minutes + 1
-            ):
+            if exit_at != entry_time + timedelta(minutes=label.horizon_minutes):
                 raise ValueError("Invalid historical target timestamp relative to availability")
+            if not isfinite(label.excess_return):
+                raise ValueError("Nonfinite target is not a valid historical return")
             if available < split_at and exit_at < left_limit:
                 split = "TRAIN"
             elif available >= right_limit:
@@ -133,7 +150,7 @@ def build_walkforward_dataset(
                 continue
             # Features are explicitly allowlisted. No label, exit price, future
             # price, event ID or post-event model rationale goes into the features.
-            local_time = event.available_at
+            local_time = available.astimezone(ZoneInfo(MARKET_ZONES[event.market]))
             features: dict[str, str | int | float] = {
                 "market": event.market,
                 "symbol": event.symbol,
