@@ -16,6 +16,10 @@ from tris_market_event_intelligence.multi_events import (
     extract_news_event,
 )
 from tris_market_event_intelligence.story_index import canonical_url
+from tris_market_event_intelligence.versioned_event_preview import (
+    PREVIEW_EXTRACTOR_VERSION,
+    preview_news_event_v3,
+)
 
 MAX_ARTICLES = 50_000
 MAX_DETAILS = 30
@@ -103,6 +107,18 @@ def inspect_unclassified_news(
             article_id, source, title, summary, detected, bool(checkpoint), bool(has_event)
         ))
     duplicate_ids: dict[int, list[int]] = {}
+    # Strict identity hints only: same canonical URL and exactly equal title.
+    # Select a deterministic representative for reporting, not event writes.
+    representative: dict[int, int] = {}
+    for members in groups.values():
+        same_title: dict[str, list[int]] = defaultdict(list)
+        for member in members:
+            same_title[(member[2] or "").strip().casefold()].append(member[0])
+        for ids in same_title.values():
+            for article_id in ids:
+                representative[article_id] = min(ids)
+    preview_counts: Counter[str] = Counter()
+    preview_unique_ids: set[int] = set()
     group_samples: list[dict[str, object]] = []
     for key, members in groups.items():
         sources = {member[1] for member in members}
@@ -123,6 +139,13 @@ def inspect_unclassified_news(
         title = title or ""
         current = extract_news_event(source, title, summary)
         claims = extract_claims(source, title, summary)
+        hypothetical = (
+            preview_news_event_v3(source, title, summary)
+            if current is None else None
+        )
+        if hypothetical is not None:
+            preview_counts[hypothetical.event.classification] += 1
+            preview_unique_ids.add(representative.get(article_id, article_id))
         if not checkpoint:
             reason = "AWAITING_EXTRACTION"
         elif has_event:
@@ -150,6 +173,19 @@ def inspect_unclassified_news(
                 ),
                 "current_rule_status": current.event.status if current else None,
                 "claim_count": len(claims),
+                "v3_preview": (
+                    {
+                        "classification": hypothetical.event.classification,
+                        "tag": hypothetical.tags[0],
+                        "status": "UNVERIFIED",
+                        "extractor_version": PREVIEW_EXTRACTOR_VERSION,
+                        "would_write_event": False,
+                    } if hypothetical is not None else None
+                ),
+                "representative_article_id": representative.get(article_id, article_id),
+                "is_representative": (
+                    representative.get(article_id, article_id) == article_id
+                ),
                 "cross_source_same_url_article_ids": duplicate_ids.get(article_id, []),
                 "automatic_event_created_by_audit": False,
                 "automatic_ticker_approved": False,
@@ -170,6 +206,12 @@ def inspect_unclassified_news(
         "cross_source_group_samples": group_samples,
         "unique_canonical_url_groups": len(groups),
         "unique_articles_verified": False,
+        "v3_preview_extractor_version": PREVIEW_EXTRACTOR_VERSION,
+        "v3_preview_matches_by_category": dict(sorted(preview_counts.items())),
+        "v3_preview_article_matches": sum(preview_counts.values()),
+        "v3_preview_distinct_representative_articles": len(preview_unique_ids),
+        "v3_preview_event_rows_written": 0,
+        "v3_preview_requires_explicit_separate_migration": True,
         "cross_source_events_suppressed": 0,
         "automatic_ticker_approvals": 0,
         "rule_version_replay_not_performed": True,
@@ -177,7 +219,8 @@ def inspect_unclassified_news(
         "network_requests": 0,
         "model_invoked": False,
         "note": (
-            "Diagnostic reasons use the current rules against persisted RSS text; "
+            "Diagnostic reasons use the existing v2 rules against stored RSS; "
+            "v3 classifications and representative article IDs are hypothetical only. "
             "they do not reconstruct the historical extractor version or validate "
             "the full external article. Same canonical URL across sources is a "
             "review-only group, not authority to delete or merge article/event IDs."
