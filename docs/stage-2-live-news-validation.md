@@ -50,3 +50,57 @@ If KRX source files are later supplied with actual independent evidence,
 they can also be captured using the existing
 `scripts/listing-research.sh --krx-reviewed <file>` path. This stage
 does not invent a KRX dataset.
+
+
+## Stage 2-C name-coverage diagnosis and fresh-news mode
+
+The first operator execution (2026-11-14 UTC) inspected 70 events with
+`NO_VERIFIED_NAME_MATCH=70`, all received **before** the US listing
+snapshot. This alone does not mean the news collector is broken and does
+not justify backdating the 3,736 company listing records.
+
+With this stage, run the **same existing shell script** after merging:
+
+```bash
+bash scripts/validate-listings.sh --update
+```
+
+The existing full scan remains the default. Its private, immutable
+`alias-diagnostics-page-NNN.json` files report deterministic
+**possible legal-suffix alias mentions** only when the original
+strict name matcher did not match. For instance, a reviewed source
+may contain `Microsoft Corporation` while a headline says
+`Microsoft`. The alias hint is a review item, **never** a new
+`DIRECT_CANDIDATE`, an accepted alias, or an approved relationship.
+We deliberately do not strip terms like `Holdings` or `Group`, do
+not use ticker text as evidence, and skip very short Latin names.
+Aliasing remains incomplete and may create false positives, including
+multiple issuers with the same shortened form.
+
+The summary now reports `diagnostic_alias_mentions`,
+`diagnostic_alias_status_counts`, a bounded set of examples, and
+`diagnostic_aliases_approved=0`. A hint has explicit review and
+point-in-time safety flags. Headline examples stay exclusively in the
+private output folder, never uploaded to GitHub.
+
+To inspect **only news first received after the source snapshot**:
+
+```bash
+bash scripts/validate-listings.sh --post-snapshot-only
+```
+
+This uses SQLite `julianday()` timestamp comparisons (rather than
+lexical string comparison across timezones), retaining the original
+append-only IDs and exact evidence windows. If no such event has
+arrived, it reports `events_inspected=0` and
+`new_news_available=false` without creating synthetic articles or
+starting the collector. Subsequent executions can inspect new events
+without fetching the listings again.
+
+**Review boundary:** `proposals-page-*.json` remains the only
+existing format supported by the exact-hash human review ledger.
+`alias-diagnostics-page-*.json` is deliberately a different schema:
+the existing approval CLI must not treat any hint as an approved
+EventTickerLink. Independent identity/source verification and
+operator-reviewed aliases are future work; no automatic mutation of
+the registry or live news SQLite is allowed.

@@ -17,6 +17,7 @@ from tris_market_event_intelligence.event_ticker_proposals import (
     load_reviewed_issuers,
     propose_event_tickers,
 )
+from tris_market_event_intelligence.issuer_alias_diagnostics import inspect_alias_coverage
 from tris_market_event_intelligence.listing_snapshot_import import (
     preview_listing_snapshot,
 )
@@ -59,6 +60,7 @@ def validate_existing_listing_news(
     ledger: Path | None = None,
     max_pages: int = MAX_PAGES,
     as_of: datetime | None = None,
+    post_snapshot_only: bool = False,
 ) -> dict[str, object]:
     """Scan existing extracted events in ascending ID order, create reports only.
 
@@ -95,11 +97,16 @@ def validate_existing_listing_news(
         samples: list[dict[str, object]] = []
         pages: list[dict[str, object]] = []
         pending = approved = rejected = 0
+        alias_counts: Counter[str] = Counter()
+        alias_total = 0
+        alias_samples: list[dict[str, object]] = []
+        alias_derived_count = 0
         exhausted = False
         for page_number in range(1, max_pages + 1):
             report = propose_event_tickers(
                 news_db, issuers, limit=PAGE_SIZE, as_of=cutoff,
                 after_event_id=cursor,
+                received_since=first_seen if post_snapshot_only else None,
             )
             items = report["items"]
             if not items:
@@ -128,11 +135,40 @@ def validate_existing_listing_news(
             with page_path.open("x", encoding="utf-8") as output:
                 json.dump(report, output, ensure_ascii=False, indent=2)
                 output.write("\n")
+            # This is a separate diagnostic, never a second automatic
+            # matching/approval route. Investigate names excluded from the
+            # exact full-name pipeline, including older articles.
+            unmatched_ids = [
+                int(item["event_id"]) for item in items
+                if item["status"] in (
+                    "NO_VERIFIED_NAME_MATCH", "FUTURE_REGISTRY_EVIDENCE",
+                )
+            ]
+            alias_report = inspect_alias_coverage(
+                news_db, issuers, unmatched_ids,
+                first_seen=first_seen, as_of=cutoff,
+            )
+            alias_counts.update(alias_report["counts"])
+            alias_total += int(alias_report.get("hints_total", 0))
+            alias_derived_count = max(
+                alias_derived_count, int(alias_report.get("derived_aliases_checked", 0))
+            )
+            for hint in alias_report["hints"]:
+                if len(alias_samples) < 25:
+                    alias_samples.append(hint)
+            alias_path = output_dir / f"alias-diagnostics-page-{page_number:03}.json"
+            with alias_path.open("x", encoding="utf-8") as output:
+                json.dump(alias_report, output, ensure_ascii=False, indent=2)
+                output.write("\n")
             page_record: dict[str, object] = {
                 "path": str(page_path),
                 "sha256": hashlib.sha256(page_path.read_bytes()).hexdigest(),
                 "events": len(items),
                 "candidates": report["proposals"],
+                "alias_diagnostics_path": str(alias_path),
+                "alias_diagnostics_sha256": hashlib.sha256(
+                    alias_path.read_bytes()
+                ).hexdigest(),
             }
             if ledger is not None:
                 queue = reconcile_ticker_review_queue(page_path, ledger)
@@ -169,16 +205,23 @@ def validate_existing_listing_news(
             "news_db": str(news_db),
             "evaluation_cutoff": cutoff.isoformat(),
             "events_inspected": event_count,
+            "post_snapshot_only": post_snapshot_only,
             "pre_observation_news_events": before,
             "post_observation_news_events": after,
             "status_counts": dict(sorted(counts.items())),
             "candidate_count": proposals_count,
+            "diagnostic_derived_aliases_checked": alias_derived_count,
+            "diagnostic_alias_mentions": alias_total,
+            "diagnostic_alias_status_counts": dict(sorted(alias_counts.items())),
+            "diagnostic_alias_samples": alias_samples,
+            "diagnostic_aliases_approved": 0,
             "pending_human_review": pending,
             "approved_post_hoc": approved,
             "rejected": rejected,
             "pages": pages,
             "has_more_events": not exhausted,
             "resume_after_event_id": cursor if not exhausted else None,
+            "new_news_available": after > 0,
             "candidate_samples": samples,
             "report_only": True,
             "source_origin_independently_authenticated": False,
@@ -190,7 +233,8 @@ def validate_existing_listing_news(
             "note": (
                 "Pre-observation events cannot use this snapshot as listing evidence; "
                 "NO_VERIFIED_NAME_MATCH also includes title/name coverage limitations. "
-                "A matching candidate still requires independent human review."
+                "Derived legal-name aliases are diagnostic only and require review; "
+                "a matching candidate is never an automatically approved link."
             ),
         }
         with (output_dir / "summary.json").open("x", encoding="utf-8") as output:
