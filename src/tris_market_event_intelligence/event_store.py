@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +13,12 @@ from tris_market_event_intelligence.multi_events import (
     EXTRACTOR_VERSION,
     extract_news_event,
 )
+from tris_market_event_intelligence.story_index import canonical_url
+from tris_market_event_intelligence.versioned_event_preview import (
+    preview_news_event_v3,
+)
+
+V3_PRODUCTION_VERSION = "multi-v3"
 
 
 @dataclass(frozen=True)
@@ -67,9 +73,20 @@ class EventProcessor:
         self, batch_size: int = 1000, *,
         received_since: datetime | None = None,
         received_until: datetime | None = None,
+        extractor_version: str = EXTRACTOR_VERSION,
+        after_article_id: int | None = None,
     ) -> ProcessingStats:
         if not 1 <= batch_size <= 10000:
             raise ValueError("batch_size must be 1..10000")
+        if extractor_version not in {EXTRACTOR_VERSION, V3_PRODUCTION_VERSION}:
+            raise ValueError("Unknown extractor version")
+        if extractor_version == V3_PRODUCTION_VERSION and (
+            after_article_id is None or after_article_id < 0
+            or received_since is None
+        ):
+            raise ValueError("v3 requires explicit current-run article floor and receipt cutoff")
+        if extractor_version == EXTRACTOR_VERSION and after_article_id is not None:
+            raise ValueError("Legacy v2 does not use a fresh-only article floor")
         for bound in (received_since, received_until):
             if bound is not None and bound.utcoffset() is None:
                 raise ValueError("Event extraction windows require timezone-aware datetimes")
@@ -82,8 +99,24 @@ class EventProcessor:
         processed = 0
         created = 0
         verified = 0
-        # Reprocess only previously unseen (article_id, extractor_version) pairs.
         with self.store.connect() as db:
+            # v3 never replays an article already checkpointed by ANY version,
+            # and never processes articles present before this integrated run.
+            # No old v2 event receives a second derived row.
+            representative: dict[tuple[str, str], int] = {}
+            if extractor_version == V3_PRODUCTION_VERSION:
+                existing = db.execute(
+                    "SELECT id, url, title FROM articles ORDER BY id"
+                ).fetchall()
+                if len(existing) > 50000:
+                    raise ValueError("v3 representative scan exceeds safe row bound")
+                for existing_id, existing_url, existing_title in existing:
+                    try:
+                        key = (canonical_url(existing_url),
+                               existing_title.strip().casefold())
+                    except ValueError:
+                        key = (f"invalid:{existing_id}", "")
+                    representative.setdefault(key, existing_id)
             rows = db.execute(
                 """
                 SELECT a.id, a.source, a.url, a.title, a.summary, a.published_at,
@@ -92,14 +125,20 @@ class EventProcessor:
                 JOIN captures c ON a.capture_id = c.id
                 WHERE NOT EXISTS (
                     SELECT 1 FROM extraction_runs r
-                    WHERE r.article_id = a.id AND r.extractor_version = ?
+                    WHERE r.article_id = a.id
+                      AND (? = ? OR r.extractor_version = ?)
                 )
+                  AND (? IS NULL OR a.id > ?)
                   AND (? IS NULL OR julianday(a.detected_at) >= julianday(?))
                   AND (? IS NULL OR julianday(a.detected_at) <= julianday(?))
                 ORDER BY a.id ASC LIMIT ?
                 """,
                 (
+                    extractor_version,
                     EXTRACTOR_VERSION,
+                    extractor_version,
+                    after_article_id,
+                    after_article_id,
                     received_since.isoformat() if received_since else None,
                     received_since.isoformat() if received_since else None,
                     received_until.isoformat() if received_until else None,
@@ -108,7 +147,25 @@ class EventProcessor:
                 ),
             ).fetchall()
             for article_id, source, url, title, summary, published, detected, sha in rows:
-                classification = extract_news_event(source, title, summary)
+                if extractor_version == V3_PRODUCTION_VERSION:
+                    try:
+                        key = (canonical_url(url), title.strip().casefold())
+                    except ValueError:
+                        key = (f"invalid:{article_id}", "")
+                    is_representative = representative.get(key) == article_id
+                    classification = (
+                        preview_news_event_v3(source, title, summary)
+                        if is_representative else None
+                    )
+                    if classification is not None:
+                        classification = replace(
+                            classification, event=replace(
+                                classification.event,
+                                extractor_version=V3_PRODUCTION_VERSION,
+                            ),
+                        )
+                else:
+                    classification = extract_news_event(source, title, summary)
                 event = classification.event if classification else None
                 now = utc_now()
                 # Per-article transaction ensures a processing checkpoint cannot
@@ -141,7 +198,7 @@ class EventProcessor:
                             verified += 1
                     db.execute(
                         "INSERT OR IGNORE INTO extraction_runs VALUES (?, ?, ?)",
-                        (article_id, EXTRACTOR_VERSION, now),
+                        (article_id, extractor_version, now),
                     )
                     processed += 1
         return ProcessingStats(processed, created, verified)
