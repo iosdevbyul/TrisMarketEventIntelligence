@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -15,6 +16,10 @@ import httpx
 from tris_market_event_intelligence.impact import OpenAICompatibleProvider
 from tris_market_event_intelligence.integrated_pipeline import run_integrated_pass
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES
+from tris_market_event_intelligence.session_operations import (
+    load_session_calendar,
+    market_session_plan,
+)
 
 
 def main() -> None:
@@ -30,6 +35,10 @@ def main() -> None:
     parser.add_argument("--live-freshness-minutes", type=int, default=15)
     parser.add_argument("--source-success-minutes", type=int, default=15)
     parser.add_argument("--max-extraction", type=int, default=1000)
+    parser.add_argument("--sessions", type=Path, default=None,
+                        help="Reviewed session CSV activates market-running guard")
+    parser.add_argument("--markets", default="XKRX,XNYS,XNAS",
+                        help="Target exchanges with --sessions")
     args = parser.parse_args()
     sources = tuple(s.strip() for s in args.sources.split(","))
     if not sources or len(set(sources)) != len(sources) or (
@@ -42,6 +51,18 @@ def main() -> None:
         parser.error("Source and freshness budgets must be 1..1440 minutes")
     if not 1 <= args.max_extraction <= 1000:
         parser.error("--max-extraction must be 1..1000")
+    if args.sessions is None and args.markets != "XKRX,XNYS,XNAS":
+        parser.error("--markets requires --sessions")
+    targets = tuple(name.strip() for name in args.markets.split(","))
+    try:
+        calendar = load_session_calendar(args.sessions) if args.sessions else None
+        plan = (
+            market_session_plan(
+                calendar, now=datetime.now(UTC), markets=targets, sources=sources,
+            ) if calendar is not None else None
+        )
+    except (OSError, ValueError, TypeError) as exc:
+        parser.error(f"Invalid reviewed sessions: {type(exc).__name__}")
     if args.dry_run:
         print(json.dumps({
             "status": "dry_run", "sources": list(sources),
@@ -49,7 +70,16 @@ def main() -> None:
             "model_invoked": False,
             "local_model_requested": args.enable_local_analysis,
             "background_service_installed": False,
+            "session_plan": plan,
         }))
+        return
+    if plan is not None and plan["decision"] != "RUN":
+        print(json.dumps({
+            "status": "session_skipped" if plan["decision"] == "SKIP" else "blocked",
+            "session_plan": plan, "network_requests": 0, "model_invoked": False,
+        }, ensure_ascii=False))
+        if plan["decision"] != "SKIP":
+            raise SystemExit(2)
         return
     provider = None
     if args.enable_local_analysis:
@@ -78,6 +108,7 @@ def main() -> None:
         live_freshness_seconds=args.live_freshness_minutes * 60,
         source_success_seconds=args.source_success_minutes * 60,
         max_event_extraction=args.max_extraction,
+        session_calendar=calendar, target_markets=targets,
     )
     print(json.dumps(report, ensure_ascii=False))
     if report["status"] not in {"healthy"}:
