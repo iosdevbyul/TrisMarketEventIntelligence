@@ -1,5 +1,6 @@
 """Manual pilot selection should be predictable, bounded and safe."""
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,18 @@ def database(db: Path) -> None:
         )
 
 
+def stable_database_bytes(db: Path) -> bytes:
+    """Complete fixture WAL checkpoint before comparing the read-only query's bytes.
+
+    SQLite may checkpoint a previously committed WAL when a connection closes.
+    That housekeeping is independent of whether the query opened mode=ro.
+    """
+    with closing(sqlite3.connect(db)) as connection:
+        result = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        assert result is not None and result[0] == 0
+    return db.read_bytes()
+
+
 def test_diverse_fresh_candidates_avoid_failed_and_completed(tmp_path: Path) -> None:
     db = tmp_path / "sample.sqlite3"
     database(db)
@@ -115,7 +128,7 @@ def test_new_only_excludes_all_previous_versions_and_failed_attempts(
 ) -> None:
     db = tmp_path / "sample.sqlite3"
     database(db)
-    before = db.read_bytes()
+    before = stable_database_bytes(db)
     report = pilot_candidates(
         db, model_id="gemma2:latest", prompt_version="market-impact-v8",
         new_only=True,
@@ -148,7 +161,7 @@ def test_new_cohort_skips_duplicate_articles_and_title_only_ppi(tmp_path: Path) 
             "UPDATE economic_events SET classification='ECONOMIC_INDICATOR', evidence=? WHERE id=4",
             ("2026년 8월 생산자물가지수(잠정)",),
         )
-    before = db.read_bytes()
+    before = stable_database_bytes(db)
     report = pilot_candidates(
         db, model_id="gemma2:latest", new_only=True,
     )
