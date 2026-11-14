@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from test_integrated_pipeline import fake_client
+
 from tris_market_event_intelligence.integrated_launchd_config import (
     INTEGRATED_LABEL,
     integrated_launchd_configuration,
