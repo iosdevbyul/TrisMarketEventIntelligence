@@ -7,10 +7,10 @@ descriptive historical labels, not identified causal effects.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from math import isfinite
-from typing import Iterable
 from zoneinfo import ZoneInfo
 
 HORIZONS = (1, 5, 20)
