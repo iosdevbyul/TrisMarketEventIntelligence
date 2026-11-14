@@ -73,7 +73,7 @@ def _rows(raw: bytes, *, delimiter: str, expected: set[str]) -> list[dict[str, s
             if (
                 isinstance(footer, str)
                 and re.fullmatch(
-                    r"File Creation Time: (?:\\d{12}|\\d{10}:\\d{2})", footer
+                    r"File Creation Time: (?:\d{12}|\d{10}:\d{2})", footer
                 )
                 and all(row.get(key) == "" for key in OTHER_FIELDS - {
                     "ACT Symbol", "NASDAQ Symbol"
@@ -101,7 +101,7 @@ def _us_rows(raw: bytes, kind: str) -> tuple[list[tuple[str, str, str]], dict[st
             if (
                 footer_found or index != len(rows) - 1
                 or re.fullmatch(
-                    r"File Creation Time: (?:\\d{12}|\\d{10}:\\d{2})", symbol
+                    r"File Creation Time: (?:\d{12}|\d{10}:\d{2})", symbol
                 ) is None
                 or any(value for key, value in item.items() if key not in {
                     "Symbol", "ACT Symbol"
