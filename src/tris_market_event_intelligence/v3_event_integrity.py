@@ -160,7 +160,6 @@ def inspect_v3_event_integrity(db_path: Path, *, as_of: datetime) -> dict[str, o
             not isinstance(payload, bytes)
             or not isinstance(capture_hash, str)
             or not isinstance(stored_hash, str)
-            or not isinstance(payload, bytes)
             or hashlib.sha256(payload).hexdigest() != capture_hash
             or stored_hash != capture_hash
         ):
