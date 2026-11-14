@@ -486,3 +486,47 @@ The activation fence is persistent and cannot be reset by a repeated
 invocation, so do not run this option until you intend to activate
 v3 for subsequently received news. No earlier stored article will
 receive a v3 event solely because this flag was introduced.
+
+
+## Stage 2-L: post-cutover v3 evidence and v2-first attribution
+
+The operator's real Mac rollout started at
+`2026-11-14T17:58:08.821552+00:00` with an immutable
+`article_id_floor=20604`. The first cutover invocation succeeded
+without new articles or v3 events. No live, post-cutover v3 event was
+observed in that capture.
+
+The existing read-only report now includes `v3_cutover_audit` and
+the integrated output shows `ticker_review.v3_cutover_audit`. This
+examines the **stored** activation row and only articles with ID above
+the activation floor and a detected timestamp between activation
+and the evaluation cutoff. There is **no** attempt to use a
+preactivation BBC article to prove a live v3 event.
+
+Each such article belongs to exactly one observed outcome:
+
+- `V3_EVENT_WRITTEN`: actual persisted v3 event row
+- `V3_DUPLICATE_CHECKPOINTED`: v3 processed, no event, exact
+  canonical URL + casefolded title has an earlier representative
+- `V3_CLASSIFIED_NO_EVENT`: v3 processed without an event and the
+  article itself is the representative (often intentionally unrelated)
+- `V2_PROCESSED_FIRST`: v2 checkpoint exists and v3 has not processed
+- `AWAITING_EXTRACTION`: no v2/v3 checkpoint yet
+
+The report returns per-source counts, bounded article IDs, event
+row counts, explicit multiversion anomaly counts and the immutable
+activation marker. A v3 duplicate checkpoint is not proof of
+article authenticity; a v2 checkpoint may lack an event by design.
+No news coverage or market impact is claimed from this data.
+
+Run the existing opt-in workflow to observe actual subsequent intake:
+
+```bash
+bash scripts/validate-listings.sh --update --integrated-new-news --v3-cutover-catchup
+```
+
+The report is a separate **read-only** SQLite query inside the
+existing integrated listing validation. If no activation exists,
+it reports `NOT_ACTIVATED` rather than zero backlog. The default
+v2 mode, pinned listing bundle, local Ollama restrictions, source
+catalog, LaunchAgent and event processing rules are unchanged.
