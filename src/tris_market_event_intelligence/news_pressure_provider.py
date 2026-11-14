@@ -188,12 +188,14 @@ class GemmaNewsPressureProvider:
                     "NEWS_INTENSITY_QUOTE_OUTSIDE_ALLOWED",
                     "Intensity quote must be the previously validated impact excerpt",
                 )
-        elif grade.intensity_evidence_excerpt:
-            if grade.intensity_evidence_excerpt not in event.evidence:
-                raise ImpactAnalysisError(
-                    "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE",
-                    "Unassessed grade quote is not in source evidence",
-                )
+        elif (
+            grade.intensity_evidence_excerpt
+            and grade.intensity_evidence_excerpt not in event.evidence
+        ):
+            raise ImpactAnalysisError(
+                "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE",
+                "Unassessed grade quote is not in source evidence",
+            )
         return NewsImpactSignal(
             event_id=event.event_id, market=impact.market, sector=impact.sector,
             direction=impact.direction, intensity=grade.intensity,
