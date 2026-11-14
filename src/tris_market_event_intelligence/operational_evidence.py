@@ -39,19 +39,23 @@ def _recent_freshness(
         )}
         if "articles" not in present:
             raise ValueError("Articles table not present")
-        count = db.execute(
-            "SELECT COUNT(*) FROM articles WHERE detected_at >= ? AND detected_at <= ?",
-            (since.isoformat(), now.isoformat()),
-        ).fetchone()[0]
+        count = db.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
         if count > maximum_rows:
-            raise ValueError("Recent article count exceeds audit capacity")
+            raise ValueError("Article count exceeds bounded UTC-safe audit capacity")
         rows = db.execute(
-            "SELECT source,detected_at,published_at FROM articles "
-            "WHERE detected_at >= ? AND detected_at <= ? ORDER BY id",
-            (since.isoformat(), now.isoformat()),
+            "SELECT source,detected_at,published_at FROM articles ORDER BY id",
         ).fetchall()
-    totals: dict[str, Counter[str]] = defaultdict(Counter)
+    # SQLite's lexical ISO timestamp ordering is NOT UTC ordering when rows
+    # contain mixed offsets. Normalize in Python under the explicit row cap.
+    recent: list[tuple[str, str, str | None]] = []
     for source, seen, published in rows:
+        receipt = datetime.fromisoformat(seen)
+        if receipt.utcoffset() is None:
+            raise ValueError("First-seen timestamps must contain a timezone")
+        if since <= receipt.astimezone(UTC) <= now:
+            recent.append((source, seen, published))
+    totals: dict[str, Counter[str]] = defaultdict(Counter)
+    for source, seen, published in recent:
         reason = assess_live_event(
             detected_at=seen, published_at=published, now=now,
             max_received_age_seconds=freshness_seconds,
@@ -63,7 +67,7 @@ def _recent_freshness(
         "since_utc": since.isoformat(),
         "until_utc": now.isoformat(),
         "freshness_budget_seconds": freshness_seconds,
-        "total_articles": len(rows),
+        "total_articles": len(recent),
         "sources": [
             {
                 "source": source,
@@ -150,6 +154,10 @@ def build_operational_evidence(
         }
         errors.append("source_health")
 
+    acceptance = _evidence_acceptance(
+        checks, requested_sources=sources,
+        calendar_supplied=calendar is not None,
+    )
     # Session-plan RUN means calendar *claims* the exchange is open; it is
     # not independently authenticated evidence of a live market.
     blockers = sorted(set(errors) | (
@@ -167,6 +175,7 @@ def build_operational_evidence(
         "observation_start_utc": since.isoformat(),
         "status": status, "blocked_checks": blockers,
         "session_plan": plan, "checks": checks,
+        "stage_1_evidence_review": acceptance,
         "sources_requested": list(sources),
         "real_market_data_observed_on_this_host": db_exists,
         "independent_publisher_first_seen_verified": False,
@@ -180,5 +189,51 @@ def build_operational_evidence(
             "is window-scoped; legacy latency audits cover all bounded DB rows. "
             "Nothing measures unknown missing stories, true earliest publication, "
             "or actual intraday prediction quality."
+        ),
+    }
+
+
+def _evidence_acceptance(
+    checks: dict[str, dict[str, object]], *,
+    requested_sources: tuple[str, ...],
+    calendar_supplied: bool,
+) -> dict[str, object]:
+    """Identify missing observations without promoting local polling to live proof."""
+    blockers: list[str] = []
+    articles = checks.get("recent_freshness", {})
+    if articles.get("status") != "OBSERVED":
+        blockers.append("RECENT_NEWS_DATA_UNAVAILABLE")
+    else:
+        by_source = {
+            row["source"]: row for row in articles["data"]["sources"]
+        }
+        for source in requested_sources:
+            if by_source[source]["articles"] == 0:
+                blockers.append("NO_RECENT_ARTICLES:" + source)
+    event = checks.get("event_lifecycle", {})
+    if event.get("status") != "OBSERVED":
+        blockers.append("MODEL_TIMELINE_UNAVAILABLE")
+    elif not event["data"]["model_checkpoints"]:
+        blockers.append("NO_MODEL_CHECKPOINTS")
+    if not calendar_supplied:
+        blockers.append("REVIEWED_SESSION_CALENDAR_NOT_SUPPLIED")
+    if checks.get("source_health", {}).get("status") != "OBSERVED":
+        blockers.append("SOURCE_HEALTH_NOT_READY")
+    blockers.extend((
+        "INDEPENDENT_NEWS_COVERAGE_UNVERIFIED",
+        "TRUE_PUBLISHER_BREAKING_TIME_UNVERIFIED",
+        "KR_US_LIVE_MODEL_LATENCY_UNVERIFIED",
+    ))
+    return {
+        "status": "NOT_VERIFIED",
+        "blockers": sorted(set(blockers)),
+        "reviewed_local_evidence_present": (
+            articles.get("status") == "OBSERVED"
+            and event.get("status") == "OBSERVED"
+        ),
+        "first_core_stage_complete": False,
+        "note": (
+            "Even a local run with articles and checkpoints cannot prove "
+            "complete KR/US real-time market-news coverage."
         ),
     }
