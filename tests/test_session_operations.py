@@ -23,7 +23,6 @@ from tris_market_event_intelligence.session_operations import (
 )
 from tris_market_event_intelligence.session_operations_cli import main as readiness_main
 
-
 FIXED = datetime(2026, 11, 16, 15, 0, tzinfo=UTC)
 
 
