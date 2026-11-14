@@ -337,3 +337,111 @@ def test_audit_cursor_validation_and_source_db_isolation(tmp_path: Path) -> None
         assert tuple(db.iterdump()) == source_snapshot
     with sqlite3.connect(journal) as db:
         assert tuple(db.iterdump()) == journal_snapshot
+
+
+def test_full_review_packet_exposes_context_hypothesis_and_gaps_without_writes(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    with sqlite3.connect(source) as db:
+        source_before = tuple(db.iterdump())
+    with sqlite3.connect(journal) as db:
+        journal_before = tuple(db.iterdump())
+    packet = NewsPilotReviewPacket(source_db=source, journal_db=journal)
+    result = packet.build(evidence_id=1)
+    assert result["schemaVersion"] == "news_pilot_review_packet_v1"
+    assert result["eventId"] == 69
+    assert result["reviewStatus"] == "REQUIRES_HUMAN_REVIEW"
+    assert result["source"]["literalEvidenceQuote"] in (
+        result["source"]["reportedEvidenceContext"]
+    )
+    assert result["source"]["factStatus"] == "UNVERIFIED"
+    assert result["hypothesis"]["direction"] == "NEGATIVE"
+    assert result["hypothesis"]["intensityScore"] == 55
+    assert result["hypothesis"]["scoreIsCalibratedToReturns"] is False
+    assert "financial" in result["hypothesis"]["conditionalMechanism"]
+    assert result["independentVerificationChecklist"] == [
+        {"check": "CONFIRM_OUTAGE_DURATION", "verified": False}
+    ]
+    assert result["reviewDecision"] is None
+    assert result["published"] is False
+    assert result["journalModified"] is False
+    assert result["productionDbModified"] is False
+    with sqlite3.connect(source) as db:
+        assert tuple(db.iterdump()) == source_before
+    with sqlite3.connect(journal) as db:
+        assert tuple(db.iterdump()) == journal_before
+
+
+def test_review_packet_retains_rejection_without_publishing(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    NewsPilotReviewLedger(source_db=source, journal_db=journal).decide(
+        evidence_id=1, decision="REJECTED", reviewer="editor",
+        reason="No independent evidence of duration and business impact.",
+        commit=True,
+    )
+    result = NewsPilotReviewPacket(source_db=source, journal_db=journal).build(
+        evidence_id=1
+    )
+    assert result["reviewStatus"] == "REJECTED"
+    assert result["reviewDecision"]["reviewer"] == "editor"
+    assert result["reviewDecision"]["decision"] == "REJECTED"
+    assert result["published"] is False
+
+
+@pytest.mark.parametrize("alteration", [
+    "tamper_any_source", "tamper_any_signal", "tamper_decision_hash",
+])
+def test_packet_refuses_tampered_data(
+    tmp_path: Path, alteration: str,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    if alteration == "tamper_any_source":
+        with sqlite3.connect(source) as db:
+            db.execute("UPDATE economic_events SET evidence='forged' WHERE id=69")
+    elif alteration == "tamper_any_signal":
+        with sqlite3.connect(journal) as db:
+            db.execute("UPDATE news_pilot_evidence SET signal_json='{}' WHERE id=1")
+    else:
+        NewsPilotReviewLedger(source_db=source, journal_db=journal).decide(
+            evidence_id=1, decision="REJECTED", reviewer="editor",
+            reason="News has insufficient confirmed impact evidence.",
+            commit=True,
+        )
+        with sqlite3.connect(journal) as db:
+            db.execute(
+                "UPDATE news_pilot_review_decisions SET signal_sha256=? WHERE id=1",
+                ("e" * 64,),
+            )
+    with pytest.raises(ValueError):
+        NewsPilotReviewPacket(source_db=source, journal_db=journal).build(
+            evidence_id=1
+        )
+
+
+def test_packet_does_not_guess_journal_id_or_allow_invalid_id(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    packet = NewsPilotReviewPacket(source_db=source, journal_db=journal)
+    with pytest.raises(ValueError, match="not found"):
+        packet.build(evidence_id=69)
+    for invalid in [0, -1, True]:
+        with pytest.raises(ValueError, match="Positive"):
+            packet.build(evidence_id=invalid)
