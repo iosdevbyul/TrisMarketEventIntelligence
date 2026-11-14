@@ -8,7 +8,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] prepare --cohort FILE --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] score --cohort FILE --score HUMAN_REVIEW_JSON --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] evaluate --cohort FILE --review HUMAN_REVIEW_JSON --predictions MODEL_JSON --output FILE"
-  echo "  bash scripts/news-learning-review.sh [--update] holdout --cohort FILE --train-end ISO --validation-end ISO --embargo-hours N --output FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] holdout --cohort FILE [--review HUMAN_REVIEW_JSON] --train-end ISO --validation-end ISO --embargo-hours N --output FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
