@@ -62,7 +62,7 @@ def historical_news_cohort(
         fetched = db.execute(
             """SELECT a.id, a.source, a.external_id, a.url, a.title,
                       a.summary, a.published_at, a.detected_at,
-                      c.sha256 AS capture_sha256, c.fetched_at
+                      c.sha256 AS capture_sha256, c.fetched_at, c.payload
                FROM articles a JOIN captures c ON c.id=a.capture_id
                ORDER BY a.id"""
         ).fetchall()
@@ -70,6 +70,11 @@ def historical_news_cohort(
         source_counts: Counter[str] = Counter()
         exclusions: Counter[str] = Counter()
         for article in fetched:
+            if not isinstance(article["payload"], bytes) or (
+                hashlib.sha256(article["payload"]).hexdigest()
+                != article["capture_sha256"]
+            ):
+                raise ValueError("Original RSS capture checksum mismatch")
             received = _timestamp(article["detected_at"])
             fetched_at = _timestamp(article["fetched_at"])
             if fetched_at > received:
@@ -129,6 +134,7 @@ def historical_news_cohort(
                 ),
                 "firstObservedAt": received.isoformat(),
                 "captureSha256": article["capture_sha256"],
+                "captureChecksumVerified": True,
                 "textSha256": hashlib.sha256(text).hexdigest(),
                 "storyGroupId": membership["story_id"] if membership else None,
                 "claimCountProcessedByCutoff": observed_claims,
@@ -160,4 +166,5 @@ def historical_news_cohort(
             "negativeSamplesValidated": False,
             "trainingDatasetEligible": False,
             "sourceDbModified": False,
+            "sourceAuthenticityIndependentlyVerified": False,
         }
