@@ -20,7 +20,7 @@ from tris_market_event_intelligence.event_ticker_proposals import (
 # Conservative suffixes: do not remove Holdings, Group, Financial etc., and
 # never interpret the resulting bare name as an authenticated legal identity.
 LEGAL_ENDINGS = re.compile(
-    r"(?:\\s+(?:Corporation|Corp\\.?|Incorporated|Inc\\.?|Limited|Ltd\\.?|PLC))$",
+    r"(?:\s+(?:Corporation|Corp\.?|Incorporated|Inc\.?|Limited|Ltd\.?|PLC))$",
     re.IGNORECASE,
 )
 MIN_ALIAS_LENGTH = 6
