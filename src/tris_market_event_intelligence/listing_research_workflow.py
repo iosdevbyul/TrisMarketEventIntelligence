@@ -123,7 +123,12 @@ def acquire_and_reconcile_listings(
         session = client or httpx.Client(timeout=20, trust_env=False, follow_redirects=False)
         try:
             for kind, (_, filename) in US_DIRECTORY.items():
-                raw = _fetch_official_directory(session, kind)
+                try:
+                    raw = _fetch_official_directory(session, kind)
+                except (ValueError, UnicodeError) as exc:
+                    raise ValueError(
+                        f"{kind}: source directory has invalid structure or exceeds limits"
+                    ) from exc
                 source_files.append((kind, filename, raw, "nasdaqtrader-official-https"))
         finally:
             if owned:
@@ -155,8 +160,13 @@ def acquire_and_reconcile_listings(
             "schema_version": "listing_snapshot_v1", "sources": sources,
         })
         registry = output_dir / "review-required-registry.csv"
-        preview = export_snapshot_registry(manifest, registry, write=True)
-        issuers = load_reviewed_issuers(registry)
+        try:
+            preview = export_snapshot_registry(manifest, registry, write=True)
+            issuers = load_reviewed_issuers(registry)
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError(
+                "Snapshot validation/registry export rejected official source data"
+            ) from exc
         report: dict[str, object] = {
             "schema_version": "listing_research_workflow_v1",
             "status": "SNAPSHOTS_CAPTURED_REVIEW_REQUIRED",
