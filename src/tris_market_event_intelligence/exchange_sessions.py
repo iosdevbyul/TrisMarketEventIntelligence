@@ -7,8 +7,8 @@ All instants are timezone-aware and represented in absolute UTC.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import pairwise
 from datetime import UTC, date, datetime
+from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 MARKET_ZONES = {
