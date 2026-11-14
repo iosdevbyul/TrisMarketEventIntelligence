@@ -78,14 +78,18 @@ if [[ "$bundle_set" -eq 0 ]]; then
     echo "[listing-validation] No captured listing bundle; run listing-research.sh." >&2
     exit 2
   fi
-  params+=(--bundle "$newest")
+  if [[ "$integrated" -eq 0 ]]; then
+    params+=(--bundle "$newest")
+  fi
 fi
 if [[ "$news_set" -eq 0 ]]; then
   if [[ ! -f "$root/news.sqlite3" || -L "$root/news.sqlite3" ]]; then
     echo "[listing-validation] Existing private news.sqlite3 required" >&2
     exit 2
   fi
-  params+=(--news-db "$root/news.sqlite3")
+  if [[ "$integrated" -eq 0 ]]; then
+    params+=(--news-db "$root/news.sqlite3")
+  fi
 fi
 if [[ "$integrated" -eq 1 ]]; then
   # Explicitly integrated workflow: makes RSS network requests and may append
