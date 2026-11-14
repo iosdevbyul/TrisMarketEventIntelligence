@@ -157,6 +157,16 @@ horizon. This remains synthetic-test-verified research infrastructure,
 **not proof of a trained or deployable predictor**.
 See `docs/stage-4-rolling-walkforward-evaluation.md`.
 
+## Real-data handoff boundary: no fabricated minute prices
+
+The separate read-only `market-event-minute-source-audit` now accepts
+explicit hash-pinned KR/US minute-price and benchmark CSV manifest files
+for a **provenance-unverified compatibility audit**. This does not
+upgrade DonghakStockVision's currently documented daily/unadjusted KRX
+OHLCV API into an intraday feed, nor does it prove an independently
+authenticated 1-minute US or Korean source. Details and blockers:
+`docs/stage-4-cross-market-minute-source-contract.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
