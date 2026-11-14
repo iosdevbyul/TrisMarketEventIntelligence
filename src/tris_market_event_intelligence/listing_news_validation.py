@@ -157,7 +157,7 @@ def validate_existing_listing_news(
             alias_path = output_dir / f"alias-diagnostics-page-{page_number:03}.json"
             with alias_path.open("x", encoding="utf-8") as output:
                 json.dump(alias_report, output, ensure_ascii=False, indent=2)
-                output.write("\\n")
+                output.write("\n")
             page_record: dict[str, object] = {
                 "path": str(page_path),
                 "sha256": hashlib.sha256(page_path.read_bytes()).hexdigest(),
