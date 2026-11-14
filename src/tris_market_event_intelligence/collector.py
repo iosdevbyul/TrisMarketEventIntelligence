@@ -151,6 +151,20 @@ class NewsStore:
                   capture_id INTEGER NOT NULL REFERENCES captures(id),
                   UNIQUE(source, external_id)
                 );
+                CREATE TABLE IF NOT EXISTS fetch_attempts (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  source TEXT NOT NULL,
+                  request_started_at TEXT NOT NULL,
+                  response_at TEXT,
+                  completed_at TEXT NOT NULL,
+                  request_elapsed_ms REAL,
+                  status TEXT NOT NULL CHECK(status IN
+                    ('ok', 'not_modified', 'error')),
+                  returned INTEGER NOT NULL DEFAULT 0,
+                  inserted INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_fetch_attempts_source_time
+                  ON fetch_attempts(source, completed_at);
                 CREATE TABLE IF NOT EXISTS fetch_state (
                   source TEXT PRIMARY KEY,
                   etag TEXT,
@@ -236,6 +250,22 @@ class NewsStore:
             )
         return inserted
 
+    def record_attempt(
+        self, source: str, started_at: str, response_at: str | None,
+        completed_at: str, request_elapsed_ms: float | None, status: str,
+        returned: int, inserted: int,
+    ) -> None:
+        """Persist fetch timing without source URLs or credentials."""
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO fetch_attempts (
+                  source,request_started_at,response_at,completed_at,
+                  request_elapsed_ms,status,returned,inserted
+                ) VALUES (?,?,?,?,?,?,?,?)""",
+                (source, started_at, response_at, completed_at,
+                 request_elapsed_ms, status, returned, inserted),
+            )
+
     def stats(self) -> dict[str, int]:
         with self.connect() as db:
             return {
@@ -265,7 +295,12 @@ class OfficialNewsCollector:
         )
         try:
             for source, url in self.feeds.items():
-                now = utc_now()
+                started_at = utc_now()
+                started_mono = time.monotonic()
+                response_at: str | None = None
+                request_elapsed_ms: float | None = None
+                returned = inserted = 0
+                status = "error"
                 etag, modified = self.store.state(source)
                 headers: dict[str, str] = {}
                 if etag:
@@ -274,23 +309,31 @@ class OfficialNewsCollector:
                     headers["If-Modified-Since"] = modified
                 try:
                     response = client.get(url, headers=headers)
+                    response_at = utc_now()
+                    request_elapsed_ms = max(0.0, (time.monotonic() - started_mono) * 1000)
                     if response.status_code == 304:
-                        self.store.save(source, url, None, [], now, etag, modified)
-                        outcome[source] = {"status": "not_modified", "inserted": 0}
-                        continue
-                    response.raise_for_status()
-                    payload = response.content
-                    if len(payload) > MAX_FEED_BYTES:
-                        raise ValueError("RSS response exceeds maximum size")
-                    articles = parse_rss(source, payload, now)
-                    count = self.store.save(
-                        source, url, payload, articles, now,
-                        response.headers.get("etag"), response.headers.get("last-modified"),
-                    )
-                    outcome[source] = {"status": "ok", "inserted": count}
+                        self.store.save(source, url, None, [], response_at, etag, modified)
+                        status = "not_modified"
+                    else:
+                        response.raise_for_status()
+                        payload = response.content
+                        if len(payload) > MAX_FEED_BYTES:
+                            raise ValueError("RSS response exceeds maximum size")
+                        articles = parse_rss(source, payload, response_at)
+                        returned = len(articles)
+                        inserted = self.store.save(
+                            source, url, payload, articles, response_at,
+                            response.headers.get("etag"), response.headers.get("last-modified"),
+                        )
+                        status = "ok"
                 except (httpx.HTTPError, ValueError, ET.ParseError) as exc:
-                    self.store.record_error(source, safe_error_code(exc), now)
-                    outcome[source] = {"status": "error", "inserted": 0}
+                    self.store.record_error(source, safe_error_code(exc), utc_now())
+                completed_at = utc_now()
+                self.store.record_attempt(
+                    source, started_at, response_at, completed_at,
+                    request_elapsed_ms, status, returned, inserted,
+                )
+                outcome[source] = {"status": status, "inserted": inserted}
         finally:
             if owned:
                 client.close()
