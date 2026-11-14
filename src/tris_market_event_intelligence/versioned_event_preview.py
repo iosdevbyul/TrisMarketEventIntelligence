@@ -32,7 +32,7 @@ SANCTION = re.compile(
     r"(?i)\\b(?:fines?|fined|penaliz(?:es|ed))\\b.{0,85}"
     r"(?:[€$£]\\s?\\d+(?:[.,]\\d+)?\\s?(?:m|bn|million|billion)"
     r"|\\d+(?:[.,]\\d+)?\\s?(?:million|billion)\\s?"
-    r"(?:euros?|dollars?|pounds?))\\b?"
+    r"(?:euros?|dollars?|pounds?))\\b"
 )
 NEGATION = re.compile(
     r"(?i)\\b(?:not|never|did not|has not|was not|weren't|denies|denied)\\b"
