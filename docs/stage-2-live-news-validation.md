@@ -664,3 +664,30 @@ snapshot are excluded rather than backdated. Observed registry
 metadata is not independently validated historical listing coverage.
 This is the first Stage 3-A milestone; linking approved, independently
 verified issuer identities to new events remains separate work.
+
+
+## Stage 3-A: review-only alias coverage for real RSS headlines
+
+Exact issuer registry names are deliberately insufficient for articles
+using a shorter trading name (for example, a headline mentioning
+"Microsoft" while the observed directory contains "Microsoft
+Corporation"). The existing event-level diagnostic only scans articles
+which *already have an extracted economic event*. The article-level
+coverage report now adds `derived_alias_hints` for representative,
+post-snapshot **unclassified or unmatched** articles.
+
+Candidate aliases are only deterministic legal-ending variants from the
+existing `issuer_alias_diagnostics.derived_alias_candidates` helper.
+No new alias-generation rules are introduced. Matching still uses
+bounded headline token boundaries. Shared names are
+`AMBIGUOUS_DERIVED_ALIAS`, source rows observed after receipt are
+`FUTURE_ALIAS_EVIDENCE`, expired listings are `INACTIVE_ALIAS`,
+and a uniquely eligible hint is `NEEDS_HUMAN_ALIAS_REVIEW`.
+
+Each hint includes a source article ID, observation time, and review
+status. It is **not** an approved ticker association or an
+`event_ticker_proposals_v1` record and cannot enter the review ledger
+or price training automatically. Existing event matching, review
+decisions, cutover fence, integrated schedule, and SQLite remain
+untouched. This diagnostic does not establish issuer authenticity,
+article relevance, causation, or price direction.
