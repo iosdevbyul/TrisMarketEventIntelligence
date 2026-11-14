@@ -7,14 +7,14 @@ import json
 from datetime import date, datetime
 from pathlib import Path
 
+from tris_market_event_intelligence.event_ticker_screen import (
+    EventTickerLink,
+    screen_intraday_links,
+)
 from tris_market_event_intelligence.exchange_sessions import (
     SessionCalendar,
     SessionDay,
     TradingHalt,
-)
-from tris_market_event_intelligence.event_ticker_screen import (
-    EventTickerLink,
-    screen_intraday_links,
 )
 from tris_market_event_intelligence.intraday_event_study import (
     IntradayNews,
