@@ -120,11 +120,30 @@ class NewsStore:
         path.parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=30)
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        # On macOS temporary SQLite databases can briefly fail their WAL
+        # initialization despite a successful open. Retry only that exact
+        # transient failure for an existing DB; persistent path or permission
+        # errors still propagate, and every failed connection is closed.
+        for attempt in range(3):
+            conn = sqlite3.connect(self.path, timeout=30)
+            try:
+                conn.execute("PRAGMA busy_timeout=30000")
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys=ON")
+                return conn
+            except sqlite3.OperationalError as exc:
+                conn.close()
+                if (
+                    str(exc) != "unable to open database file"
+                    or not self.path.is_file()
+                    or attempt == 2
+                ):
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+            except Exception:
+                conn.close()
+                raise
+        raise AssertionError("Unreachable SQLite connection retry state")
 
     def initialize(self) -> None:
         with self.connect() as db:
