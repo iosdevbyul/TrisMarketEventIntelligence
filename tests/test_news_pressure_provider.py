@@ -145,3 +145,42 @@ def test_noneligible_source_never_invokes_model() -> None:
         provider(model_reply()).analyze(
             candidate, impact(), generated_at="2026-11-15T01:00:00+00:00",
         )
+
+
+def test_strength_prompt_anchors_exact_prevalidated_quote() -> None:
+    captured: list = []
+    provider(model_reply(), capture=captured).analyze(
+        event(), impact(), generated_at="2026-11-15T01:00:00+00:00",
+    )
+    request = json.loads(captured[0]["messages"][1]["content"])
+    assert request["ALLOWED_EVIDENCE_QUOTE"] == impact().evidence_excerpt
+    assert "COPY" in captured[0]["messages"][0]["content"]
+    assert "UNASSESSED" in captured[0]["messages"][0]["content"]
+
+
+@pytest.mark.parametrize(("reply", "expected"), [
+    (model_reply("HIGH", 76, None), "NEWS_INTENSITY_QUOTE_MISSING"),
+    (model_reply("MODERATE", 51, "Fake event quote"),
+     "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE"),
+    (model_reply("LOW", 22, "Federal funds rate"),
+     "NEWS_INTENSITY_QUOTE_OUTSIDE_ALLOWED"),
+])
+def test_intensity_quote_rejection_produces_precise_reason_codes(
+    reply: str, expected: str,
+) -> None:
+    with pytest.raises(ImpactAnalysisError) as exc:
+        provider(reply).analyze(
+            event(), impact(), generated_at="2026-11-15T01:00:00+00:00",
+        )
+    assert exc.value.code == expected
+
+
+def test_valid_unassessed_with_unsupported_quote_is_still_rejected() -> None:
+    with pytest.raises(ImpactAnalysisError) as exc:
+        provider(model_reply(
+            "UNASSESSED", None, "invented quote",
+            reason="The observed event provides insufficient strength evidence.",
+        )).analyze(
+            event(), impact(), generated_at="2026-11-15T01:00:00+00:00",
+        )
+    assert exc.value.code == "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE"

@@ -113,6 +113,7 @@ def run_two_stage_pilot(
     direction_calls = 0
     strength_calls = 0
     items: list[dict[str, object]] = []
+    failure_codes: Counter[str] = Counter()
     for event in events:
         entry: dict[str, object] = {
             "event_id": event.event_id,
@@ -124,6 +125,7 @@ def run_two_stage_pilot(
             entry["status"] = "PREVIEW_NOT_ANALYZED"
         else:
             start = time.monotonic()
+            stage = "DIRECTION"
             direction_calls += 1
             try:
                 result = validate_result(event, direction_model.analyze(event))
@@ -137,6 +139,7 @@ def run_two_stage_pilot(
                 if directional is None:
                     entry["status"] = "NO_SUPPORTED_DIRECTION"
                 else:
+                    stage = "INTENSITY"
                     strength_calls += 1
                     signal = strength_model.analyze(
                         event, directional, generated_at=datetime.now(UTC).isoformat(),
@@ -157,10 +160,12 @@ def run_two_stage_pilot(
                 from tris_market_event_intelligence.impact import ImpactAnalysisError
 
                 entry["status"] = "REJECTED_OR_FAILED"
+                entry["failed_stage"] = stage
                 entry["failure_code"] = (
                     exc.code if isinstance(exc, ImpactAnalysisError)
                     else "INVALID_OR_FAILED_MODEL_RESPONSE"
                 )
+                failure_codes[entry["failure_code"]] += 1
             entry["elapsed_ms"] = round((time.monotonic() - start) * 1000, 1)
         counts[entry["status"]] += 1
         items.append(entry)
@@ -178,6 +183,7 @@ def run_two_stage_pilot(
         "model_id": model_id,
         "items": items,
         "counts": dict(sorted(counts.items())),
+        "failure_code_counts": dict(sorted(failure_codes.items())),
         "operational_quality_verified": False,
         "stock_returns_predicted": False,
         "production_database_modified": False,

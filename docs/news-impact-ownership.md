@@ -195,3 +195,22 @@ If no new eligible real event is present, the report says
 and the pipeline must not invent an example or replay already
 checkpointed events to pass. The two-stage result is not a calibrated
 real-world news intensity score or approval to enable automation.
+
+## Real two-stage failure: quote grounding (2026-11-15)
+
+The first live 3-event two-stage pilot made 3 direction-model calls and 1
+pressure-model call; two events had NO_SUPPORTED_DIRECTION and event 69
+failed NEWS_INTENSITY_UNSUPPORTED after the pressure call. The available
+report does **not** expose the raw quote or a detailed error cause, so
+whether the model omitted, paraphrased or invented a quote is not known.
+
+The revised prompt supplies ALLOWED_EVIDENCE_QUOTE from the already
+validated first-stage impact and requests an **exact copy** or UNASSESSED
+when the evidence is insufficient. The safety gate is not weakened:
+an assessed grade must quote the exact allowed impact excerpt; missing,
+non-source and other-source excerpts receive distinct stable error codes.
+The read-only pilot also reports the failed stage and aggregate codes,
+without printing model outputs or modifying SQLite or the LaunchAgent.
+This is a prompt and error-diagnostics improvement, **not evidence** that
+Gemma 2's assessed news intensity is accurate. A subsequent explicit
+real Mac pilot is still necessary before enabling automated scoring.

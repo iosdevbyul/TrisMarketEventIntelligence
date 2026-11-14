@@ -37,8 +37,13 @@ historic returns, market consensus or hypothetical price targets.
 The index is a heuristic, uncalibrated by historical market prices.
 Scale: LOW=1..33, MODERATE=34..66, HIGH=67..100.
 For UNASSESSED return index null, reason must explain the lack of evidence.
-Supply a short verbatim excerpt from the trusted event evidence that
-supports the reason, or null when UNASSESSED.
+For an assessed grade, COPY the supplied ALLOWED_EVIDENCE_QUOTE exactly
+into intensity_evidence_excerpt, without translation, paraphrasing,
+ellipses, surrounding quotation marks or capitalization changes.
+It is a source-verified literal span from event evidence. If that
+specific quote does not justify a magnitude, select UNASSESSED,
+intensity_score null and intensity_evidence_excerpt null.
+Never make a new quote from memory or external knowledge.
 Do not invent quantities, stock percentages, entities, or facts.
 Only JSON keys intensity, intensity_score, reason, intensity_evidence_excerpt.
 For an UNVERIFIED or CANDIDATE report, describe the conditional scenario
@@ -119,6 +124,7 @@ class GemmaNewsPressureProvider:
                     "direction": impact.direction,
                     "horizon": impact.horizon,
                     "impact_evidence_excerpt": impact.evidence_excerpt,
+                    "ALLOWED_EVIDENCE_QUOTE": impact.evidence_excerpt,
                     "impact_rationale": impact.rationale,
                     "uncertainty": impact.uncertainty,
                 }, ensure_ascii=False)},
@@ -166,19 +172,29 @@ class GemmaNewsPressureProvider:
             raise ImpactAnalysisError(
                 "NEWS_INTENSITY_INCONSISTENT", "News index conflicts with grade",
             )
-        if grade.intensity != "UNASSESSED" and (
-            not grade.intensity_evidence_excerpt
-            or grade.intensity_evidence_excerpt not in event.evidence
+        if grade.intensity != "UNASSESSED":
+            if not grade.intensity_evidence_excerpt:
+                raise ImpactAnalysisError(
+                    "NEWS_INTENSITY_QUOTE_MISSING",
+                    "Assessed strength requires a source-backed quotation",
+                )
+            if grade.intensity_evidence_excerpt not in event.evidence:
+                raise ImpactAnalysisError(
+                    "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE",
+                    "Intensity quote is not a verbatim event evidence span",
+                )
+            if grade.intensity_evidence_excerpt != impact.evidence_excerpt:
+                raise ImpactAnalysisError(
+                    "NEWS_INTENSITY_QUOTE_OUTSIDE_ALLOWED",
+                    "Intensity quote must be the previously validated impact excerpt",
+                )
+        elif (
+            grade.intensity_evidence_excerpt
+            and grade.intensity_evidence_excerpt not in event.evidence
         ):
             raise ImpactAnalysisError(
-                "NEWS_INTENSITY_UNSUPPORTED",
-                "Assessed strength needs an exact event evidence excerpt",
-            )
-        if grade.intensity_evidence_excerpt and (
-            grade.intensity_evidence_excerpt not in event.evidence
-        ):
-            raise ImpactAnalysisError(
-                "NEWS_INTENSITY_UNSUPPORTED", "Invented supporting excerpt",
+                "NEWS_INTENSITY_QUOTE_NOT_IN_SOURCE",
+                "Unassessed grade quote is not in source evidence",
             )
         return NewsImpactSignal(
             event_id=event.event_id, market=impact.market, sector=impact.sector,
