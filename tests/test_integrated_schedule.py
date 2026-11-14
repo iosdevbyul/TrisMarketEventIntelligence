@@ -25,10 +25,11 @@ SOURCES = ("fed_monetary", "fed_all")
 
 
 def fixture_config(**kwargs: object) -> dict[str, object]:
+    options = {"sources": SOURCES, **kwargs}
     return integrated_launchd_configuration(
         Path("/usr/local/bin/python3"), db_path=Path("/tmp/market-events/news.sqlite3"),
         status_path=Path("/tmp/market-events/integrated-last-run.json"),
-        sources=SOURCES, **kwargs,
+        **options,
     )
 
 
