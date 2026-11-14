@@ -26,6 +26,7 @@ OTHER = (
     b"ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|"
     b"NASDAQ Symbol\n"
     b"ACME|Acme Corporation - Common Stock|N|ACME|N|100|N|ACME\n"
+    b"ABBV|AbbVie Inc. Common Stock|N|ABBV|N|100|N|ABBV\n"
     b"OTHER|Another Corp - Common Stock|P|OTHER|N|100|N|OTHER\n"
     b"File Creation Time: 1115202612:00|||||||\n"
 )
@@ -81,7 +82,7 @@ def test_real_source_capture_reuses_existing_import_and_matcher(tmp_path: Path) 
             dest, fetch_us=True, krx_reviewed=krx, news_db=news,
             client=session, now=OBSERVED,
         )
-    assert report["issuer_rows"] == 3
+    assert report["issuer_rows"] == 4
     assert report["ticker_candidates"] == 0
     assert report["events_inspected"] == 1
     assert report["status"] == "SNAPSHOTS_CAPTURED_REVIEW_REQUIRED"
