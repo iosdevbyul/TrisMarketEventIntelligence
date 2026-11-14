@@ -129,10 +129,13 @@ def study_intraday(
             raise ValueError("Publication, receipt and availability must be chronological")
         latency = (available - published).total_seconds()
 
-        def missing(reason: str, entry: datetime | None = None) -> IntradayResult:
+        def missing(
+            reason: str, entry: datetime | None = None,
+            source: IntradayNews = event, delay: float = latency,
+        ) -> IntradayResult:
             return IntradayResult(
-                event.event_id, event.market, event.symbol, event.benchmark_symbol,
-                entry.isoformat() if entry else None, reason, latency,
+                source.event_id, source.market, source.symbol, source.benchmark_symbol,
+                entry.isoformat() if entry else None, reason, delay,
                 tuple(IntradayLabel(h, None, None, None, None, reason) for h in horizons),
             )
 
