@@ -73,7 +73,7 @@ def test_news_database_refused_before_any_write(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="ledger identity"):
         import_review_decisions(news_db, proposals, decisions)
     assert news_db.read_bytes() == before
-    with pytest.raises(ValueError, match="review"):
+    with pytest.raises(ValueError, match="ledger identity"):
         list_review_decisions(news_db)
     assert news_db.read_bytes() == before
 
