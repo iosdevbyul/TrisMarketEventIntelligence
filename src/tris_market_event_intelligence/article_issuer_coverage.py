@@ -24,12 +24,14 @@ MAX_ARTICLES = 50_000
 MAX_POST_SNAPSHOT = 1_000
 MAX_SAMPLES = 25
 MAX_ALIAS_HINTS = 25
+MAX_REVIEW_ITEMS = 1000
 
 
 def inspect_article_issuer_coverage(
     db_path: Path, issuers: tuple[ListedIssuer, ...], *,
     observed_at: datetime, as_of: datetime,
     max_articles: int = MAX_POST_SNAPSHOT,
+    include_review_items: bool = False,
 ) -> dict[str, object]:
     """Find headline issuer mentions for post-observation RSS articles only.
 
@@ -82,6 +84,8 @@ def inspect_article_issuer_coverage(
     representative: dict[tuple[str, str], int] = {}
     alias_counts: Counter[str] = Counter()
     alias_hints: list[dict[str, object]] = []
+    review_items: list[dict[str, object]] = []
+    review_items_total = 0
     inspected = 0
     deferred = 0
     counts: Counter[str] = Counter()
@@ -188,6 +192,59 @@ def inspect_article_issuer_coverage(
                         "approved": False,
                         "training_dataset_eligible": False,
                     })
+        # The optional complete review artifact is distinct from the
+        # 25-row diagnostic samples. It never has approval authority.
+        # Each record carries the immutable article ID and source URL needed
+        # to reconcile later decisions to original captured news.
+        if include_review_items:
+            for candidate in proposals:
+                review_items_total += 1
+                if len(review_items) < MAX_REVIEW_ITEMS:
+                    review_items.append({
+                        "article_id": article_id,
+                        "article_source": source,
+                        "article_url": url,
+                        "headline": title[:350],
+                        "article_detected_at": seen.isoformat(),
+                        "candidate_type": "EXACT_REVIEWED_NAME",
+                        "market": candidate["market"],
+                        "symbol": candidate["symbol"],
+                        "matched_names": candidate["matched_names"],
+                        "registry_source_id": candidate["registry_source_id"],
+                        "registry_evidence_seen_at": candidate[
+                            "registry_evidence_seen_at"
+                        ],
+                        "human_review_required": True,
+                        "approved": False,
+                        "point_in_time_training_eligible": False,
+                    })
+            # Derived legal-name hints remain a separate, explicitly
+            # less trusted class and are never upgraded to exact matches.
+            if status == "NO_EXACT_ISSUER_NAME":
+                for hint in alias_hints:
+                    if hint["article_id"] != article_id or (
+                        hint["status"] != "NEEDS_HUMAN_ALIAS_REVIEW"
+                    ):
+                        continue
+                    for issuer_hint in hint["possible_issuers"]:
+                        review_items_total += 1
+                        if len(review_items) < MAX_REVIEW_ITEMS:
+                            review_items.append({
+                                "article_id": article_id,
+                                "article_source": source,
+                                "article_url": url,
+                                "headline": title[:350],
+                                "article_detected_at": seen.isoformat(),
+                                "candidate_type": "DERIVED_ALIAS_REVIEW_HINT",
+                                "market": issuer_hint["market"],
+                                "symbol": issuer_hint["symbol"],
+                                "matched_names": [hint["candidate_alias"]],
+                                "registry_source_id": None,
+                                "registry_evidence_seen_at": None,
+                                "human_review_required": True,
+                                "approved": False,
+                                "point_in_time_training_eligible": False,
+                            })
         counts[status] += 1
         counts["candidate_mentions"] += len(proposals)
         per_source = source_counts.setdefault(source, Counter())
@@ -210,7 +267,7 @@ def inspect_article_issuer_coverage(
         "FUTURE_LISTING_EVIDENCE", "NO_EXACT_ISSUER_NAME",
         "CROSS_SOURCE_REPEAT",
     )
-    return {
+    result: dict[str, object] = {
         "schema_version": "article_issuer_coverage_v1",
         "status": "OBSERVED_READ_ONLY",
         "listing_observed_at": start.isoformat(),
@@ -225,6 +282,10 @@ def inspect_article_issuer_coverage(
             for source, values in sorted(source_counts.items())
         },
         "candidate_samples": samples,
+        "review_items_total": review_items_total if include_review_items else None,
+        "review_items_truncated": (
+            review_items_total > len(review_items) if include_review_items else None
+        ),
         "derived_aliases_checked": len(derived_aliases),
         "derived_alias_hint_counts": {
             name: alias_counts[name] for name in (
@@ -258,3 +319,6 @@ def inspect_article_issuer_coverage(
             "are required before any link becomes training input."
         ),
     }
+    if include_review_items:
+        result["review_items"] = review_items
+    return result
