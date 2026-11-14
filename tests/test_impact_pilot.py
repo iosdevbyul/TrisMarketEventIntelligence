@@ -42,9 +42,11 @@ def database(db: Path) -> None:
                     id, article_id, extractor_version, classification, status,
                     evidence, source, source_url, detected_at, processed_at,
                     capture_sha256
-                ) VALUES (?, ?, 'fixture', ?, ?, 'some recorded evidence',
-                          'fixture', 'https://example.org', 'now', 'now', 'sha')""",
-                (event_id, event_id, category, status),
+                ) VALUES (?, ?, 'fixture', ?, ?, ?,
+                          'fixture', ?, 'now', 'now', 'sha')""",
+                (event_id, event_id, category, status,
+                 f"Fixture evidence for independent event {event_id}",
+                 f"https://example.org/story/{event_id}"),
             )
             conn.execute(
                 "INSERT INTO event_metadata VALUES (?, ?, '[]', 'not verified')",
@@ -132,3 +134,57 @@ def test_new_only_is_scoped_to_requested_model(tmp_path: Path) -> None:
         new_only=True,
     )
     assert [row["event_id"] for row in report["candidates"]] == [1, 3, 4]
+
+
+def test_new_cohort_skips_duplicate_articles_and_title_only_ppi(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE economic_events SET source_url=? WHERE id=7",
+            ("https://example.org/story/3?utm_source=feed",),
+        )
+        conn.execute(
+            "UPDATE economic_events SET classification='ECONOMIC_INDICATOR', evidence=? WHERE id=4",
+            ("2026년 8월 생산자물가지수(잠정)",),
+        )
+    before = db.read_bytes()
+    report = pilot_candidates(
+        db, model_id="gemma2:latest", new_only=True,
+    )
+    assert [row["event_id"] for row in report["candidates"]] == [3]
+    assert report["skipped_duplicate_sources"] == 1
+    assert report["skipped_sparse_evidence"] == 1
+    assert db.read_bytes() == before
+
+
+def test_new_cohort_skips_previous_version_copy_of_same_article(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE economic_events SET source_url=? WHERE id=7",
+            ("https://example.org/story/2",),
+        )
+    report = pilot_candidates(
+        db, model_id="gemma2:latest", new_only=True,
+    )
+    assert [row["event_id"] for row in report["candidates"]] == [3, 4]
+    assert report["skipped_duplicate_sources"] == 1
+
+
+def test_new_cohort_collapses_identical_long_evidence_across_feeds(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    long_evidence = (
+        "Microsoft says it is continuing to restore services including "
+        "Outlook and Teams following a global outage."
+    )
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE economic_events SET evidence=? WHERE id=3", (long_evidence,))
+        conn.execute("UPDATE economic_events SET evidence=? WHERE id=7", (long_evidence,))
+    report = pilot_candidates(
+        db, model_id="gemma2:latest", new_only=True,
+    )
+    assert [row["event_id"] for row in report["candidates"]] == [3, 4]
+    assert report["skipped_duplicate_sources"] == 1
