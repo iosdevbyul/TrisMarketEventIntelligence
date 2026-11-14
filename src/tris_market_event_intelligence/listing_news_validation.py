@@ -60,6 +60,7 @@ def validate_existing_listing_news(
     ledger: Path | None = None,
     max_pages: int = MAX_PAGES,
     as_of: datetime | None = None,
+    post_snapshot_only: bool = False,
 ) -> dict[str, object]:
     """Scan existing extracted events in ascending ID order, create reports only.
 
@@ -105,6 +106,7 @@ def validate_existing_listing_news(
             report = propose_event_tickers(
                 news_db, issuers, limit=PAGE_SIZE, as_of=cutoff,
                 after_event_id=cursor,
+                received_since=first_seen if post_snapshot_only else None,
             )
             items = report["items"]
             if not items:
@@ -203,6 +205,7 @@ def validate_existing_listing_news(
             "news_db": str(news_db),
             "evaluation_cutoff": cutoff.isoformat(),
             "events_inspected": event_count,
+            "post_snapshot_only": post_snapshot_only,
             "pre_observation_news_events": before,
             "post_observation_news_events": after,
             "status_counts": dict(sorted(counts.items())),
@@ -218,6 +221,7 @@ def validate_existing_listing_news(
             "pages": pages,
             "has_more_events": not exhausted,
             "resume_after_event_id": cursor if not exhausted else None,
+            "new_news_available": after > 0,
             "candidate_samples": samples,
             "report_only": True,
             "source_origin_independently_authenticated": False,
