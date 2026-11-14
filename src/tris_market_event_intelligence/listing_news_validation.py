@@ -24,10 +24,10 @@ from tris_market_event_intelligence.listing_snapshot_import import (
 from tris_market_event_intelligence.news_classification_evidence import inspect_unclassified_news
 from tris_market_event_intelligence.news_pipeline_evidence import inspect_news_pipeline
 from tris_market_event_intelligence.news_stage_transitions import inspect_news_stage_transitions
-from tris_market_event_intelligence.v3_cutover_audit import audit_v3_cutover
 from tris_market_event_intelligence.ticker_review_queue import (
     reconcile_ticker_review_queue,
 )
+from tris_market_event_intelligence.v3_cutover_audit import audit_v3_cutover
 
 MAX_PAGES = 16
 PAGE_SIZE = 500
