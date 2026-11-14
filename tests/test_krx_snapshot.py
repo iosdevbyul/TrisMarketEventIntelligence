@@ -152,9 +152,11 @@ def test_malformed_persisted_bar_is_never_accepted(tmp_path: Path) -> None:
     with sqlite3.connect(db) as conn:
         conn.execute(
             "UPDATE bars SET payload=? WHERE trading_date='2026-11-13'",
-            ('{"ticker":"005930","trading_date":"2026-11-13",'
-             '"provider":"krx","market":"KOSPI","adjustment":"adjusted",'
-             '"close":0,"volume":3}',),
+            (json.dumps({
+                "ticker": "005930", "trading_date": "2026-11-13",
+                "provider": "krx", "market": "KOSPI", "adjustment": "adjusted",
+                "close": 0, "volume": 3,
+            }),),
         )
     pin = hashlib.sha256(db.read_bytes()).hexdigest()
     with pytest.raises(MarketSnapshotError, match="invalid persisted"):
