@@ -209,6 +209,38 @@ def validate_existing_listing_news(
         classification = inspect_unclassified_news(
             news_db, observed_at=first_seen, as_of=cutoff,
         )
+        # Keep the full, bounded article-level review records in an isolated
+        # immutable file; the high-level integrated status stays compact.
+        article_coverage = inspect_article_issuer_coverage(
+            news_db, issuers, observed_at=first_seen, as_of=cutoff,
+            include_review_items=True,
+        )
+        review_items = article_coverage.pop("review_items", [])
+        review_artifact = {
+            "schema_version": "article_issuer_review_bundle_v1",
+            "status": "REVIEW_ONLY_NOT_APPROVED",
+            "listing_manifest_sha256": hashlib.sha256(
+                (bundle / "manifest.json").read_bytes()
+            ).hexdigest(),
+            "listing_registry_sha256": hashlib.sha256(registry.read_bytes()).hexdigest(),
+            "listing_observed_at": first_seen.isoformat(),
+            "evaluation_cutoff": cutoff.isoformat(),
+            "items_total": article_coverage.get("review_items_total"),
+            "items_truncated": article_coverage.get("review_items_truncated"),
+            "items": review_items,
+            "human_review_required": True,
+            "approved_ticker_links_created": 0,
+            "point_in_time_training_eligible": False,
+            "news_database_modified": False,
+        }
+        review_path = output_dir / "article-issuer-review.json"
+        with review_path.open("x", encoding="utf-8") as output:
+            json.dump(review_artifact, output, ensure_ascii=False, indent=2)
+            output.write("\\n")
+        article_coverage["review_bundle_path"] = str(review_path)
+        article_coverage["review_bundle_sha256"] = hashlib.sha256(
+            review_path.read_bytes()
+        ).hexdigest()
         summary: dict[str, object] = {
             "schema_version": "listing_news_validation_v1",
             "status": (
@@ -246,9 +278,7 @@ def validate_existing_listing_news(
             "news_classification_evidence": classification,
             "v3_cutover_audit": audit_v3_cutover(news_db, as_of=cutoff),
             "v3_event_integrity": inspect_v3_event_integrity(news_db, as_of=cutoff),
-            "article_issuer_coverage": inspect_article_issuer_coverage(
-                news_db, issuers, observed_at=first_seen, as_of=cutoff,
-            ),
+            "article_issuer_coverage": article_coverage,
             "candidate_samples": samples,
             "report_only": True,
             "source_origin_independently_authenticated": False,
