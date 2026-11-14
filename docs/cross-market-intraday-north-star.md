@@ -231,6 +231,17 @@ or low-latency Gemma inference. After-hours news collection remains
 a separate supported path. See
 `docs/stage-1-kr-us-market-operations-readiness.md`.
 
+## Stage 1: unified offline real-data evidence packet
+
+The read-only `market-event-operational-evidence` command now combines
+source-specific collection timing, news→extraction→Gemma persisted-result
+timing, a scoped recent-news freshness breakdown, persisted source
+health and optional operator-reviewed KR/US market-session readiness.
+Missing/private runtime data and unknown market calendar dates are
+reported as unavailable, never as zero latency or verified success.
+Actual Mac runtime verification is **still outstanding**.
+See `docs/stage-1-operational-evidence-packet.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
