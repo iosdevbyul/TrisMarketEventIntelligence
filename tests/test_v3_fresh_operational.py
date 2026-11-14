@@ -4,6 +4,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -78,7 +79,7 @@ def test_v3_fresh_only_ignores_historical_v2_and_dedups_two_feeds(
             client=client, listing_bundle=bundle,
             review_output_root=report_root, enable_v3_for_new_articles=True,
         )
-    assert result["status"] == "healthy"
+    assert result["status"] == "healthy", result
     assert result["event_extractor_version"] == "multi-v3"
     assert result["v3_fresh_only"] is True
     assert result["collection"]["new_articles"] == 4
@@ -159,3 +160,26 @@ def test_v3_is_not_backfill_for_existing_post_snapshot_news(
         assert connection.execute(
             "SELECT COUNT(*) FROM extraction_runs"
         ).fetchone()[0] == 0
+
+
+def test_integrated_failure_identifies_safe_stage_without_leaking_exception_text(
+    tmp_path: Path,
+) -> None:
+    bundle = bundle_in(tmp_path)
+    folder = tmp_path / "reports"
+    folder.mkdir()
+    db = tmp_path / "news.sqlite3"
+    with make_client() as client, patch(
+        "tris_market_event_intelligence.integrated_pipeline."
+        "validate_existing_listing_news",
+        side_effect=ValueError("secret-local-operator-path"),
+    ):
+        result = run_integrated_pass(
+            db, selected_sources=("bbc_world",), client=client,
+            listing_bundle=bundle, review_output_root=folder,
+            enable_v3_for_new_articles=True,
+        )
+    assert result["status"] == "failed"
+    assert result["error_stage"] == "ticker_review"
+    assert result["error_code"] == "ValueError"
+    assert "secret-local-operator-path" not in str(result)
