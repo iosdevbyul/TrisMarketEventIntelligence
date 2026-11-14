@@ -9,12 +9,12 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 
 from tris_market_event_intelligence import __version__
-from tris_market_event_intelligence.news_pressure_store import NewsPressureStore
 from tris_market_event_intelligence.api_queries import (
     EventReader,
     claims_database_ready,
     database_ready,
 )
+from tris_market_event_intelligence.news_pressure_store import NewsPressureStore
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
