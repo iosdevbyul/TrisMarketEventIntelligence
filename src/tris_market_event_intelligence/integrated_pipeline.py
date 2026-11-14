@@ -7,11 +7,10 @@ gate. This does not enable launchd or authenticate market news.
 from __future__ import annotations
 
 import fcntl
-import json
 import os
 import sqlite3
-import tempfile
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -140,9 +139,7 @@ def run_integrated_pass(
                 report["event_extraction"] = asdict(extraction)
                 report["source_health"] = audit_source_health(
                     db_path, expected_sources=selected_sources,
-                    now=__import__("datetime").datetime.now(
-                        __import__("datetime").UTC,
-                    ),
+                    now=datetime.now(UTC),
                     max_success_age_seconds=source_success_seconds,
                 )
                 if enable_local_analysis:
