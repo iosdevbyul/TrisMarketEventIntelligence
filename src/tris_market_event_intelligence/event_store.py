@@ -135,7 +135,7 @@ class EventProcessor:
                 """,
                 (
                     extractor_version,
-                    EXTRACTOR_VERSION,
+                    V3_PRODUCTION_VERSION,
                     extractor_version,
                     after_article_id,
                     after_article_id,
