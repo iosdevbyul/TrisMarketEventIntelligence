@@ -151,7 +151,7 @@ def test_bad_nyse_footer_position_or_data_rejected(tmp_path: Path) -> None:
             "File Creation Time: 1113202621:31",
             "File Creation Time: UNVERIFIED",
         ),
-        actual_footer + "TEST|Test Issuer - Common Stock|N|TEST|N|100|N|TEST\\n",
+        actual_footer + "TEST|Test Issuer - Common Stock|N|TEST|N|100|N|TEST\n",
         actual_footer.replace(
             "File Creation Time: 1113202621:31||||||",
             "File Creation Time: 1113202621:31|WRONG|||||",
