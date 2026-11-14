@@ -66,7 +66,8 @@ def test_failed_provider_is_measured_without_logging_sensitive_error(
             "FROM impact_attempt_timings"
         ).fetchall()
         error_codes = db.execute("SELECT last_error FROM impact_errors").fetchall()
-    assert all(outcome == "ERROR" and returned and duration >= 0\n               for outcome, returned, duration in attempts)
+    assert all(outcome == "ERROR" and returned and duration >= 0 
+               for outcome, returned, duration in attempts)
     assert error_codes == [("RuntimeError",), ("RuntimeError",)]
     audit = audit_gemma_timing(path, as_of=datetime.now(UTC))
     assert audit["sources"][0]["provider_duration_missing"] == 0
