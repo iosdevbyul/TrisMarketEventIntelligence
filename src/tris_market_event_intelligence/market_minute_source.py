@@ -14,7 +14,7 @@ from datetime import datetime
 from math import isfinite
 from pathlib import Path
 
-from tris_market_event_intelligence.exchange_sessions import MARKET_ZONES, utc
+from tris_market_event_intelligence.exchange_sessions import utc
 
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _MAX_SIZE = 32 * 1024 * 1024
@@ -80,6 +80,8 @@ def audit_market_source(manifest: Path) -> dict[str, object]:
             raise MarketSourceContractError("Market and instrument kind must be explicit")
         if not isinstance(provider, str) or not provider.strip() or len(provider) > 80:
             raise MarketSourceContractError("Provider identity required")
+        if not isinstance(filename, str):
+            raise MarketSourceContractError("Source filename must be text")
         if filename in checked_files:
             raise MarketSourceContractError("Repeated source file")
         checked_files.add(filename)
