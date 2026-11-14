@@ -6,7 +6,6 @@ or authority to publish. It never modifies either SQLite database.
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from collections import Counter
 from contextlib import closing
 from datetime import datetime
