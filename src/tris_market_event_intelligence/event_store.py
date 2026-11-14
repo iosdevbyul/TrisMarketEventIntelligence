@@ -76,31 +76,30 @@ class EventProcessor:
         or the listing snapshot. A separate operator opt-in is mandatory.
         """
         self.initialize()
-        with self.store.connect() as db:
-            with db:
-                db.execute(
-                    """CREATE TABLE IF NOT EXISTS event_extractor_rollout (
-                        extractor_version TEXT PRIMARY KEY,
-                        activated_at TEXT NOT NULL,
-                        article_id_floor INTEGER NOT NULL CHECK(article_id_floor >= 0)
-                    )"""
-                )
-                activated = datetime.now(UTC)
-                floor = int(db.execute(
-                    "SELECT COALESCE(MAX(id), 0) FROM articles"
-                ).fetchone()[0])
-                inserted = db.execute(
-                    """INSERT OR IGNORE INTO event_extractor_rollout
-                       (extractor_version, activated_at, article_id_floor)
-                       VALUES (?, ?, ?)""",
-                    (V3_PRODUCTION_VERSION, activated.isoformat(), floor),
-                ).rowcount
-                row = db.execute(
-                    """SELECT activated_at, article_id_floor
-                       FROM event_extractor_rollout
-                       WHERE extractor_version = ?""",
-                    (V3_PRODUCTION_VERSION,),
-                ).fetchone()
+        with self.store.connect() as db, db:
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS event_extractor_rollout (
+                    extractor_version TEXT PRIMARY KEY,
+                    activated_at TEXT NOT NULL,
+                    article_id_floor INTEGER NOT NULL CHECK(article_id_floor >= 0)
+                )"""
+            )
+            activated = datetime.now(UTC)
+            floor = int(db.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM articles"
+            ).fetchone()[0])
+            inserted = db.execute(
+                """INSERT OR IGNORE INTO event_extractor_rollout
+                   (extractor_version, activated_at, article_id_floor)
+                   VALUES (?, ?, ?)""",
+                (V3_PRODUCTION_VERSION, activated.isoformat(), floor),
+            ).rowcount
+            row = db.execute(
+                """SELECT activated_at, article_id_floor
+                   FROM event_extractor_rollout
+                   WHERE extractor_version = ?""",
+                (V3_PRODUCTION_VERSION,),
+            ).fetchone()
         if row is None:
             raise ValueError("Missing v3 rollout fence")
         try:
