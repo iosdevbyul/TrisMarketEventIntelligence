@@ -55,10 +55,10 @@ def test_v3_fresh_only_ignores_historical_v2_and_dedups_two_feeds(
     store = NewsStore(db)
     store.initialize()
     prior = (
-        "<rss><channel><item><guid>old</guid>"
-        "<title>Cloud service outage disrupts users</title>"
-        "<link>https://example.org/old</link></item></channel></rss>"
-    ).encode()
+        b"<rss><channel><item><guid>old</guid>"
+        b"<title>Cloud service outage disrupts users</title>"
+        b"<link>https://example.org/old</link></item></channel></rss>"
+    )
     old_at = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     store.save("bbc_world", "https://example.org/feed", prior,
                parse_rss("bbc_world", prior, old_at),
