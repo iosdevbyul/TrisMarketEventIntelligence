@@ -146,6 +146,17 @@ research-only evidence, **not** a deployable prediction model or
 stage-completion certificate. See
 `docs/stage-4-cpu-baseline-evaluation.md`.
 
+## Rolling out-of-period CPU baseline checks
+
+The opt-in `--rolling-windows` mode reconstructs each embargoed
+training/holdout fold from original screened news, links and minute
+labels, rather than recycling an earlier single-cutoff dataset.
+Every holdout window is disjoint; model-free historical mean versus zero
+return baseline is evaluated independently per exchange and minute
+horizon. This remains synthetic-test-verified research infrastructure,
+**not proof of a trained or deployable predictor**.
+See `docs/stage-4-rolling-walkforward-evaluation.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
