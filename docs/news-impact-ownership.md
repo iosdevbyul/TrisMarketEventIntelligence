@@ -158,3 +158,40 @@ under the user's private Application Support folder.
 ## Pilot distinction: unassessed is not a Gemma inference
 
 The 2026-11-15 real Mac pilot selected one GEOPOLITICAL / GLOBAL / ENERGY impact with UNCERTAIN direction. The pressure provider correctly skips inference, but the original pilot labeled the result PILOT_OUTPUT_VALIDATED. The revised pilot instead reports NO_MODEL_CALLS_UNCERTAIN_DIRECTION, model_call_attempts=0 and SKIPPED_UNCERTAIN_DIRECTION. Eligible directional impacts receive selection priority. Actual local Gemma quality remains unverified until a genuinely eligible directional impact exists in source evidence; never fabricate a directional event simply to pass a pilot.
+
+
+## Two-stage end-to-end pilot without relying on old direction records
+
+The previous read-only pressure pilot was blocked by a stored UNCERTAIN
+impact. This **separate** workflow uses the existing strict
+`pilot_candidates(..., new_only=True)` selector for up to three
+not-already-checkpointed, non-duplicate, source-supported real events.
+It then chains the existing `market-impact-v8` Ollama direction and
+causal-mechanism validator with the opt-in news-pressure validator.
+Only a defensible POSITIVE, NEGATIVE or MIXED stage-one hypothesis can
+reach stage two. If the source does not support a direction, stage two
+is skipped; source quote or mechanism validation failures reject the
+result. No default live model calls are made.
+
+Preview the actual selected events after updating the project:
+
+```bash
+market-event-news-two-stage-pilot --limit 3
+```
+
+An **explicit** manual, one-shot local run may then be performed:
+
+```bash
+market-event-news-two-stage-pilot --limit 3 --run --model gemma2:latest \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-two-stage-$(date +%Y%m%dT%H%M%S).json"
+```
+
+Both commands read the same live news SQLite with `mode=ro`. They do
+not create market_impacts, impact_runs, news_pressure_signals, ticker
+approvals or price forecasts. The output file is new-only, private,
+and contains the evidence-linked hypothesis for quality review.
+If no new eligible real event is present, the report says
+`NO_ELIGIBLE_NEW_EVENTS`. This is not evidence of a model failure,
+and the pipeline must not invent an example or replay already
+checkpointed events to pass. The two-stage result is not a calibrated
+real-world news intensity score or approval to enable automation.
