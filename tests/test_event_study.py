@@ -11,7 +11,6 @@ from tris_market_event_intelligence.event_study import (
 )
 from tris_market_event_intelligence.event_study_cli import study_csv
 
-
 KST = timezone(timedelta(hours=9))
 
 
