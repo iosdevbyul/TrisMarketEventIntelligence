@@ -133,6 +133,7 @@ def _matches(text: str, name: str) -> bool:
 def propose_event_tickers(
     db_path: Path, issuers: tuple[ListedIssuer, ...], *,
     limit: int = 100, as_of: datetime | None = None,
+    after_event_id: int | None = None,
 ) -> dict[str, object]:
     """Only propose direct issuer-name mentions from *existing* extracted events.
 
@@ -141,6 +142,8 @@ def propose_event_tickers(
     """
     if not 1 <= limit <= MAX_EVENTS:
         raise ValueError("Limit must be 1..1000")
+    if after_event_id is not None and (type(after_event_id) is not int or after_event_id < 0):
+        raise ValueError("after_event_id must be a nonnegative integer")
     now = as_of or datetime.now(UTC)
     if now.utcoffset() is None:
         raise ValueError("as_of must be timezone aware")
@@ -149,13 +152,28 @@ def propose_event_tickers(
     uri = db_path.resolve().as_uri() + "?mode=ro"
     with sqlite3.connect(uri, uri=True) as db:
         db.execute("PRAGMA query_only=ON")
-        rows = db.execute(
-            """SELECT e.id, a.title, a.summary, a.detected_at, e.source, e.source_url
-               FROM economic_events e JOIN articles a ON e.article_id=a.id
-               WHERE e.status IN ('VERIFIED','CANDIDATE','UNVERIFIED')
-               ORDER BY e.id DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
+        if after_event_id is None:
+            rows = db.execute(
+                """SELECT e.id, a.title, a.summary, a.detected_at, e.source, e.source_url
+                   FROM economic_events e JOIN articles a ON e.article_id=a.id
+                   WHERE e.status IN ('VERIFIED','CANDIDATE','UNVERIFIED')
+                   ORDER BY e.id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            has_more = False  # Legacy preview: only latest requested events.
+        else:
+            # Explicit forward scan: avoid silently omitting new events after
+            # the latest 1,000 and permit deterministic bounded pagination.
+            fetched = db.execute(
+                """SELECT e.id, a.title, a.summary, a.detected_at, e.source, e.source_url
+                   FROM economic_events e JOIN articles a ON e.article_id=a.id
+                   WHERE e.status IN ('VERIFIED','CANDIDATE','UNVERIFIED')
+                   AND e.id > ?
+                   ORDER BY e.id ASC LIMIT ?""",
+                (after_event_id, limit + 1),
+            ).fetchall()
+            has_more = len(fetched) > limit
+            rows = fetched[:limit]
     results: list[dict[str, object]] = []
     for event_id, title, summary, detected, source, url in rows:
         received = _when(detected)
@@ -164,7 +182,7 @@ def propose_event_tickers(
         text = title or ""
         if received > now.astimezone(UTC):
             results.append({"event_id": event_id, "status": "FUTURE_NEWS_TIMESTAMP",
-                            "proposals": []})
+                            "article_detected_at": received.isoformat(), "proposals": []})
             continue
         names_to_issuers: dict[str, set[tuple[str, str]]] = {}
         eligible: dict[tuple[str, str], tuple[ListedIssuer, set[str]]] = {}
@@ -207,11 +225,15 @@ def propose_event_tickers(
             else "FUTURE_REGISTRY_EVIDENCE" if future_evidence
             else "NO_VERIFIED_NAME_MATCH"
         )
-        results.append({"event_id": event_id, "status": status, "proposals": proposals})
+        results.append({"event_id": event_id, "status": status,
+                        "article_detected_at": received.isoformat(), "proposals": proposals})
     return {
         "schema_version": "event_ticker_proposals_v1",
         "status": "REVIEW_REQUIRED",
         "events_inspected": len(rows),
+        "after_event_id": after_event_id,
+        "next_cursor": rows[-1][0] if after_event_id is not None and rows else after_event_id,
+        "has_more": has_more,
         "proposals": sum(len(r["proposals"]) for r in results),
         "items": results,
         "registry_source_authenticated": False,
