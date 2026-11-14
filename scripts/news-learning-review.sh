@@ -8,6 +8,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] prepare --cohort FILE --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] score --cohort FILE --score HUMAN_REVIEW_JSON --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] evaluate --cohort FILE --review HUMAN_REVIEW_JSON --predictions MODEL_JSON --output FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] holdout --cohort FILE --train-end ISO --validation-end ISO --embargo-hours N --output FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -39,6 +40,9 @@ case "$action" in
     ;;
   evaluate)
     module="tris_market_event_intelligence.news_importance_evaluation_cli"
+    ;;
+  holdout)
+    module="tris_market_event_intelligence.news_holdout_plan_cli"
     ;;
   *)
     usage >&2
