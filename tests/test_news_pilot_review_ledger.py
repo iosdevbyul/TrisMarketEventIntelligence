@@ -446,3 +446,172 @@ def test_packet_does_not_guess_journal_id_or_allow_invalid_id(tmp_path: Path) ->
     for invalid in [0, -1, True]:
         with pytest.raises(ValueError, match="Positive"):
             packet.build(evidence_id=invalid)
+
+
+def test_manual_checklist_preview_commit_packet_and_audit_no_publication(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+        NewsPilotChecklistLedger,
+    )
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    ledger = NewsPilotChecklistLedger(source_db=source, journal_db=journal)
+    kwargs = dict(
+        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
+        review_status="SOURCE_DOCUMENTED", reviewer="local-editor",
+        note="The external report describes a duration, but independent checks remain pending.",
+        source_url="https://example.org/follow-up",
+        source_excerpt="The outage lasted approximately two hours.",
+    )
+    with sqlite3.connect(source) as db:
+        before_source = tuple(db.iterdump())
+    with sqlite3.connect(journal) as db:
+        before_journal = tuple(db.iterdump())
+    preview = ledger.record(**kwargs)
+    assert preview["status"] == "CHECK_PREVIEW_ONLY"
+    assert preview["independentlyVerified"] is False
+    assert preview["journalModified"] is False
+    with sqlite3.connect(journal) as db:
+        assert tuple(db.iterdump()) == before_journal
+    saved = ledger.record(**kwargs, commit=True)
+    assert saved["status"] == "CHECK_RECORDED"
+    assert saved["published"] is False
+    assert ledger.record(**kwargs, commit=True)["status"] == "ALREADY_RECORDED"
+    audit = NewsPilotReviewAuditor(source_db=source, journal_db=journal).audit()
+    assert audit["checklistEvidenceRecords"] == 1
+    packet = NewsPilotReviewPacket(source_db=source, journal_db=journal).build(
+        evidence_id=1
+    )
+    item = packet["independentVerificationChecklist"][0]
+    assert item["check"] == "CONFIRM_OUTAGE_DURATION"
+    assert item["verified"] is False
+    assert item["manualEvidence"]["sourceUrl"] == "https://example.org/follow-up"
+    assert item["manualEvidence"]["independentlyVerified"] is False
+    assert packet["independentSourceVerification"] is False
+    assert packet["published"] is False
+    with sqlite3.connect(source) as db:
+        assert tuple(db.iterdump()) == before_source
+
+
+def test_unconfirmed_checklist_note_does_not_claim_a_source(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+        NewsPilotChecklistLedger,
+    )
+    from tris_market_event_intelligence.news_pilot_review_packet import (
+        NewsPilotReviewPacket,
+    )
+
+    source, journal = seeded(tmp_path)
+    ledger = NewsPilotChecklistLedger(source_db=source, journal_db=journal)
+    assert ledger.record(
+        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
+        review_status="NOT_CONFIRMED", reviewer="local-editor",
+        note="No external follow-up source has been independently located yet.",
+        commit=True,
+    )["status"] == "CHECK_RECORDED"
+    entry = NewsPilotReviewPacket(source_db=source, journal_db=journal).build(
+        evidence_id=1
+    )["independentVerificationChecklist"][0]
+    assert entry["verified"] is False
+    assert entry["manualEvidence"]["reviewStatus"] == "NOT_CONFIRMED"
+    assert entry["manualEvidence"]["sourceUrl"] is None
+
+
+@pytest.mark.parametrize("mutation", [
+    "bad_check", "bad_url", "missing_excerpt", "short_note",
+    "unconfirmed_with_source", "bad_id", "bad_status",
+])
+def test_checklist_invalid_or_unsupported_evidence_never_writes(
+    tmp_path: Path, mutation: str,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+        NewsPilotChecklistLedger,
+    )
+
+    source, journal = seeded(tmp_path)
+    kwargs = dict(
+        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
+        review_status="SOURCE_DOCUMENTED", reviewer="local-editor",
+        note="Independent supporting source still needs manual assessment.",
+        source_url="https://example.org/follow-up",
+        source_excerpt="The outage lasted approximately two hours.",
+    )
+    change = {
+        "bad_check": {"check_code": "FABRICATED_CHECK"},
+        "bad_url": {"source_url": "http://insecure.example.org"},
+        "missing_excerpt": {"source_excerpt": None},
+        "short_note": {"note": "too short"},
+        "unconfirmed_with_source": {"review_status": "NOT_CONFIRMED"},
+        "bad_id": {"evidence_id": 0},
+        "bad_status": {"review_status": "VERIFIED"},
+    }[mutation]
+    with pytest.raises(ValueError):
+        NewsPilotChecklistLedger(source_db=source, journal_db=journal).record(
+            **{**kwargs, **change}, commit=True,
+        )
+    with sqlite3.connect(journal) as db:
+        assert db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='news_pilot_checklist_reviews'"
+        ).fetchone() is None
+
+
+def test_checklist_conflict_and_corruption_rejected_by_auditor(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+        NewsPilotChecklistLedger,
+    )
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+
+    source, journal = seeded(tmp_path)
+    ledger = NewsPilotChecklistLedger(source_db=source, journal_db=journal)
+    kwargs = dict(
+        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
+        review_status="NOT_CONFIRMED", reviewer="local-editor",
+        note="The source did not provide sufficient timing confirmation.",
+    )
+    ledger.record(**kwargs, commit=True)
+    with pytest.raises(ValueError, match="Immutable"):
+        ledger.record(**{**kwargs, "review_status": "CONFLICTING_SOURCE"}, commit=True)
+    with sqlite3.connect(journal) as db:
+        db.execute(
+            "UPDATE news_pilot_checklist_reviews SET signal_sha256=? WHERE id=1",
+            ("a" * 64,),
+        )
+    with pytest.raises(ValueError):
+        NewsPilotReviewAuditor(source_db=source, journal_db=journal).audit()
+
+
+def test_orphaned_checklist_record_causes_audit_failure(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+        NewsPilotChecklistLedger,
+    )
+    from tris_market_event_intelligence.news_pilot_review_audit import (
+        NewsPilotReviewAuditor,
+    )
+
+    source, journal = seeded(tmp_path)
+    NewsPilotChecklistLedger(source_db=source, journal_db=journal).record(
+        evidence_id=1, check_code="CONFIRM_OUTAGE_DURATION",
+        review_status="NOT_CONFIRMED", reviewer="local-editor",
+        note="No corroborating independent report was provided by the reviewer.",
+        commit=True,
+    )
+    with sqlite3.connect(journal) as db:
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.execute(
+            "UPDATE news_pilot_checklist_reviews SET evidence_id=999 WHERE id=1"
+        )
+    with pytest.raises(ValueError, match="Orphaned"):
+        NewsPilotReviewAuditor(source_db=source, journal_db=journal).audit()
