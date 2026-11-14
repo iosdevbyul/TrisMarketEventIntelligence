@@ -174,7 +174,7 @@ def acquire_and_reconcile_listings(
             "model_invoked": False,
         }
         if news_db is not None:
-            matches = propose_event_tickers(news_db, issuers, limit=limit)
+            matches = propose_event_tickers(news_db, issuers, limit=limit, as_of=observed)
             proposals = output_dir / "proposals.json"
             _exclusive_json(proposals, matches)
             report.update({
