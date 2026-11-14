@@ -81,7 +81,7 @@ def join_historical_market_reactions(
     observed: dict[int, dict[str, object]] = {}
     for row in rows:
         if not isinstance(row, dict):
-            raise ValueError("Invalid article row")
+            raise TypeError("Invalid article row")
         article_id = row.get("articleId")
         if type(article_id) is not int or article_id < 1 or article_id in observed:
             raise ValueError("Duplicate or invalid article ID")
