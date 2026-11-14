@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from test_historical_news_cohort import seeded
 
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 from tris_market_event_intelligence.news_holdout_plan import plan_news_holdout
-from test_historical_news_cohort import seeded
 
 
 TRAIN_END = datetime(2026, 11, 2, tzinfo=UTC)
