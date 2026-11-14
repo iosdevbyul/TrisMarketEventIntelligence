@@ -145,7 +145,7 @@ def test_integrated_lock_denies_overlapping_pass_without_external_calls(
 
 def test_pipeline_rejects_implicit_model_and_invalid_limits(tmp_path: Path) -> None:
     path = tmp_path / "news.sqlite3"
-    with pytest.raises(ValueError, match="explicit local model"):
+    with pytest.raises(ValueError, match="local model required"):
         run_integrated_pass(path, enable_local_analysis=True)
     with pytest.raises(ValueError, match="without explicit"):
         run_integrated_pass(path, model=EmptyLocalModel())
