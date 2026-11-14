@@ -134,6 +134,7 @@ def propose_event_tickers(
     db_path: Path, issuers: tuple[ListedIssuer, ...], *,
     limit: int = 100, as_of: datetime | None = None,
     after_event_id: int | None = None,
+    received_since: datetime | None = None,
 ) -> dict[str, object]:
     """Only propose direct issuer-name mentions from *existing* extracted events.
 
@@ -144,6 +145,10 @@ def propose_event_tickers(
         raise ValueError("Limit must be 1..1000")
     if after_event_id is not None and (type(after_event_id) is not int or after_event_id < 0):
         raise ValueError("after_event_id must be a nonnegative integer")
+    if received_since is not None and received_since.utcoffset() is None:
+        raise ValueError("received_since must be timezone aware")
+    if received_since is not None and after_event_id is None:
+        raise ValueError("received_since requires an ascending event cursor")
     now = as_of or datetime.now(UTC)
     if now.utcoffset() is None:
         raise ValueError("as_of must be timezone aware")
@@ -164,14 +169,27 @@ def propose_event_tickers(
         else:
             # Explicit forward scan: avoid silently omitting new events after
             # the latest 1,000 and permit deterministic bounded pagination.
-            fetched = db.execute(
-                """SELECT e.id, a.title, a.summary, a.detected_at, e.source, e.source_url
-                   FROM economic_events e JOIN articles a ON e.article_id=a.id
-                   WHERE e.status IN ('VERIFIED','CANDIDATE','UNVERIFIED')
-                   AND e.id > ?
-                   ORDER BY e.id ASC LIMIT ?""",
-                (after_event_id, limit + 1),
-            ).fetchall()
+            if received_since is None:
+                fetched = db.execute(
+                    """SELECT e.id, a.title, a.summary, a.detected_at, e.source, e.source_url
+                       FROM economic_events e JOIN articles a ON e.article_id=a.id
+                       WHERE e.status IN ('VERIFIED','CANDIDATE','UNVERIFIED')
+                       AND e.id > ?
+                       ORDER BY e.id ASC LIMIT ?""",
+                    (after_event_id, limit + 1),
+                ).fetchall()
+            else:
+                # Compare actual instants, not lexical ISO strings with possibly
+                # differing offsets. Never rewrite event timestamps in the DB.
+                fetched = db.execute(
+                    """SELECT e.id, a.title, a.summary, a.detected_at, e.source, e.source_url
+                       FROM economic_events e JOIN articles a ON e.article_id=a.id
+                       WHERE e.status IN ('VERIFIED','CANDIDATE','UNVERIFIED')
+                       AND e.id > ?
+                       AND julianday(a.detected_at) >= julianday(?)
+                       ORDER BY e.id ASC LIMIT ?""",
+                    (after_event_id, received_since.isoformat(), limit + 1),
+                ).fetchall()
             has_more = len(fetched) > limit
             rows = fetched[:limit]
     results: list[dict[str, object]] = []
@@ -232,6 +250,7 @@ def propose_event_tickers(
         "status": "REVIEW_REQUIRED",
         "events_inspected": len(rows),
         "after_event_id": after_event_id,
+        "received_since": received_since.isoformat() if received_since else None,
         "next_cursor": rows[-1][0] if after_event_id is not None and rows else after_event_id,
         "has_more": has_more,
         "proposals": sum(len(r["proposals"]) for r in results),
