@@ -158,10 +158,10 @@ def test_reviewed_listing_mode_does_not_process_pre_snapshot_article(
     store = NewsStore(db)
     store.initialize()
     raw = (
-        b"<rss><channel><item><guid>old</guid><title>"
-        "삼성전자 서비스 장애".encode()
-        + b"</title><link>https://example.org/old</link></item></channel></rss>"
-    )
+        "<rss><channel><item><guid>old</guid><title>"
+        "삼성전자 서비스 장애"
+        "</title><link>https://example.org/old</link></item></channel></rss>"
+    ).encode()
     old_at = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     store.save(
         "bbc_technology", "https://example.org/feed", raw,
