@@ -116,7 +116,7 @@ def run_with_document(path: Path, doc: dict) -> dict[str, object]:
     {"embargo_hours": True},
     {"embargo_hours": 721},
     {"embargo_hours": 1.2},
-    {"train_end": datetime(2026, 11, 4, tzinfo=UTC)},
+    {"train_end": datetime(2026, 11, 5, tzinfo=UTC)},
     {"validation_end": datetime(2026, 11, 2, tzinfo=UTC)},
     {"train_end": datetime(2026, 11, 2)},
 ])
