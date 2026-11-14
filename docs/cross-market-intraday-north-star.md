@@ -207,6 +207,17 @@ discarding them or altering the historical research path. This is not
 verification of market-wide news coverage or global publication times.
 See `docs/stage-1-source-health-and-live-gates.md`.
 
+## Stage 1 integrated operator pass (bounded, opt-in Gemma)
+
+The existing approved RSS operational cycle is now combined with
+economic event extraction, source-health checks, and an explicit,
+maximum-three-event *optional* local Ollama analysis. A nonblocking
+pipeline lock, first-inserted article boundary, stale-news deferral,
+atomic status report and zero-side-effect dry run prevent unintended
+backlog model calls or duplicate runs. No background service, actual
+KR/US breaking-news timing certification or market predictor is
+claimed. See `docs/stage-1-integrated-local-pipeline.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
