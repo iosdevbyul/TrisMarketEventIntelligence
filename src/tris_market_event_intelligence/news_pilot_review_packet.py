@@ -10,6 +10,9 @@ from contextlib import closing
 from pathlib import Path
 
 from tris_market_event_intelligence.news_pilot_review_audit import NewsPilotReviewAuditor
+from tris_market_event_intelligence.news_pilot_checklist_ledger import (
+    validate_checklist_row,
+)
 from tris_market_event_intelligence.news_pilot_review_ledger import NewsPilotReviewLedger
 
 
@@ -57,6 +60,34 @@ class NewsPilotReviewPacket:
                 or decision["source_evidence_sha256"] != row["source_evidence_sha256"]
             ):
                 raise ValueError("Review decision provenance mismatch")
+
+        with closing(self.ledger._journal(readonly=True)) as db:
+            has_checklist = db.execute(
+                """SELECT 1 FROM sqlite_master WHERE type='table'
+                   AND name='news_pilot_checklist_reviews'"""
+            ).fetchone() is not None
+            recorded = (
+                db.execute(
+                    """SELECT * FROM news_pilot_checklist_reviews
+                       WHERE evidence_id=?""", (evidence_id,),
+                ).fetchall() if has_checklist else []
+            )
+            reviewed_checks: dict[str, dict[str, object]] = {}
+            for entry in recorded:
+                validate_checklist_row(
+                    entry, signal_sha256=row["signal_sha256"],
+                    source_evidence_sha256=row["source_evidence_sha256"],
+                    allowed_checks=signal.evidence_assessment.verification_needed,
+                )
+                reviewed_checks[entry["check_code"]] = {
+                    "reviewStatus": entry["review_status"],
+                    "reviewer": entry["reviewer"],
+                    "note": entry["note"],
+                    "sourceUrl": entry["source_url"],
+                    "sourceExcerpt": entry["source_excerpt"],
+                    "recordedAt": entry["recorded_at"],
+                    "independentlyVerified": False,
+                }
 
         source_uri = self.ledger.source_db.resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(
@@ -112,7 +143,7 @@ class NewsPilotReviewPacket:
                 "scoreIsCalibratedToReturns": False,
             },
             "independentVerificationChecklist": [
-                {"check": check, "verified": False}
+                {"check": check, "verified": False, "manualEvidence": reviewed_checks.get(check)}
                 for check in assessment.verification_needed
             ],
             "reviewDecision": (
