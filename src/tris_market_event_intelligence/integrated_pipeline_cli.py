@@ -36,6 +36,10 @@ def main() -> None:
         "--enable-v3-for-new-articles", action="store_true",
         help="Opt in to v3 for articles first saved during THIS invocation only",
     )
+    parser.add_argument(
+        "--enable-v3-cutover-catchup", action="store_true",
+        help="Pin first v3 activation time and process uncheckpointed later articles",
+    )
     parser.add_argument("--enable-ticker-review", action="store_true",
                         help="Explicitly capture a review-only ticker report for new news")
     parser.add_argument("--listing-bundle", type=Path,
@@ -54,6 +58,11 @@ def main() -> None:
         not args.enable_ticker_review or args.enable_local_analysis
     ):
         parser.error("v3 requires explicitly enabled ticker review and no local analysis")
+    if args.enable_v3_cutover_catchup and (
+        not args.enable_ticker_review or args.enable_local_analysis
+        or args.enable_v3_for_new_articles
+    ):
+        parser.error("v3 catchup requires ticker review, no model and no fresh-only mode")
     if args.enable_ticker_review:
         if not args.listing_bundle or not args.review_output_root:
             parser.error("--enable-ticker-review requires a listing bundle and output root")
@@ -93,6 +102,7 @@ def main() -> None:
             "background_service_installed": False,
             "ticker_review_requested": args.enable_ticker_review,
             "v3_fresh_only_requested": args.enable_v3_for_new_articles,
+            "v3_cutover_catchup_requested": args.enable_v3_cutover_catchup,
             "session_plan": plan,
         }))
         return
@@ -137,6 +147,7 @@ def main() -> None:
         review_output_root=args.review_output_root.expanduser().absolute()
         if args.review_output_root else None,
         enable_v3_for_new_articles=args.enable_v3_for_new_articles,
+        enable_v3_cutover_catchup=args.enable_v3_cutover_catchup,
     )
     print(json.dumps(report, ensure_ascii=False))
     if report["status"] not in {"healthy"}:

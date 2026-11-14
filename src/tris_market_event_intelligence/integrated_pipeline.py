@@ -90,6 +90,7 @@ def run_integrated_pass(
     listing_bundle: Path | None = None,
     review_output_root: Path | None = None,
     enable_v3_for_new_articles: bool = False,
+    enable_v3_cutover_catchup: bool = False,
 ) -> dict[str, object]:
     """Finite pass with separate pipeline lock; defaults to *zero* LLM calls.
 
@@ -113,11 +114,18 @@ def run_integrated_pass(
         raise ValueError("Ticker review requires both listing bundle and output folder")
     if listing_bundle is not None and (enable_local_analysis or model is not None):
         raise ValueError("Ticker review pass must not invoke a local model")
+    if enable_v3_cutover_catchup and enable_v3_for_new_articles:
+        raise ValueError("Select only one v3 extraction operating mode")
     if enable_v3_for_new_articles and (
         listing_bundle is None or review_output_root is None
         or model is not None or enable_local_analysis
     ):
         raise ValueError("Fresh v3 requires pinned listings and no local model")
+    if enable_v3_cutover_catchup and (
+        listing_bundle is None or review_output_root is None
+        or model is not None or enable_local_analysis
+    ):
+        raise ValueError("v3 cutover requires pinned listings and no local model")
     first_seen = None
     if listing_bundle is not None:
         # Validate the pinned source and write destination before network or DB
@@ -159,6 +167,15 @@ def run_integrated_pass(
             }
         began = utc_now()
         before = _articles_before(db_path)
+        cutover_at: datetime | None = None
+        cutover_floor: int | None = None
+        cutover_created = False
+        if enable_v3_cutover_catchup:
+            # Called only after the verified bundle, destination and lock
+            # checks. This durable marker is never reset on later invocations.
+            cutover_at, cutover_floor, cutover_created = (
+                EventProcessor(db_path).activate_v3_rollout()
+            )
         # Let the original collector own its status/history checkpoint.
         collector = run_cycle(
             db_path, selected_sources=selected_sources, client=client,
@@ -171,10 +188,18 @@ def run_integrated_pass(
             "collection": collector,
             "event_extraction": {"processed": 0, "events": 0, "verified": 0},
             "event_extractor_version": (
-                V3_PRODUCTION_VERSION if enable_v3_for_new_articles else "multi-v2"
+                V3_PRODUCTION_VERSION if (
+                    enable_v3_for_new_articles or enable_v3_cutover_catchup
+                ) else "multi-v2"
             ),
             "v3_fresh_only": enable_v3_for_new_articles,
             "v3_existing_article_floor": before if enable_v3_for_new_articles else None,
+            "v3_cutover_catchup": enable_v3_cutover_catchup,
+            "v3_cutover_activated_at": (
+                cutover_at.isoformat() if cutover_at is not None else None
+            ),
+            "v3_cutover_article_floor": cutover_floor,
+            "v3_cutover_created": cutover_created,
             "source_health": None,
             "analysis": {
                 "enabled": enable_local_analysis,
@@ -200,12 +225,15 @@ def run_integrated_pass(
                 # Intentional bounded pass; never silently drain unlimited backlog.
                 extraction = processor.process_pending(
                     batch_size=max_event_extraction,
-                    received_since=first_seen,
+                    received_since=cutover_at if enable_v3_cutover_catchup
+                    else first_seen,
                     extractor_version=(
-                        V3_PRODUCTION_VERSION if enable_v3_for_new_articles
-                        else "multi-v2"
+                        V3_PRODUCTION_VERSION if (
+                            enable_v3_for_new_articles or enable_v3_cutover_catchup
+                        ) else "multi-v2"
                     ),
-                    after_article_id=before if enable_v3_for_new_articles else None,
+                    after_article_id=cutover_floor if enable_v3_cutover_catchup
+                    else before if enable_v3_for_new_articles else None,
                 )
                 report["event_extraction"] = asdict(extraction)
                 report["source_health"] = audit_source_health(
