@@ -17,7 +17,10 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.collector import utc_now
-from tris_market_event_intelligence.event_store import EventProcessor
+from tris_market_event_intelligence.event_store import (
+    V3_PRODUCTION_VERSION,
+    EventProcessor,
+)
 from tris_market_event_intelligence.exchange_sessions import SessionCalendar
 from tris_market_event_intelligence.impact import ImpactProvider
 from tris_market_event_intelligence.impact_store import ImpactProcessor
@@ -86,6 +89,7 @@ def run_integrated_pass(
     target_markets: tuple[str, ...] = ("XKRX", "XNYS", "XNAS"),
     listing_bundle: Path | None = None,
     review_output_root: Path | None = None,
+    enable_v3_for_new_articles: bool = False,
 ) -> dict[str, object]:
     """Finite pass with separate pipeline lock; defaults to *zero* LLM calls.
 
@@ -109,6 +113,11 @@ def run_integrated_pass(
         raise ValueError("Ticker review requires both listing bundle and output folder")
     if listing_bundle is not None and (enable_local_analysis or model is not None):
         raise ValueError("Ticker review pass must not invoke a local model")
+    if enable_v3_for_new_articles and (
+        listing_bundle is None or review_output_root is None
+        or model is not None or enable_local_analysis
+    ):
+        raise ValueError("Fresh v3 requires pinned listings and no local model")
     first_seen = None
     if listing_bundle is not None:
         # Validate the pinned source and write destination before network or DB
@@ -161,6 +170,11 @@ def run_integrated_pass(
             "status": collector["status"],
             "collection": collector,
             "event_extraction": {"processed": 0, "events": 0, "verified": 0},
+            "event_extractor_version": (
+                V3_PRODUCTION_VERSION if enable_v3_for_new_articles else "multi-v2"
+            ),
+            "v3_fresh_only": enable_v3_for_new_articles,
+            "v3_existing_article_floor": before if enable_v3_for_new_articles else None,
             "source_health": None,
             "analysis": {
                 "enabled": enable_local_analysis,
@@ -187,6 +201,11 @@ def run_integrated_pass(
                 extraction = processor.process_pending(
                     batch_size=max_event_extraction,
                     received_since=first_seen,
+                    extractor_version=(
+                        V3_PRODUCTION_VERSION if enable_v3_for_new_articles
+                        else "multi-v2"
+                    ),
+                    after_article_id=before if enable_v3_for_new_articles else None,
                 )
                 report["event_extraction"] = asdict(extraction)
                 report["source_health"] = audit_source_health(
