@@ -6,6 +6,7 @@ scores conditional NEWS pressure only; stock returns are owned downstream.
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 import httpx
@@ -141,6 +142,13 @@ class GemmaNewsPressureProvider:
             if owned:
                 client.close()
 
+        # The pressure model has no price data. Reject numeric percentages in
+        # its explanation rather than letting a return forecast slip through.
+        if re.search(r"\\b\\d+(?:\\.\\d+)?\\s*%", grade.reason):
+            raise ImpactAnalysisError(
+                "NEWS_PRICE_FORECAST_FORBIDDEN",
+                "News intensity explanation cannot contain percentage forecasts",
+            )
         score = grade.intensity_score
         groups = {
             "LOW": (1, 33), "MODERATE": (34, 66), "HIGH": (67, 100),
