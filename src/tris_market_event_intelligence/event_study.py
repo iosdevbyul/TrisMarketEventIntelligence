@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from math import isfinite
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 HORIZONS = (1, 5, 20)
 
@@ -93,7 +94,7 @@ def study_events(
         # Use the event's local civil date, NOT UTC, to avoid shifting KST
         # publications across session boundaries. Always enter on a strictly
         # later trading date, conservatively discarding same-day reactions.
-        publication_day = event.published_at.date()
+        publication_day = event.published_at.astimezone(ZoneInfo("Asia/Seoul")).date()
         stock = prices.get(event.symbol, [])
         future = [bar for bar in stock if bar.day > publication_day]
         if not future:
