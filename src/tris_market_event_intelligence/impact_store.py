@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import httpx
 
 from tris_market_event_intelligence.collector import utc_now
 from tris_market_event_intelligence.event_store import EventProcessor
+from tris_market_event_intelligence.source_health import assess_live_event, audit_source_health
 from tris_market_event_intelligence.impact import (
     PROMPT_VERSION,
     EventInput,
@@ -26,6 +28,7 @@ class AnalysisStats:
     processed: int
     impacts: int
     failed: int
+    deferred: int = 0
 
 
 class ImpactProcessor:
@@ -96,6 +99,12 @@ class ImpactProcessor:
             or batch_size < len(event_ids)
         ):
             raise ValueError("Select 1..3 unique positive event IDs within batch size")
+        if live_freshness_seconds is not None and (
+            type(live_freshness_seconds) is not int or live_freshness_seconds < 1
+        ):
+            raise ValueError("live_freshness_seconds must be positive")
+        if type(source_success_seconds) is not int or source_success_seconds < 1:
+            raise ValueError("source_success_seconds must be positive")
         self.initialize()
         selection_sql = (
             " AND e.id IN (" + ",".join("?" for _ in event_ids) + ")"
@@ -106,7 +115,8 @@ class ImpactProcessor:
                 f"""
                 SELECT e.id, e.classification, e.status, e.direction,
                        e.change_basis_points, e.evidence, e.source, e.source_url,
-                       e.detected_at, m.claim_kind, m.verification_note, m.tags_json
+                       e.detected_at, m.claim_kind, m.verification_note, m.tags_json,
+                       e.published_at
                 FROM economic_events e
                 LEFT JOIN event_metadata m ON m.event_id = e.id
                 WHERE e.classification IN (
@@ -134,7 +144,19 @@ class ImpactProcessor:
         if event_ids is not None and {row[0] for row in rows} != set(event_ids):
             raise ValueError("Selected event is missing, ineligible, or already checkpointed")
 
-        processed = impacts = failed = 0
+        processed = impacts = failed = deferred = 0
+        health_by_source: dict[str, str] = {}
+        live_now = datetime.now(UTC)
+        if live_freshness_seconds is not None and rows:
+            health = audit_source_health(
+                self.store.store.path,
+                expected_sources=tuple(sorted({row[6] for row in rows})),
+                now=live_now,
+                max_success_age_seconds=source_success_seconds,
+            )
+            health_by_source = {
+                item["source"]: item["status"] for item in health["sources"]
+            }
         for record in rows:
             event = EventInput(
                 *record[:9], record[9], record[10],
@@ -142,6 +164,20 @@ class ImpactProcessor:
             )
             if not is_eligible(event):
                 continue
+            if live_freshness_seconds is not None:
+                decision = assess_live_event(
+                    detected_at=event.detected_at,
+                    published_at=record[12],
+                    now=live_now,
+                    max_received_age_seconds=live_freshness_seconds,
+                    max_declared_publish_age_seconds=live_freshness_seconds,
+                )
+                if decision != "ELIGIBLE_WITH_UNVERIFIED_PUBLICATION" or (
+                    health_by_source.get(event.source) != "OK"
+                ):
+                    # Deferred: never call the model or checkpoint a stale event.
+                    deferred += 1
+                    continue
             try:
                 result = validate_result(event, self.provider.analyze(event))
                 keys = [(i.market, i.sector, i.horizon) for i in result.impacts]
@@ -185,7 +221,7 @@ class ImpactProcessor:
                 # Isolate arbitrary pluggable provider failures; never checkpoint them.
                 self._record_error(event.event_id, exc)
                 failed += 1
-        return AnalysisStats(processed=processed, impacts=impacts, failed=failed)
+        return AnalysisStats(processed=processed, impacts=impacts, failed=failed, deferred=deferred)
 
     def _record_error(self, event_id: int, error: Exception) -> None:
         with self.store.store.connect() as db:
