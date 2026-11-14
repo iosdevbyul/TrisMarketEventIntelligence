@@ -45,6 +45,7 @@ market-event-pilot-report = "tris_market_event_intelligence.impact_pilot_report_
 market-event-study = "tris_market_event_intelligence.event_study_cli:main"
 market-event-krx-readiness = "tris_market_event_intelligence.krx_snapshot_cli:main"
 market-event-intraday-study = "tris_market_event_intelligence.intraday_event_study_cli:main"
+market-event-cpu-baseline = "tris_market_event_intelligence.cpu_baseline_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tris_market_event_intelligence"]
