@@ -12,7 +12,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from tris_market_event_intelligence.news_importance_review import (
-    _cohort, _instant, _read, score_review,
+    _cohort,
+    _instant,
+    _read,
+    score_review,
 )
 from tris_market_event_intelligence.story_index import canonical_url
 
