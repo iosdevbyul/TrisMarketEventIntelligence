@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from test_event_ticker_proposals import database
 
 from tris_market_event_intelligence.event_ticker_proposals import (
     load_reviewed_issuers,
@@ -20,7 +21,6 @@ from tris_market_event_intelligence.listing_snapshot_import import (
     preview_listing_snapshot,
 )
 from tris_market_event_intelligence.listing_snapshot_import_cli import main
-from test_event_ticker_proposals import database
 
 OBSERVED = "2026-11-14T15:00:00+00:00"
 NASDAQ = (
