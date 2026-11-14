@@ -15,8 +15,12 @@ from pathlib import Path
 from typing import Protocol
 
 from tris_market_event_intelligence.impact import (
-    EventInput, Impact, ImpactAnalysisError, is_eligible, validate_result,
+    EventInput,
+    Impact,
+    ImpactAnalysisError,
     ImpactResult,
+    is_eligible,
+    validate_result,
 )
 from tris_market_event_intelligence.news_impact_signal import NewsImpactSignal
 
@@ -137,7 +141,8 @@ def run_pressure_pilot(
                         else "MODEL_OUTPUT_INVALID"
                     ),
                 })
-            except Exception:
+            except Exception:  # noqa: BLE001
+                # A broken external model/provider must never abort the batch.
                 item.update({
                     "status": "ANALYSIS_FAILED",
                     "failure_code": "MODEL_RUNTIME_FAILURE",
