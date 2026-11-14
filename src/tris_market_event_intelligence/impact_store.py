@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
 from tris_market_event_intelligence.collector import utc_now
 from tris_market_event_intelligence.event_store import EventProcessor
-from tris_market_event_intelligence.source_health import assess_live_event, audit_source_health
 from tris_market_event_intelligence.impact import (
     PROMPT_VERSION,
     EventInput,
@@ -21,6 +20,7 @@ from tris_market_event_intelligence.impact import (
     is_eligible,
     validate_result,
 )
+from tris_market_event_intelligence.source_health import assess_live_event, audit_source_health
 
 
 @dataclass(frozen=True)
@@ -87,6 +87,8 @@ class ImpactProcessor:
 
     def process_pending(
         self, batch_size: int = 100, *, event_ids: tuple[int, ...] | None = None,
+        live_freshness_seconds: int | None = None,
+        source_success_seconds: int = 900,
     ) -> AnalysisStats:
         if not 1 <= batch_size <= 1000:
             raise ValueError("batch_size must be 1..1000")
