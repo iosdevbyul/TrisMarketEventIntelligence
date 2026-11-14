@@ -120,3 +120,78 @@ def test_invalid_ids_fail_before_any_work(
         cli.verify(tmp_path, live=(13, 13), output_dir=tmp_path / "reports")
     with pytest.raises(ValueError):
         cli.verify(tmp_path, live=(1, 2, 3, 4), output_dir=tmp_path / "reports")
+
+
+def test_live_next_selects_diverse_new_events_and_creates_private_review(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    calls = []
+    monkeypatch.setenv("MARKET_EVENT_DB", str(tmp_path / "data.sqlite"))
+    monkeypatch.setattr(cli, "_run", lambda args, root: completed(args))
+    monkeypatch.setattr(cli, "_ollama_ready", lambda model: calls.append(("ready", model)))
+
+    def preview(db: Path, *, model_id: str, limit: int, new_only: bool):
+        assert new_only
+        assert limit == 3
+        return {"status": "ok", "candidates": [
+            {"event_id": 8}, {"event_id": 14}, {"event_id": 19},
+        ]}
+
+    monkeypatch.setattr(cli, "pilot_candidates", preview)
+    monkeypatch.setattr(cli, "cohort_review", lambda db, **kw: {
+        "status": "ok", "items": [{"event_id": 8, "original_evidence": "private source"}],
+    })
+
+    def read_json(args: list[str], root: Path):
+        calls.append(tuple(args))
+        if "tris_market_event_intelligence.impact_cli" in args:
+            return {"processed": 3, "impacts": 1, "failed": 0}
+        return {"status": "ok", "items": [], "quality_verified": False}
+
+    monkeypatch.setattr(cli, "_read_json", read_json)
+    result = cli.verify(
+        tmp_path, live_next=3, output_dir=tmp_path / "reports",
+    )
+    assert result["status"] == "ok"
+    assert result["selected_event_ids"] == [8, 14, 19]
+    assert result["analysis_stats"]["processed"] == 3
+    assert result["live_requested"] is True
+    cmd = next(c for c in calls if "tris_market_event_intelligence.impact_cli" in c)
+    assert cmd[cmd.index("--event-ids") + 1] == "8,14,19"
+    review = Path(result["new_cohort_review_path"])
+    assert review.is_file()
+    assert "private source" in review.read_text()
+    assert "private source" not in Path(result["report_path"]).read_text()
+
+
+def test_live_next_without_new_events_never_invokes_ollama(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("MARKET_EVENT_DB", str(tmp_path / "data.sqlite"))
+    monkeypatch.setattr(cli, "_run", lambda args, root: completed(args))
+    monkeypatch.setattr(
+        cli, "pilot_candidates", lambda db, **kw: {
+            "status": "ok", "candidates": [],
+        },
+    )
+    monkeypatch.setattr(
+        cli, "_ollama_ready",
+        lambda model: pytest.fail("No model call without eligible events"),
+    )
+    result = cli.verify(tmp_path, live_next=3, output_dir=tmp_path / "reports")
+    assert result["status"] == "ok"
+    assert "analysis_stats" not in result
+    assert result["live_requested"] is True
+
+
+def test_live_next_rejects_out_of_range_and_mixed_flags(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        cli, "_run", lambda args, root: pytest.fail("No commands allowed"),
+    )
+    for count in [0, 4]:
+        with pytest.raises(ValueError, match="live-next"):
+            cli.verify(tmp_path, live_next=count)
+    with pytest.raises(ValueError, match="either"):
+        cli.verify(tmp_path, live=(13,), live_next=3)
