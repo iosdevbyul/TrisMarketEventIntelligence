@@ -10,8 +10,8 @@ from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from tris_market_event_intelligence.story_index import canonical_url
 from tris_market_event_intelligence.news_importance_review import _cohort, _instant
+from tris_market_event_intelligence.story_index import canonical_url
 
 
 class _Groups:
