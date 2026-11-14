@@ -10,6 +10,7 @@ import os
 import plistlib
 import re
 import sqlite3
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -89,6 +90,21 @@ def integrated_launchd_configuration(
         # No API token, URL or raw prompt in the plist; loopback-only Ollama.
         config["EnvironmentVariables"] = {"MARKET_EVENT_LLM_MODEL": model_name}
     return config
+
+
+def _confirm_unloaded(label: str) -> None:
+    """Fail closed unless launchctl explicitly reports service not registered."""
+    try:
+        probe = subprocess.run(
+            ["launchctl", "print", f"gui/{os.getuid()}/{label}"],
+            capture_output=True, text=True, timeout=8, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("Could not confirm LaunchAgent is unloaded") from exc
+    if probe.returncode == 0:
+        raise ValueError("Existing LaunchAgent still loaded")
+    if "Could not find service" not in (probe.stdout + probe.stderr):
+        raise ValueError("LaunchAgent state unknown; refusing scheduled v3 write")
 
 
 def verified_v3_activation(db_path: Path, *, now: datetime | None = None) -> dict[str, object]:
@@ -183,6 +199,9 @@ def main() -> None:
             if not review.is_dir() or review.is_symlink():
                 raise ValueError("Existing non-symlink private review folder required")
             verified_v3_activation(args.db.expanduser().absolute())
+            # An absent plist does not imply an unloaded LaunchAgent.
+            _confirm_unloaded(LEGACY_LABEL)
+            _confirm_unloaded(INTEGRATED_LABEL)
         if args.write:
             # Presence of legacy configuration might mean an active collector.
             # Never permit two scheduled cycles against the same RSS sources.
