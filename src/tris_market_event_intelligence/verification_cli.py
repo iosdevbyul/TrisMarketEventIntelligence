@@ -12,10 +12,15 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.impact import PROMPT_VERSION
+from tris_market_event_intelligence.impact_cohort_review import (
+    cohort_review,
+    save_cohort_review,
+)
 from tris_market_event_intelligence.impact_pair_review import (
     paired_review_samples,
     save_private_review_bundle,
 )
+from tris_market_event_intelligence.impact_pilot import pilot_candidates
 from tris_market_event_intelligence.impact_pilot_report import parse_event_ids
 from tris_market_event_intelligence.impact_version_comparison import compare_impact_versions
 
@@ -68,15 +73,20 @@ def _ollama_ready(model: str) -> None:
 def verify(
     root: Path, *, update: bool = False, live: tuple[int, ...] | None = None,
     model: str = "gemma2:latest", output_dir: Path | None = None,
+    live_next: int | None = None,
 ) -> dict[str, object]:
     if not model.strip():
         raise ValueError("Model name is required")
+    if live is not None and live_next is not None:
+        raise ValueError("Choose either explicit --live or --live-next, not both")
+    if live_next is not None and not 1 <= live_next <= 3:
+        raise ValueError("--live-next must be between 1 and 3")
     if live is not None:
         parse_event_ids(",".join(str(item) for item in live))
     result: dict[str, object] = {
         "stage": "6/8 automation; 4/8 market impact",
         "prompt_version": PROMPT_VERSION, "model_id": model,
-        "offline_tests_passed": False, "live_requested": live is not None,
+        "offline_tests_passed": False, "live_requested": live is not None or live_next is not None,
         "quality_verified": False,
     }
     if update:
@@ -93,7 +103,20 @@ def verify(
             result["status"] = f"{name}_failed"
             return _save(result, output_dir)
     result["offline_tests_passed"] = True
-    if live is not None:
+    base = Path.home() / "Library" / "Application Support" / "TrisMarketEventIntelligence"
+    db = Path(os.getenv("MARKET_EVENT_DB", str(base / "news.sqlite3"))).expanduser()
+    if live_next is not None:
+        preview = pilot_candidates(db, model_id=model, limit=live_next, new_only=True)
+        result["new_cohort_preview"] = preview
+        if preview["status"] != "ok":
+            result["status"] = "cohort_unavailable"
+            return _save(result, output_dir)
+        candidates = preview["candidates"]
+        live = tuple(int(row["event_id"]) for row in candidates)
+        if not live:
+            print("[verify] no never-before-attempted eligible events; no inference", flush=True)
+            result["status"] = "ok"
+    if live:
         print("[verify] checking Ollama", flush=True)
         _ollama_ready(model)
         selected = ",".join(map(str, live))
@@ -105,6 +128,15 @@ def verify(
             "--batch-size", str(len(live)), "--timeout-seconds", "300",
         ], root)
         result["selected_event_ids"] = list(live)
+        if live_next is not None:
+            review = cohort_review(db, event_ids=live, model_id=model)
+            result["new_cohort_review_status"] = review["status"]
+            if review["status"] == "ok" and review["items"]:
+                folder = output_dir or base / "verification-reports"
+                date = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+                path = save_cohort_review(folder, f"cohort-review-{date}.json", review)
+                result["new_cohort_review_path"] = str(path)
+                print(f"[verify] private new cohort review: {path}", flush=True)
         for key, version in [
             ("current_outcomes", PROMPT_VERSION),
             ("historical_v7_outcomes", "market-impact-v7"),
@@ -122,8 +154,6 @@ def verify(
         )
     else:
         result["status"] = "ok"
-    base = Path.home() / "Library" / "Application Support" / "TrisMarketEventIntelligence"
-    db = Path(os.getenv("MARKET_EVENT_DB", str(base / "news.sqlite3"))).expanduser()
     result["version_comparison"] = compare_impact_versions(db, model_id=model)
     review = paired_review_samples(db, model_id=model)
     result["paired_review_status"] = review["status"]
@@ -158,6 +188,8 @@ def main() -> None:
                         help="Fast-forward clean main only")
     parser.add_argument("--live", metavar="ID[,ID]", default=None,
                         help="Explicitly analyze 1..3 selected event IDs")
+    parser.add_argument("--live-next", type=int, metavar="N", default=None,
+                        help="Explicitly invoke Ollama for 1..3 new eligible diverse events")
     parser.add_argument("--model", default=os.getenv("MARKET_EVENT_LLM_MODEL", "gemma2:latest"))
     parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
@@ -165,7 +197,8 @@ def main() -> None:
         selected = parse_event_ids(args.live) if args.live is not None else None
         result = verify(
             Path(__file__).resolve().parents[2], update=args.update,
-            live=selected, model=args.model, output_dir=args.output_dir,
+            live=selected, live_next=args.live_next,
+            model=args.model, output_dir=args.output_dir,
         )
     except (ValueError, RuntimeError, TypeError, OSError) as exc:
         parser.exit(2, f"[verify] {exc}\n")

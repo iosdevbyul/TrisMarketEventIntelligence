@@ -106,3 +106,29 @@ def test_missing_db_and_limits(tmp_path: Path) -> None:
     for limit in (0, 4):
         with pytest.raises(ValueError, match="limit"):
             pilot_candidates(db, model_id="gemma2:latest", limit=limit)
+
+
+def test_new_only_excludes_all_previous_versions_and_failed_attempts(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    before = db.read_bytes()
+    report = pilot_candidates(
+        db, model_id="gemma2:latest", prompt_version="market-impact-v8",
+        new_only=True,
+    )
+    assert [row["event_id"] for row in report["candidates"]] == [3, 4, 7]
+    assert report["new_only"] is True
+    assert report["fresh_pending_events"] == 3
+    assert db.read_bytes() == before
+
+
+def test_new_only_is_scoped_to_requested_model(tmp_path: Path) -> None:
+    db = tmp_path / "sample.sqlite3"
+    database(db)
+    report = pilot_candidates(
+        db, model_id="another-model", prompt_version="market-impact-v8",
+        new_only=True,
+    )
+    assert [row["event_id"] for row in report["candidates"]] == [1, 3, 4]

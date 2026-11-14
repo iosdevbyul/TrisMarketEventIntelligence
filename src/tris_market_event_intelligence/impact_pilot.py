@@ -14,7 +14,7 @@ from tris_market_event_intelligence.impact import (
 
 def pilot_candidates(
     db_path: Path, *, model_id: str, limit: int = 3,
-    prompt_version: str = PROMPT_VERSION,
+    prompt_version: str = PROMPT_VERSION, new_only: bool = False,
 ) -> dict[str, object]:
     """Favor not-yet-attempted events across categories; never run inference."""
     if not model_id.strip() or not prompt_version.strip():
@@ -46,7 +46,11 @@ def pilot_candidates(
                           EXISTS (
                               SELECT 1 FROM impact_runs old
                               WHERE old.event_id=e.id AND old.model_id=?
-                          ) AS previously_completed_other_version
+                          ) AS previously_completed_other_version,
+                          EXISTS (
+                              SELECT 1 FROM impact_errors old_error
+                              WHERE old_error.event_id=e.id AND old_error.model_id=?
+                          ) AS previously_failed_any_version
                    FROM economic_events e
                    LEFT JOIN event_metadata m ON m.event_id=e.id
                    LEFT JOIN impact_runs r ON r.event_id=e.id AND r.model_id=?
@@ -54,7 +58,7 @@ def pilot_candidates(
                    LEFT JOIN impact_errors err ON err.event_id=e.id
                        AND err.model_id=? AND err.prompt_version=?
                    ORDER BY e.id""",
-                (model_id, model_id, prompt_version, model_id, prompt_version),
+                (model_id, model_id, model_id, prompt_version, model_id, prompt_version),
             ).fetchall()
     except sqlite3.Error:
         return {"status": "database_unreadable", "candidates": [], "quality_verified": False}
@@ -75,6 +79,10 @@ def pilot_candidates(
         eligible += 1
         if row["outcome"] is not None:
             completed += 1
+            continue
+        if new_only and (
+            row["previously_completed_other_version"] or row["previously_failed_any_version"]
+        ):
             continue
         item = {
             "event_id": row["id"], "classification": row["classification"],
@@ -103,6 +111,7 @@ def pilot_candidates(
     selected = selected[:limit]
     return {
         "status": "ok", "model_id": model_id, "prompt_version": prompt_version,
+        "new_only": new_only,
         "eligible_events": eligible,
         "already_checkpointed_events": completed,
         "fresh_pending_events": len(fresh),
