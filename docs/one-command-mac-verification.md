@@ -34,3 +34,16 @@ Unsafe Git states cause refusal rather than reset, checkout, stash, or force.
 CI validates the command offline with mocked Git and Ollama; CI does not
 run the model. For first-time script availability, run `git pull --ff-only`
 on main before invoking `bash scripts/verify.sh`.
+
+## tmux or a new terminal shows `(base)`
+
+The launcher detects the current interpreter's project installation. If the
+current `python` cannot import the verification module, it tries the local
+`.venv/bin/python`, then the existing `tris-market-event` Conda environment
+via `conda run`. It never installs into or mutates Conda `(base)`.
+This keeps the ordinary `bash scripts/verify.sh --update` command valid in
+tmux without manually activating an environment. If none of those environments
+has the package, the launcher exits with a clear activation hint.
+
+A shell already running a pre-fix version must fetch the updated launcher once
+before running it: `git pull --ff-only origin main && bash scripts/verify.sh --update`.
