@@ -126,7 +126,7 @@ def test_symlinked_plist_is_invalid_without_following_target(tmp_path: Path) -> 
     target = tmp_path / "other.plist"
     target.write_bytes(plistlib.dumps({"Label": LEGACY_LABEL}))
     agents = tmp_path / "Library" / "LaunchAgents"
-    agents.mkdir()
+    agents.mkdir(parents=True)
     (agents / (LEGACY_LABEL + ".plist")).symlink_to(target)
     result = audit(tmp_path, MacServiceProbe())
     assert "LEGACY_CONFIG_INVALID" in result["blockers"]
