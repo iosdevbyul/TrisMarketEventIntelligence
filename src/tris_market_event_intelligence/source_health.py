@@ -119,6 +119,8 @@ def audit_source_health(
             reason = "FUTURE_SOURCE_CHECK"
         elif success_at is None:
             reason = "NO_SUCCESSFUL_POLL"
+        elif not status_rows:
+            reason = "NO_REQUEST_TELEMETRY"
         elif (clock - success_at).total_seconds() > max_success_age_seconds:
             reason = "SOURCE_POLL_STALE"
         elif streak >= maximum_consecutive_failures:
@@ -127,6 +129,8 @@ def audit_source_health(
             reason = "SOURCE_RATE_LIMITED"
         elif checkpoint and checkpoint[2] in {"HTTP_401", "HTTP_403"}:
             reason = "SOURCE_ACCESS_DENIED"
+        elif streak > 0:
+            reason = "SOURCE_RECENT_ERROR"
         else:
             reason = "RECENT_SUCCESSFUL_POLL"
         summaries.append({
