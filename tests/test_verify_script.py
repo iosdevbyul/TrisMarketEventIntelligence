@@ -1,0 +1,71 @@
+"""Ensure the shell launcher updates source before starting the Python process."""
+import os
+import subprocess
+from pathlib import Path
+
+
+def _setup(tmp_path: Path, *, dirty: bool = False) -> tuple[Path, dict[str, str], Path]:
+    root = tmp_path / "project"
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True)
+    original = Path(__file__).resolve().parents[1] / "scripts" / "verify.sh"
+    launcher = scripts / "verify.sh"
+    launcher.write_text(original.read_text(encoding="utf-8"), encoding="utf-8")
+    bin_path = tmp_path / "fakebin"
+    bin_path.mkdir()
+    calls = tmp_path / "calls.log"
+    git = bin_path / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        "echo git:$* >> \"$CALLS\"\n"
+        "if [ \"$1\" = branch ]; then echo main; fi\n"
+        + ("if [ \"$1\" = status ]; then echo \" M file.py\"; fi\n" if dirty else ""),
+        encoding="utf-8",
+    )
+    python = bin_path / "python"
+    python.write_text(
+        "#!/bin/sh\n" "echo python:$* >> \"$CALLS\"\n",
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
+    python.chmod(0o755)
+    env = {**os.environ, "PATH": str(bin_path) + ":" + os.environ["PATH"],
+           "CALLS": str(calls)}
+    return launcher, env, calls
+
+
+def test_pull_happens_before_python_and_update_flag_is_consumed(tmp_path: Path) -> None:
+    script, env, calls = _setup(tmp_path)
+    result = subprocess.run(
+        ["bash", str(script), "--update", "--live", "13"], env=env,
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert calls.read_text().splitlines() == [
+        "git:branch --show-current",
+        "git:status --porcelain",
+        "git:pull --ff-only origin main",
+        "python:-m tris_market_event_intelligence.verification_cli --live 13",
+    ]
+
+
+def test_dirty_tree_refuses_pull_and_python(tmp_path: Path) -> None:
+    script, env, calls = _setup(tmp_path, dirty=True)
+    result = subprocess.run(
+        ["bash", str(script), "--update"], env=env,
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    assert "clean working tree" in result.stderr
+    assert calls.read_text().splitlines() == [
+        "git:branch --show-current", "git:status --porcelain",
+    ]
+
+
+def test_no_update_does_not_call_git(tmp_path: Path) -> None:
+    script, env, calls = _setup(tmp_path)
+    result = subprocess.run(["bash", str(script)], env=env, check=False)
+    assert result.returncode == 0
+    assert calls.read_text().splitlines() == [
+        "python:-m tris_market_event_intelligence.verification_cli",
+    ]
