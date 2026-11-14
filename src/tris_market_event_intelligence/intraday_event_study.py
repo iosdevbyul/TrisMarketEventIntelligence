@@ -71,10 +71,15 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _regular_session(market: str, instant: datetime) -> bool:
+def _regular_session(
+    market: str, instant: datetime, *, include_open: bool = False,
+) -> bool:
     zone, start, end = MARKETS[market]
     local = instant.astimezone(ZoneInfo(zone))
-    return local.weekday() < 5 and start < local.timetz().replace(tzinfo=None) <= end
+    clock = local.timetz().replace(tzinfo=None)
+    return local.weekday() < 5 and (
+        start <= clock <= end if include_open else start < clock <= end
+    )
 
 
 def _prepare(
@@ -139,7 +144,7 @@ def study_intraday(
                 tuple(IntradayLabel(h, None, None, None, None, reason) for h in horizons),
             )
 
-        if not _regular_session(event.market, available):
+        if not _regular_session(event.market, available, include_open=True):
             results.append(missing("OUTSIDE_REGULAR_SESSION"))
             continue
 
