@@ -95,6 +95,8 @@ def test_bad_cursor_or_missing_last_page_fails_closed(tmp_path: Path) -> None:
     doc = json.loads(inputs[1][0].read_text())
     doc["pageAfterId"] = 1
     inputs[1][0].write_text(json.dumps(doc))
+    plan = plan_news_holdout(inputs[1][0], train_end=TRAIN, validation_end=VALIDATION)
+    inputs[1][1].write_text(json.dumps(plan))
     with pytest.raises(ValueError, match="pagination"):
         audit_cross_page_news(pages=inputs)
 
@@ -104,6 +106,8 @@ def test_hole_in_pages_and_no_terminal_page_fails(tmp_path: Path) -> None:
     doc = json.loads(inputs[1][0].read_text())
     doc["hasMore"] = True
     inputs[1][0].write_text(json.dumps(doc))
+    plan = plan_news_holdout(inputs[1][0], train_end=TRAIN, validation_end=VALIDATION)
+    inputs[1][1].write_text(json.dumps(plan))
     with pytest.raises(ValueError, match="pagination"):
         audit_cross_page_news(pages=inputs)
 
