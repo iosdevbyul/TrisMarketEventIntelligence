@@ -217,10 +217,12 @@ def run_integrated_pass(
                 "automatic_approvals": 0,
             },
         }
+        failure_stage = "collector_outcome"
         try:
             if collector["status"] in {"failed", "already_running"}:
                 report["status"] = "blocked"
             else:
+                failure_stage = "event_extraction"
                 processor = EventProcessor(db_path)
                 # Intentional bounded pass; never silently drain unlimited backlog.
                 extraction = processor.process_pending(
@@ -236,12 +238,14 @@ def run_integrated_pass(
                     else before if enable_v3_for_new_articles else None,
                 )
                 report["event_extraction"] = asdict(extraction)
+                failure_stage = "source_health"
                 report["source_health"] = audit_source_health(
                     db_path, expected_sources=selected_sources,
                     now=datetime.now(UTC),
                     max_success_age_seconds=source_success_seconds,
                 )
                 if listing_bundle is not None:
+                    failure_stage = "ticker_review"
                     assert review_output_root is not None
                     # All writer calls use the same .pipeline.lock. The
                     # validation is independently read-only and create-only.
@@ -271,6 +275,7 @@ def run_integrated_pass(
                         "historical_listing_verified": False,
                     }
                 if enable_local_analysis:
+                    failure_stage = "local_analysis"
                     event_ids = _fresh_event_ids(db_path, before, selected_sources)
                     report["analysis"]["selected_event_ids"] = list(event_ids)
                     if event_ids:
@@ -293,7 +298,10 @@ def run_integrated_pass(
                     report["status"] = "blocked"
         except (OSError, ValueError, TypeError, sqlite3.Error) as exc:
             report["status"] = "failed"
+            # Static stage names and exception classes only; never expose
+            # exception messages (which may contain private URLs/paths).
             report["error_code"] = type(exc).__name__
+            report["error_stage"] = failure_stage
         report["finished_at"] = utc_now()
         if status_path is not None:
             _write_status(status_path, report)
