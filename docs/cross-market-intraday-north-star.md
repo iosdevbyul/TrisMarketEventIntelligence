@@ -136,6 +136,16 @@ Only reviewed session and ticker link inputs can enable it; rejected labels
 remain excluded, and no training or verified prediction is claimed.
 See `docs/stage-4-walkforward-dataset.md`.
 
+## CPU historical baseline: no live model yet
+
+An explicit offline `market-event-cpu-baseline` now consumes the
+existing purged `walkforward_dataset` and compares an exchange+horizon
+training-only historical mean return against a zero-excess-return
+prediction on a held-out period. The output remains unverified
+research-only evidence, **not** a deployable prediction model or
+stage-completion certificate. See
+`docs/stage-4-cpu-baseline-evaluation.md`.
+
 ## Next milestones (do not skip)
 
 1. Source-verified, market-neutral minute-bar and benchmark integration
