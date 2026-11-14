@@ -58,7 +58,7 @@ def _plan(path: Path) -> tuple[str, str, dict[str, int]]:
     seen: set[int] = set()
     for item in items:
         if not isinstance(item, dict):
-            raise ValueError("Invalid partition item")
+            raise TypeError("Invalid partition item")
         article_id = item.get("articleId")
         if type(article_id) is not int or article_id < 1 or article_id in seen:
             raise ValueError("Duplicate or invalid partition article")
