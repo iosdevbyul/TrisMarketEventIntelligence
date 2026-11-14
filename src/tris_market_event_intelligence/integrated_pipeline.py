@@ -271,6 +271,7 @@ def run_integrated_pass(
                         "news_classification_evidence": review["news_classification_evidence"],
                         "v3_cutover_audit": review["v3_cutover_audit"],
                         "v3_event_integrity": review["v3_event_integrity"],
+                        "article_issuer_coverage": review["article_issuer_coverage"],
                         "automatic_approvals": 0,
                         "human_review_required": True,
                         "historical_listing_verified": False,
