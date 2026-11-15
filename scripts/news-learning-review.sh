@@ -68,6 +68,9 @@ case "$action" in
   research-loop)
     module="tris_market_event_intelligence.news_research_loop_cli"
     ;;
+  candidate)
+    module="tris_market_event_intelligence.news_candidate_artifact_cli"
+    ;;
   *)
     usage >&2
     exit 2
