@@ -22,6 +22,7 @@ from tris_market_event_intelligence.news_offline_review_page import (
     _verify_pinned_sample,
 )
 
+
 def _failure_code(exc: Exception) -> str:
     """Use only fixed diagnostic codes, never raw model/source/error text."""
     if isinstance(exc, httpx.TimeoutException):
