@@ -8,7 +8,6 @@ import pytest
 
 from tris_market_event_intelligence import historical_independent_news_cli as independent
 
-
 CASE_FILE = Path("research/independent-historical-news-2023.json")
 
 
