@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
