@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from itertools import pairwise
 from pathlib import Path
 
 import httpx
@@ -81,7 +82,7 @@ def _local_model_ready(client: httpx.Client, model: str) -> bool:
     data = response.json()
     names = data.get("models")
     if not isinstance(names, list):
-        raise ValueError("Unexpected installed-model inventory")
+        raise TypeError("Unexpected installed-model inventory")
     return any(isinstance(item, dict) and item.get("name") == model
                for item in names)
 
@@ -104,7 +105,7 @@ def _analyze_one(client: httpx.Client, article: dict[str, object],
     data = response.json()
     message = data.get("message")
     if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-        raise ValueError("Missing Ollama model response")
+        raise TypeError("Missing Ollama model response")
     return _parse_model_hypothesis(article, message["content"])
 
 
@@ -120,7 +121,7 @@ def _story_transitions(article_rows: list[dict[str, object]],
         rows.sort(key=lambda x: (
             _instant(by_id[x.article_id]["firstObservedAt"]), x.article_id,
         ))
-        for before, after in zip(rows, rows[1:]):
+        for before, after in pairwise(rows):
             old, new = before.potential_magnitude, after.potential_magnitude
             delta = (RANKS[new] - RANKS[old]
                      if old in RANKS and new in RANKS else None)
