@@ -417,3 +417,53 @@ The next useful feature is independently verifiable first-publication
 timing and issuer link/duplicate cluster validation so genuine
 contemporaneous news can join the previously pinned NVDA/SPY price-outcome
 calendar, followed by an independently scored time-forward prediction.
+
+## SEC accepted-time anchor for 2018 NVIDIA earnings-to-price research
+
+The real Mac issuer corroboration command for 2018-11-16 succeeded:
+`OFFICIAL_DATE_AND_FACTS_CORROBORATED_CLOCK_UNVERIFIED`,
+21 source-URL candidates, three NVIDIA issuer facts, zero exact GDELT
+matches to the official issuer release and no verified publisher-first
+clock. Existing private file:
+`nvda-2018-issuer-corroboration-v1.json`.
+
+**New independently checkable temporal evidence:** SEC EDGAR accession
+[`0001045810-18-000148`](https://www.sec.gov/Archives/edgar/data/1045810/0001045810-18-000148-index.htm)
+is NVIDIA's 2018-11-15 Item 2.02 8-K. EDGAR reports an **accepted**
+timestamp of **2018-11-15 16:21:48 Eastern (21:21:48 UTC)** and
+includes [Exhibit 99.1](https://www.sec.gov/Archives/edgar/data/1045810/000104581018000148/q3fy19pr.htm),
+the 2018 Q3 earnings release. This demonstrates the submission was
+accepted by EDGAR **before Friday Nov 16 09:30 New York open**.
+It does **not** establish NVIDIA's first press-release publication
+timestamp, when all traders first received it, or that this disclosure
+caused the observed stock move.
+
+`historical-sec-event` uses only pinned public SEC evidence, the
+existing user-private source corroboration and the already acquired
+NVDA/SPY adjusted-close CSVs. It produces a single **historically
+observed** 2018-11-16 price/market outcome, while retaining a distinct
+feature record with SEC receipt time and original issuer facts. The
+label uses **2018-11-15 close → 2018-11-16 close**, NOT an
+executable Friday 09:30 entry/forward return. The outcome is shown
+only as retrospective research; modelPredictionMadeBeforeOutcome,
+trainingReady and causalImpactVerified remain false. Source SHA and
+both price-source SHA fields are pinned in a create-only private
+mode-0600 output; neither original CSV nor production database changes.
+
+Run on Mac with existing files (no new web request, no model call):
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update historical-sec-event \
+  --corroboration "$DATA/nvda-2018-issuer-corroboration-v1.json" \
+  --sec research/nvda-2018-11-15-sec-8k-acceptance.json \
+  --stock-csv "$DATA/nvda-eod-2016-2026.csv" \
+  --benchmark-csv "$DATA/spy-eod-2016-2026.csv" \
+  --output "$DATA/nvda-2018-sec-price-event-v1.json"
+```
+
+Next development after actual Mac evidence: generalize verified public
+issuer/SEC available-at anchors to a **multi-event PIT-safe case
+dataset**. Never promote GDELT URL references to issuer stories
+automatically. Expand through events with real contemporaneous
+documents and control days before modelling directional forecasts.
