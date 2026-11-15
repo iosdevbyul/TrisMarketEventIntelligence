@@ -176,3 +176,40 @@ def test_compact_model_input_contains_44_sources_without_repeating_caveats(
     assert "publisherFirstPublishedAt" not in json.dumps(slim)
     assert len(json.dumps(slim).encode()) < 12000
     assert slim["sourceLimitations"]
+
+
+def test_mac_cli_configures_finite_generation_budget_for_local_ollama(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    import sys
+
+    from tris_market_event_intelligence import historical_multi_hypothesis_cli as cli
+    from tris_market_event_intelligence.llm_runtime import LLMSettings
+
+    monkeypatch.setattr(
+        cli.LLMSettings, "from_environment",
+        classmethod(lambda cls, explicit=False: LLMSettings(
+            kind="ollama", model_id="gemma4:e2b",
+            endpoint="http://127.0.0.1:11434",
+        )),
+    )
+    captured = {}
+    def build_local(settings: LLMSettings, *, confirm_model: bool = False) -> FakeProvider:
+        assert confirm_model is True
+        captured["context"] = settings.capabilities.context_window
+        captured["output"] = settings.capabilities.max_output_tokens
+        captured["thinking"] = settings.capabilities.thinking
+        return FakeProvider()
+    monkeypatch.setattr(cli, "build_runtime", build_local)
+    output = tmp_path / "historical-result.json"
+    monkeypatch.setattr(sys, "argv", [
+        "historical-multi", "--scout", str(_fixture(tmp_path)),
+        "--run", "--model", "gemma4:e2b", "--output", str(output),
+    ])
+    cli.main()
+    assert captured == {"context": 8192, "output": 3072, "thinking": False}
+    data = json.loads(output.read_text())
+    assert len(data["hypotheses"]) == 3
+    assert data["weightTrainingPerformed"] is False
+    assert data["allCandidateReferenceCount"] == 4
+    assert '"outputTokensConfigured": 3072' in capsys.readouterr().out
