@@ -47,12 +47,11 @@ def build_pressure_provider(
     confirm_model: bool = False,
 ) -> GemmaNewsPressureProvider:
     """Reuse the pressure analyzer and every existing evidence guardrail."""
-    if not settings.capabilities.json_schema:
-        raise ValueError("Pressure requires JSON Schema capability")
     runtime = build_runtime(settings, client=client, confirm_model=confirm_model)
     return GemmaNewsPressureProvider(
         model=settings.model_id, timeout_seconds=settings.timeout_seconds,
         runtime=runtime,
+        runtime_json_schema=settings.capabilities.json_schema,
     )
 
 
