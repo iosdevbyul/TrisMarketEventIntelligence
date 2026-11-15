@@ -16,8 +16,8 @@ bash scripts/news-learning-review.sh --update learning-readiness \
   --review /private/human-review.json
 ```
 
-Optionally pass all three of `--manifest`, `--journal`, and
-`--usage-ledger` to replay the preselected locked hypothesis and
+Optionally pass `--manifest` and `--journal` together (and an optional
+`--usage-ledger`) to replay the preselected locked hypothesis and
 inspect the existing cooperative TEST reservation ledger. The
 manifest and journal must be provided together. This reports only
 whether a final TEST reservation was recorded, not whether another
