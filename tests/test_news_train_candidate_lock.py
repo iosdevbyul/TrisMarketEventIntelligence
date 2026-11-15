@@ -87,10 +87,12 @@ def test_changed_train_journal_detected_by_replay(tmp_path: Path):
     _lock(paths, manifest)
     import sqlite3
 
+    selected = json.loads(manifest.read_text())["payload"]["experimentSha256"]
     with sqlite3.connect(paths[3]) as db:
         db.execute(
             "UPDATE news_research_policy_experiments "
-            "SET train_cv_log_loss=123 WHERE id=1"
+            "SET train_cv_log_loss=123 WHERE experiment_sha256=?",
+            (selected,),
         )
     with pytest.raises(ValueError, match="differs"):
         audit_candidate_lock(
