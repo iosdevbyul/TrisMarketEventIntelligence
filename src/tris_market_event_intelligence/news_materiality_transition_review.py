@@ -11,7 +11,6 @@ from collections import Counter
 from pathlib import Path
 
 from tris_market_event_intelligence.news_importance_review import _cohort, _instant, _read
-from tris_market_event_intelligence.news_materiality_hypothesis import BANDS
 from tris_market_event_intelligence.news_materiality_local import (
     _parse_model_hypothesis,
     _story_transitions,
