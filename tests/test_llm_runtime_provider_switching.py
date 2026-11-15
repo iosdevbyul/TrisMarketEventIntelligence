@@ -8,11 +8,9 @@ import pytest
 
 from test_gemma4_news_comparison import FakeAnalyzer, event
 from test_local_impact import example_event, sample_impact
-from test_news_pressure_provider import (
-    event as pressure_event,
-    impact as pressure_impact,
-    model_reply,
-)
+from test_news_pressure_provider import event as pressure_event
+from test_news_pressure_provider import impact as pressure_impact
+from test_news_pressure_provider import model_reply
 
 from tris_market_event_intelligence import gemma4_news_comparison
 from tris_market_event_intelligence.gemma4_news_comparison import (
