@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from test_gemma4_news_comparison import FakeAnalyzer, event, good_result
+from test_gemma4_news_comparison import FakeAnalyzer, event
 from test_local_impact import example_event, sample_impact
 from test_news_pressure_provider import (
     event as pressure_event,
