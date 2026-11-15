@@ -111,3 +111,96 @@ The file must not already exist. This is not yet a trained model.
 Do not claim actual 10-year dataset completeness, training readiness,
 verified forecast accuracy, identified causality, autonomous operation, or
 model promotion from this initial data-packet implementation.
+
+## Phase 1: opt-in actual provider acquisition (PR #160)
+
+The **previous** historical shock generator could only read supplied CSVs.
+Now a source acquisition command requests actual historical data from real
+providers and writes source-scoped, 0600, create-only private artifacts.
+This capability is **not enabled by the Mac collector automatically**.
+No API credentials, endpoints or raw responses appear in stdout or Git.
+
+### Price: Tiingo EOD
+
+Tiingo's official API documents adjusted close and volume at
+https://www.tiingo.com/documentation/end-of-day . Its current plan page
+https://www.tiingo.com/pricing lists 30+ years of price history under the
+Starter plan, subject to endpoint access, rate limits and personal/internal
+license constraints. The NEWS API has only three months of accessible news
+history under ordinary plans; it cannot substitute for the required
+ten-year historical *as-published* news archive.
+
+Set your **own** token outside git, then run one limited symbol download
+only after you have decided its terms suit your use:
+
+```sh
+export TRIS_TIINGO_API_TOKEN="YOUR_PRIVATE_TOKEN"
+bash scripts/news-learning-review.sh --update historical-acquire tiingo \
+  --symbol NVDA --start 2016-11-15 --end 2026-11-14 \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-eod-2016-2026.csv"
+```
+
+To compare to the market, export SPY separately to a **new** file. The
+Tiingo adapter uses the official authenticated endpoint, checks numeric
+rows and dates, preserves provider's actual `adjClose`, writes exactly the
+`date,adjusted_close,volume` columns consumed by
+`historical-shocks`, verifies the output with the existing data
+contract, and prints SHA256 plus *actual* first/last dates and row count.
+It refuses empty, partial, malformed or duplicate rows, and never
+manufactures sessions. A successful response does **not** by itself
+prove the adjustment/corporate-action quality or external data
+authenticity. The token must never be included in output or committed.
+
+### Macro: genuine FRED/ALFRED date-granular revision history
+
+Official reference:
+https://fred.stlouisfed.org/docs/api/fred/series_observations.html
+and https://fred.stlouisfed.org/docs/api/fred/realtime_period.html .
+
+```sh
+export TRIS_FRED_API_KEY="YOUR_PRIVATE_FRED_KEY"
+bash scripts/news-learning-review.sh --update historical-acquire fred \
+  --series-id CPIAUCSL --start 2016-11-15 --end 2026-11-14 \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/cpi-vintages-2016-2026.json"
+```
+
+The acquisition requests an explicit historical real-time interval,
+never the default latest revised series. It returns the provider's
+`realtime_start`, `realtime_end`, observation date, and value as a
+**date-only quarantine** report, with no imaginary `release_at` or
+`available_at`. The output is **not** automatically passed into the
+historical-shocks model: FRED's real-time/vintage date alone cannot
+prove when the release became publicly tradable on that day. Confirm
+actual BLS/BEA/FOMC announced release timestamps and original availability
+evidence before promoting a row into the separate
+`macro-releases.csv` contract. Data revisions are versioned;
+identifying the revision date is not identifying the news impact.
+
+Do not put raw FRED API keys inside GitHub code, shell command text shared
+in chat, or unencrypted research artifacts.
+
+### The remaining 10-year NEWS archive gap
+
+GDELT GKG2/Events/Mentions raw historical archives and BigQuery can
+supply **candidate** media source references since February 2015:
+https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/ .
+GDELT DOC's ordinary search API is not a substitute for ten years
+of downloadable article text. GDELT news article publication time may
+be unknown or inferred; a 15-minute archive timestamp is a collection
+bound, not evidence of a prior public release. Before using GDELT in
+training, explicitly vet historical raw-file license/attribution,
+actual article text rights, company association, deduplicated story
+units and observation-time precision. Never backdate a 2026 RSS record
+to its 2016 supposed publication.
+
+### Operational stop conditions
+
+- No API token: **no network call**, no fallback to an unofficial price feed.
+- API limits/access, invalid payload, insufficient history: explicit
+  failure status, **not** synthetic fills.
+- Missing macro release clock or old NEWS provenance: isolate the rows,
+  **not** assign them a false PIT timestamp.
+- No full 10-year price/news/macro audit: **not training-ready**.
+- No human-independent forward evaluation: **no forecast skill claim**.
+- No automatic model promotion, investment execution or Mac 24/7
+  activation.
