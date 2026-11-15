@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from itertools import pairwise
 from pathlib import Path
@@ -124,6 +125,14 @@ def _parse_model_hypothesis(article: dict[str, object],
         raise ValueError("Model invented evidence or entity not present in source")
     if obj.potential_magnitude == "UNASSESSED" and obj.direction != "UNCERTAIN":
         raise ValueError("Unassessed source must not assert a direction")
+    # A model cannot assert a materiality band while expressly admitting
+    # it identified no mechanism. Do not fabricate a replacement mechanism.
+    if obj.potential_magnitude != "UNASSESSED" and re.match(
+        r"^\\s*(?:none(?:\\s+identified)?|no\\s+(?:mechanism|impact|effect)"
+        r"(?:\\s+(?:identified|found))?|not\\s+(?:identified|known))\\b",
+        obj.conditional_mechanism, flags=re.IGNORECASE,
+    ):
+        raise ValueError("Assessed magnitude lacks an identified mechanism")
     return obj
 
 
@@ -165,6 +174,16 @@ def _analyze_one(client: httpx.Client, article: dict[str, object],
                 "UNASSESSED, set magnitude_basis to NOT_ASSESSED and direction to "
                 "UNCERTAIN. Otherwise use HUMAN_OR_MODEL_HYPOTHESIS_UNCALIBRATED. "
                 "All three boolean flags MUST be false. Do not emit extra keys. "
+                "Choose an impacted organization or economic actor as entity, not "
+                "a journalist, presenter or commentator merely named in the report. "
+                "A report about a technology is not itself evidence that the "
+                "technology was adopted or caused organizational consequences. "
+                "For attributions such as an organization says or reports, distinguish "
+                "the existence of that statement from independent confirmation "
+                "of its contents; use REPORTED unless corroborated by source text. "
+                "If no concrete conditional organizational mechanism can be inferred "
+                "from the sourced event, use UNASSESSED, NOT_ASSESSED, UNCERTAIN; "
+                "never assign LOW merely because evidence is absent. "
                 if structured else ""
             )},
             {"role": "user", "content": json.dumps(
