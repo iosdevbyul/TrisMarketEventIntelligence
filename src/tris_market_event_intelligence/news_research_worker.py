@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import sqlite3
 import unicodedata
 from collections import Counter
@@ -22,6 +21,7 @@ from tris_market_event_intelligence.news_importance_review import (
     _read,
     score_review,
 )
+from tris_market_event_intelligence.news_naive_bayes_model import NewsImportanceModel
 from tris_market_event_intelligence.story_index import WORD
 
 ALPHAS = (0.25, 0.5, 1.0, 2.0, 4.0)
@@ -134,35 +134,8 @@ def _validate_inputs(
 def _train_naive_bayes(
     train: list[tuple[list[str], str]], alpha: float,
 ):
-    counts = {label: Counter() for label in CLASSES}
-    documents = Counter()
-    for words, label in train:
-        counts[label].update(words)
-        documents[label] += 1
-    vocabulary = set(counts[CLASSES[0]]) | set(counts[CLASSES[1]])
-    size = max(1, len(vocabulary))
-    totals = {label: sum(counts[label].values()) + alpha * size for label in CLASSES}
-
-    def predict(words: list[str]) -> dict[str, float]:
-        frequencies = Counter(word for word in words if word in vocabulary)
-        logits = {
-            label: math.log((documents[label] + alpha) / (len(train) + alpha * 2))
-            + sum(
-                amount * math.log((counts[label][word] + alpha) / totals[label])
-                for word, amount in frequencies.items()
-            )
-            for label in CLASSES
-        }
-        maximum = max(logits.values())
-        exp = {label: math.exp(logits[label] - maximum) for label in CLASSES}
-        norm = sum(exp.values())
-        return {
-            "IMPORTANT": exp["IMPORTANT"] / norm,
-            "UNIMPORTANT": exp["UNIMPORTANT"] / norm,
-            "UNCERTAIN": 0.0,
-        }
-
-    return predict
+    """One canonical implementation for training and saved-model inference."""
+    return NewsImportanceModel.from_training(train, alpha).predict
 
 
 def _journal(path: Path) -> sqlite3.Connection:
