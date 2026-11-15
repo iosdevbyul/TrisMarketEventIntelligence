@@ -118,7 +118,7 @@ def replay_archive_coverage(
     for rank in range(start_rank, start_rank + count):
         day = packet["topEvents"][rank - 1]["date"]
         if not isinstance(day, str):
-            raise ValueError("Invalid pinned research date")
+            raise TypeError("Invalid pinned research date")
         path = output_dir / f"nvda-gdelt-gkg-rank{rank}.json"
         if path.is_symlink():
             raise ValueError("Symlink receipts prohibited")
