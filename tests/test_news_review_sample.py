@@ -30,7 +30,7 @@ def test_original_news_sample_deterministic_and_no_leaked_gold(tmp_path: Path):
     assert a["testGoldScored"] is False
     assert all(item["potentialMagnitude"] is None and item["importance"] is None
                for item in a["items"])
-    assert len(set(item["articleId"] for item in a["items"])) == 5
+    assert len({item["articleId"] for item in a["items"]}) == 5
 
 
 def test_same_story_and_exact_duplicates_are_only_candidate_units(tmp_path: Path):
