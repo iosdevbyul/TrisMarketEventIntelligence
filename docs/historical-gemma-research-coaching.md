@@ -141,3 +141,39 @@ discard constraints, infer a partial output, or claim improvement.
 Investigate local `num_ctx` vs actual token usage and, if necessary,
 split independent topic-group analyses followed by a separate
 source-cited comparison. This command never downloads a larger model.
+
+## Learning 06: deterministic historical quality audit
+
+Actual Gemma4:e2b 44-reference NVIDIA research from 2026-11-15
+completed with three competing hypotheses, two local model calls, and
+`RETROSPECTIVE_HYPOTHESES_UNVERIFIED`. This proves a completed inference,
+not accurate explanation or forecast skill. The model used the category
+`UNASSESSED` with `PRIMARY_DOCUMENT`, topic labels instead of mechanisms,
+and causal claims such as "primary driver" without independent attribution.
+
+Run **without another model call** against the existing PRIVATE output:
+
+```sh
+bash scripts/news-learning-review.sh --update historical-quality \
+  --research "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-multi-hypotheses-rank1-v5.json" \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-research-quality-v1.json"
+```
+
+The new quality audit preserves the unverified status and writes a new
+private file only. It flags category/evidence-strength conflicts,
+evidence references inconsistent with strength, label-only economic
+mechanisms, and selected categorical causal statements. It counts
+**explicitly cited** unique archive references, not text that was read.
+Detection is intentionally heuristic; false negatives are possible.
+It does not certify source truth, timestamp validity, article rights,
+macro vintages, real causality, predictive value, or model accuracy.
+
+The report has `suggestedMethodLessons` as **unapproved proposals**.
+`lessonsApproved=false`, no Gold, no production writes, no
+autonomous promotion, and no model-weight changes. Never convert
+proposals into `reviewedByHuman=true` automatically. A person must
+inspect and approve the original evidence and then independently create
+a private `human_reviewed_research_lessons_v1` file using the
+documented optional `--reviewed-lessons` path. Evaluation of improved
+behavior requires separate held-out cases rather than repeating only
+the same NVIDIA example.
