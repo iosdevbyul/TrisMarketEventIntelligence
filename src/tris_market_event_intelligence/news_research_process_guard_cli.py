@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("--max-wall-seconds", type=int, default=300)
     parser.add_argument("--max-rss-mb", type=int, default=1024)
     parser.add_argument("--max-iterations", type=int, default=1)
+    parser.add_argument("--research-mode", choices=("legacy", "train-cv"),
+                        default="legacy")
     args = parser.parse_args()
     try:
         if args.status:
@@ -47,6 +49,7 @@ def main() -> None:
                 max_wall_seconds=args.max_wall_seconds,
                 max_rss_mb=args.max_rss_mb,
                 max_iterations=args.max_iterations,
+                research_mode=args.research_mode,
             )
     except (ValueError, TypeError, OSError, KeyError,
             sqlite3.Error, json.JSONDecodeError) as exc:
