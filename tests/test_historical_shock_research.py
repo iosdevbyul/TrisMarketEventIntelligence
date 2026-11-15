@@ -90,9 +90,9 @@ def test_historic_top_controls_and_macro_vintage_no_lookahead(tmp_path: Path) ->
     assert report["status"] == "RESEARCH_PACKET_UNVERIFIED"
     assert len(report["topEvents"]) == 2
     assert len(report["controlEvents"]) == 2
-    assert not set(x["date"] for x in report["topEvents"]) & set(
+    assert not {x["date"] for x in report["topEvents"]} & {
         x["date"] for x in report["controlEvents"]
-    )
+    }
     assert report["topEvents"][0]["date"] == "2026-10-21"
     pre = report["topEvents"][0]["context"]
     assert pre["newsAvailableBeforeOpen"] == []
