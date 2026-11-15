@@ -9,6 +9,8 @@ import httpx
 
 from tris_market_event_intelligence.news_pressure_pilot import run_pressure_pilot
 from tris_market_event_intelligence.news_pressure_provider import GemmaNewsPressureProvider
+from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.news_llm_factory import build_pressure_provider, with_model
 
 
 def main() -> None:
@@ -18,7 +20,9 @@ def main() -> None:
     base = Path.home() / "Library/Application Support/TrisMarketEventIntelligence"
     parser.add_argument("--db", type=Path, default=base / "news.sqlite3")
     parser.add_argument("--limit", type=int, default=3)
-    parser.add_argument("--model", default="gemma2:latest")
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--configured-llm", action="store_true",
+                        help="Opt in to configurable local/remote LLM execution")
     parser.add_argument("--run", action="store_true",
                         help="Explicit opt-in to call local Ollama at 127.0.0.1:11434")
     parser.add_argument("--output", type=Path,
@@ -30,14 +34,19 @@ def main() -> None:
         if args.output is not None and args.output.is_symlink():
             raise ValueError("Output symlink prohibited")
         analyzer = None
-        if args.run:
+        if args.run and args.configured_llm:
+            settings = LLMSettings.from_environment(explicit=True)
+            if args.model is not None:
+                settings = with_model(settings, args.model)
+            analyzer = build_pressure_provider(settings, confirm_model=True)
+        elif args.run:
             with httpx.Client(timeout=5, trust_env=False) as client:
                 response = client.get("http://127.0.0.1:11434/api/tags")
                 response.raise_for_status()
                 installed = {item["name"] for item in response.json()["models"]}
-            if args.model not in installed:
+            if (args.model or "gemma2:latest") not in installed:
                 raise ValueError("Requested Gemma/Ollama model not installed")
-            analyzer = GemmaNewsPressureProvider(model=args.model)
+            analyzer = GemmaNewsPressureProvider(model=args.model or "gemma2:latest")
         report = run_pressure_pilot(
             args.db.expanduser(), analyzer=analyzer, limit=args.limit,
         )
