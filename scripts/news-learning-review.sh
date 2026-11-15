@@ -100,6 +100,9 @@ case "$action" in
   gemma-reveal)
     module="tris_market_event_intelligence.gemma4_blind_reveal_cli"
     ;;
+  gemma-mac-preflight)
+    module="tris_market_event_intelligence.gemma4_mac_capacity_cli"
+    ;;
   *)
     usage >&2
     exit 2
