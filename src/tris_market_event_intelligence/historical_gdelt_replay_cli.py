@@ -16,7 +16,6 @@ import httpx
 
 from tris_market_event_intelligence.historical_gdelt_scout import (
     _read_study,
-    _slots,
     scout_historical_gdelt,
 )
 
@@ -163,9 +162,7 @@ def replay_archive_coverage(
         "status": "UNVERIFIED_ARCHIVE_REFERENCES_SCOUTED" if run else "PREVIEW_ONLY",
         "studySha256": source_sha,
         "shockRanksPlanned": len(plans),
-        "archiveSlotsEach": len(_slots(__import__("datetime").date.fromisoformat(
-            plans[0]["shockDate"]
-        ))),
+        "archiveSlotsEach": 4,
         "newReceipts": sum(p["action"] == "FETCHED_AND_PINNED" for p in plans),
         "reusedReceipts": sum(p["action"] == "REUSE_EXISTING" for p in plans),
         "referenceCandidates": sum(p["matchedReferences"] or 0 for p in plans),
