@@ -220,3 +220,52 @@ commit them to Git. The approved output is compatible with the existing
 memory hint, never independent Gold, ground truth, weight fine-tuning,
 permission to trade, or proof of generalization. Evaluate improvements on
 independent cases before making claims of better research quality.
+
+## Learning 06: reproducible baseline and reviewed-feedback comparison
+
+A verified 44-reference NVIDIA historical research result and its deterministic
+quality audit can now be captured **without another Ollama call**:
+
+```sh
+bash scripts/news-learning-review.sh --update historical-learning-compare \
+  --baseline-research "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-multi-hypotheses-rank1-v5.json" \
+  --baseline-audit "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-research-quality-v2.json" \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-learning-baseline-v1.json"
+```
+
+The command deterministically recomputes the audit from the model artifact,
+checks that the private original audit matches, and records source SHA256,
+per-finding counts, source citation count and reference count. This only
+records a baseline; it does not mark findings as true, approve lessons,
+or retrain a model.
+
+After **actual independent human review** produces the approved lessons file
+and a separately generated Gemma research result using
+`historical-multi --reviewed-lessons`, separately audit the new research
+with `historical-quality`. Then run:
+
+```sh
+bash scripts/news-learning-review.sh historical-learning-compare \
+  --baseline-research BASELINE_RESEARCH_JSON --baseline-audit BASELINE_AUDIT_JSON \
+  --candidate-research COACHED_RESEARCH_JSON --candidate-audit COACHED_AUDIT_JSON \
+  --reviewed-lessons HUMAN_APPROVED_LESSONS_JSON --output NEW_PRIVATE_COMPARISON_JSON
+```
+
+The pair must match model ID, prompt version, input research packet digest,
+reference cohort count, and the exact SHA256 of the accepted human lessons.
+Mismatched or tampered reports are refused. The output reports differences
+in heuristic findings by code, rather than falsely claiming higher model
+accuracy. **Comparisons of the same historical example are diagnostic only**.
+An independent set of dates and news cases, separately reviewed and kept
+out of the lesson-design process, is needed before a generalization claim.
+No prediction accuracy or causal price effect is proven here; no Gold or
+production auto-promotion occurs.
+
+The existing reviewed-lessons reader now accepts the optional
+`reviewer`, `auditSha256`, and `researchSha256` lineage fields emitted
+by the human review CLI; older minimal human-reviewed lesson files still
+work. This fixes the actual handoff contract, not the quality score.
+
+The `--update` script now restarts the latest version of itself after
+`git pull --ff-only`, preventing new subcommands from unexpectedly printing
+the old usage instructions during the very first updated invocation.
