@@ -130,10 +130,10 @@ def test_non_mac_returns_unknown_without_subprocess_or_ollama(tmp_path: Path):
 
 @pytest.mark.parametrize("bad_vm", [
     "No page size\nPages free: 100.\n",
-    "Mach Virtual Memory Statistics: (page size of 100 bytes)\n"
-    "Pages free: 10.\nPages inactive: 50.\nPages speculative: 10.\n",
-    "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
-    "Pages free: 9999999999999.\nPages inactive: 5.\nPages speculative: 5.\n",
+    ("Mach Virtual Memory Statistics: (page size of 100 bytes)\n"
+    "Pages free: 10.\nPages inactive: 50.\nPages speculative: 10.\n"),
+    ("Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+    "Pages free: 9999999999999.\nPages inactive: 5.\nPages speculative: 5.\n"),
 ])
 def test_unreliable_vm_stat_fails_closed(bad_vm: str):
     with pytest.raises(ValueError):
@@ -150,9 +150,8 @@ def test_disallow_arbitrary_sysctl_or_shell_command():
 def test_invalid_gemma_tag_rejected_before_probing(tmp_path: Path):
     with httpx.Client(transport=httpx.MockTransport(
         lambda request: (_ for _ in ()).throw(AssertionError("no probes"))
-    )) as client:
-        with pytest.raises(ValueError, match="explicitly sized"):
-            inspect_gemma4_mac(
-                models=("gemma2:latest", "gemma4:latest"),
-                run=command, client=client, system="Darwin", data_path=tmp_path,
-            )
+    )) as client, pytest.raises(ValueError, match="explicitly sized"):
+        inspect_gemma4_mac(
+            models=("gemma2:latest", "gemma4:latest"),
+            run=command, client=client, system="Darwin", data_path=tmp_path,
+        )
