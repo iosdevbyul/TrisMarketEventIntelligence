@@ -25,6 +25,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh guard-research --status --status-file FILE"
   echo "  bash scripts/news-learning-review.sh [--update] guard-research --run --research-mode train-cv --max-iterations 18 --cohort FILE --holdout FILE --review FILE --journal SQLITE --status-file FILE --lock-file FILE"
   echo "  bash scripts/news-learning-review.sh [--update] gemma-compare --preview|--preflight|--run [--gemma4 gemma4:e4b] [--limit 2] [--output FILE]"
+  echo "  bash scripts/news-learning-review.sh [--update] model-compare --preview|--run --model-a ID --model-b ID [--kind-a ollama|openai-compatible] [--kind-b ollama|openai-compatible] [--limit 2] [--output FILE]"
   echo "  bash scripts/news-learning-review.sh [--update] gemma-blind --run --packet FILE --mapping SECRET_FILE [--gemma4 gemma4:e4b] [--limit 2]"
   echo "  bash scripts/news-learning-review.sh gemma-blind --prepare --packet FILE --output HUMAN_TEMPLATE_JSON"
   echo "  bash scripts/news-learning-review.sh gemma-blind --audit --packet FILE --review HUMAN_JSON --reviewer ID --output AUDIT_JSON"
@@ -115,6 +116,9 @@ case "$action" in
     ;;
   guard-research)
     module="tris_market_event_intelligence.news_research_process_guard_cli"
+    ;;
+  model-compare)
+    module="tris_market_event_intelligence.news_model_comparison_cli"
     ;;
   gemma-compare)
     module="tris_market_event_intelligence.gemma4_news_comparison_cli"
