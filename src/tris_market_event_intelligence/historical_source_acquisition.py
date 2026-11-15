@@ -11,7 +11,7 @@ import io
 import json
 import os
 import re
-from datetime import date, datetime
+from datetime import date
 from math import isfinite
 from pathlib import Path
 
