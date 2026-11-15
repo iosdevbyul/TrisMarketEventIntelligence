@@ -7,7 +7,6 @@ A retrospective shock-study record is not a sealed prospective forecast.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from datetime import UTC, date, datetime, time
 from pathlib import Path
