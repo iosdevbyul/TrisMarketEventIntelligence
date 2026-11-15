@@ -31,7 +31,7 @@ def test_tiingo_real_payload_uses_adjusted_close_and_private_export(tmp_path: Pa
             {"date": f"2026-10-0{i}T00:00:00.000Z",
              "adjClose": 100 + i, "close": 300 + i,
              "volume": 12345 + i}
-            for i in range(1, 6)
+            for i in (1, 2, 5, 6, 7)
         ])
     with httpx.Client(transport=httpx.MockTransport(handler)) as session:
         raw, metadata = tiingo_eod(
