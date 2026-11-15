@@ -31,7 +31,7 @@ class FakeProvider:
 
     def generate_json(self, *, system: str, user: str, schema: dict | None) -> str:
         assert schema is not None
-        assert "NOT stock prices" in system
+        assert "not stock prices" in system
         self.calls += 1
         packet = json.loads(user)
         source_id = packet["primaryDocument"]["sourceId"]
@@ -100,7 +100,7 @@ def test_independent_inference_and_structural_evaluation_are_separate() -> None:
 def test_forged_source_or_causality_rejected() -> None:
     case = _cohort()["cases"][0]
     data = json.loads(FakeProvider().generate_json(
-        system="NOT stock prices", user=json.dumps({
+        system="not stock prices", user=json.dumps({
             "caseId": case["caseId"], "primaryDocument": case["source"],
             "sourceFacts": case["facts"], "fullArticlesAvailable": False,
             "stockPriceOrCausalLabelsAvailable": False,
