@@ -305,8 +305,8 @@ def test_candidate_range_outside_pinned_sample_fails_before_model(
 ) -> None:
     cohort, sample = _inputs(tmp_path)
     calls = []
-    with _make_client(json.loads(cohort.read_text())["items"], calls) as client:
-        with pytest.raises(ValueError, match="start-index|range|1..12"):
+    with (_make_client(json.loads(cohort.read_text())["items"], calls) as client,
+          pytest.raises(ValueError, match="start-index|range|1..12")):
             audit_local_news_pilot(
                 cohort_path=cohort, sample_path=sample,
                 model_id="gemma2:latest", run=True, start_index=start,
