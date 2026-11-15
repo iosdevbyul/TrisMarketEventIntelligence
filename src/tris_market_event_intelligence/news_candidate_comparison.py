@@ -7,12 +7,13 @@ independent evidence of model generalization or safe promotion.
 from __future__ import annotations
 
 import hashlib
-import json
 import math
+import os
 from collections import Counter
 from pathlib import Path
 
 from tris_market_event_intelligence.news_candidate_artifact import (
+    _canonical,
     compare_candidate_replay,
     read_candidate_artifact,
 )
@@ -150,9 +151,6 @@ def compare_news_candidates(
 
 def write_comparison_report(path: Path, result: dict[str, object]) -> None:
     """Write one private report, never altering an existing artifact."""
-    from tris_market_event_intelligence.news_candidate_artifact import _canonical
-    import os
-
     if path.is_symlink() or path.exists() or not path.parent.is_dir():
         raise ValueError("Private report needs a new file in an existing directory")
     blob = _canonical(result) + b"\n"
