@@ -140,12 +140,13 @@ def _local_model_ready(client: httpx.Client, model: str) -> bool:
 
 def _analyze_one(client: httpx.Client, article: dict[str, object],
                  model: str, *, structured: bool = False,
-                 runtime: LLMProvider | None = None) -> NewsMaterialityHypothesis:
+                 runtime: LLMProvider | None = None,
+                 runtime_json_schema: bool = True) -> NewsMaterialityHypothesis:
     if runtime is not None:
         content = runtime.generate_json(
             system=SYSTEM,
             user=json.dumps(_request_data(article), ensure_ascii=False),
-            schema=NEWS_HYPOTHESIS_OUTPUT_SCHEMA,
+            schema=(NEWS_HYPOTHESIS_OUTPUT_SCHEMA if runtime_json_schema else None),
         )
         return _parse_model_hypothesis(article, content)
     response = client.post(MODEL_HOST + "/api/chat", json={
