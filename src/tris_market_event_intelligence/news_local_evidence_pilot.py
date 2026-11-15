@@ -68,6 +68,8 @@ def _failure_code(exc: Exception) -> str:
                 "SOURCE_EVIDENCE_MISMATCH",
             "Unassessed source must not assert a direction":
                 "ABSTENTION_DIRECTION_MISMATCH",
+            "Assessed magnitude lacks an identified mechanism":
+                "MATERIALITY_MECHANISM_NOT_IDENTIFIED",
         }.get(str(exc), "MODEL_CONTENT_INVALID")
     return "MODEL_RESPONSE_INVALID"
 

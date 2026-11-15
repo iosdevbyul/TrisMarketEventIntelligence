@@ -9,6 +9,7 @@ import pytest
 from test_news_research_worker import files
 
 from tris_market_event_intelligence.news_materiality_local import (
+    _parse_model_hypothesis,
     generate_materiality_hypotheses,
 )
 
@@ -161,3 +162,64 @@ def test_source_cohort_hash_integrity_enforced(tmp_path: Path):
     paths[0].write_text(json.dumps(doc))
     with pytest.raises(ValueError, match="hash mismatch"):
         generate_materiality_hypotheses(cohort_path=paths[0])
+
+
+@pytest.mark.parametrize("mechanism", [
+    "None identified based on the summary.",
+    "No mechanism identified.",
+    "No impact found in the article.",
+    "Not known from the information supplied.",
+])
+def test_assessed_magnitude_cannot_claim_no_mechanism(mechanism: str) -> None:
+    article = {
+        "articleId": 410,
+        "textSha256": "a" * 64,
+        "title": "Tech Now",
+        "summary": "Ammie Sekhon explores tech used to identify counterfeit products online.",
+    }
+    result = _model_result(article, "LOW")
+    result["entity"] = "Ammie Sekhon"
+    result["evidence_excerpt"] = "tech used to identify counterfeit products online"
+    result["conditional_mechanism"] = mechanism
+    with pytest.raises(ValueError, match="lacks an identified mechanism"):
+        _parse_model_hypothesis(article, json.dumps(result))
+
+
+def test_proper_abstention_with_no_identified_mechanism_stays_valid() -> None:
+    article = {
+        "articleId": 410,
+        "textSha256": "a" * 64,
+        "title": "Tech Now",
+        "summary": "Ammie Sekhon explores tech used to identify counterfeit products online.",
+    }
+    result = _model_result(article, "UNASSESSED")
+    result.update({
+        "entity": "Ammie Sekhon",
+        "evidence_excerpt": "tech used to identify counterfeit products online",
+        "conditional_mechanism": "None identified based on the summary.",
+        "magnitude_basis": "NOT_ASSESSED",
+    })
+    parsed = _parse_model_hypothesis(article, json.dumps(result))
+    assert parsed.potential_magnitude == "UNASSESSED"
+    assert parsed.direction == "UNCERTAIN"
+
+
+def test_legitimate_conditional_mechanism_remains_acceptable() -> None:
+    article = {
+        "articleId": 336,
+        "textSha256": "b" * 64,
+        "title": "Microsoft services outage",
+        "summary": "Microsoft says Outlook and Teams are being restored.",
+    }
+    result = _model_result(article, "MODERATE")
+    result.update({
+        "entity": "Microsoft",
+        "evidence_excerpt": "Microsoft says Outlook and Teams are being restored.",
+        "conditional_mechanism": (
+            "If the outage persists, organizations may lose access to "
+            "communication services, disrupting business operations."
+        ),
+    })
+    assert _parse_model_hypothesis(article, json.dumps(result)).potential_magnitude == (
+        "MODERATE"
+    )
