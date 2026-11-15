@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh [--update] historical-multi --scout PRIVATE_GDELT_JSON --preview|--run [--model gemma4:e2b] [--reviewed-lessons HUMAN_REVIEWED_JSON] --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] historical-story --scout PRIVATE_GDELT_JSON --prepare|--run [--model gemma4:e2b --limit 12] --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] gdelt-scout --study PRIVATE_SHOCKS_JSON [--rank 1] --preview|--run [--output NEW_PRIVATE_JSON]"
   echo "  bash scripts/news-learning-review.sh [--update] historical-acquire tiingo --symbol NVDA --start YYYY-MM-DD --end YYYY-MM-DD --output NEW_CSV"
@@ -79,6 +80,9 @@ fi
 shift
 
 case "$action" in
+  historical-multi)
+    module="tris_market_event_intelligence.historical_multi_hypothesis_cli"
+    ;;
   historical-story)
     module="tris_market_event_intelligence.historical_story_review_cli"
     ;;
