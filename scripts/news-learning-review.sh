@@ -39,6 +39,8 @@ usage() {
   echo "  bash scripts/news-learning-review.sh materiality --evaluate --cohort FILE --holdout FILE --review HUMAN_JSON --predictions MODEL_JSON --output EVALUATION_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] candidate-lock --lock --cohort FILE --holdout FILE --review FILE --journal SQLITE --manifest PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh candidate-lock --audit --manifest PRIVATE_JSON [--usage-ledger SQLITE]"
+  echo "  bash scripts/news-learning-review.sh [--update] materiality-local --preview --cohort FILE [--limit 10]"
+  echo "  bash scripts/news-learning-review.sh materiality-local --run --cohort FILE --model gemma2:latest --limit N --output PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] guard-research --run --research-mode policy --max-iterations 12 --cohort FILE --holdout FILE --review FILE --journal SQLITE --status-file FILE --lock-file FILE"
 }
 
@@ -116,6 +118,9 @@ case "$action" in
     ;;
   candidate-lock)
     module="tris_market_event_intelligence.news_train_candidate_lock_cli"
+    ;;
+  materiality-local)
+    module="tris_market_event_intelligence.news_materiality_local_cli"
     ;;
   materiality)
     module="tris_market_event_intelligence.news_materiality_review_cli"
