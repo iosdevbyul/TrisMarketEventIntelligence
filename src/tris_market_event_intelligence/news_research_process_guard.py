@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import resource
 import signal
 import subprocess
 import sys
@@ -22,11 +21,6 @@ from tris_market_event_intelligence.news_research_loop import _check_stop_file
 from tris_market_event_intelligence.news_research_supervisor import _write_status
 
 SCHEMA = "news_research_process_guard_v1"
-
-
-def _child_limits(cpu_seconds: int) -> None:
-    resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
 def _rss_mb(pid: int) -> float | None:
@@ -143,9 +137,13 @@ def run_guarded_news_research(
             "modelPromoted": False, "stockPricesUsed": False,
         })
         process = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            [
+                sys.executable, "-m",
+                "tris_market_event_intelligence.news_research_limit_exec",
+                "--cpu-seconds", str(max_cpu_seconds), "--", *command,
+            ],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True,
-            preexec_fn=lambda: _child_limits(max_cpu_seconds),
             close_fds=True,
         )
         while True:
@@ -203,9 +201,11 @@ def run_guarded_news_research(
         })
         raise
     finally:
-        if lock_path.is_file() and not lock_path.is_symlink():
-            if lock_path.stat().st_ino == lock_inode:
-                lock_path.unlink()
+        if (
+            lock_path.is_file() and not lock_path.is_symlink()
+            and lock_path.stat().st_ino == lock_inode
+        ):
+            lock_path.unlink()
 
 
 def inspect_guard_status(path: Path) -> dict[str, object]:
