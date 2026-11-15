@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "independent_historical_news_cases_v1",
+  "purpose": "Historical news-only generalization challenge; not stock-price forecasting or model-training Gold",
+  "sealedFromLessons": true,
+  "sourceReviewStatus": "PRIMARY_ISSUER_WEB_VERIFIED_NOT_PUBLISHER_CLOCK_VERIFIED",
+  "cases": [
+    {
+      "caseId": "MSFT-2023-07-25-Q4",
+      "ticker": "MSFT",
+      "issuer": "Microsoft",
+      "announcementDate": "2023-07-25",
+      "source": {
+        "sourceId": "issuer-msft-q4-2023",
+        "sourceKind": "OFFICIAL_ISSUER_RELEASE",
+        "url": "https://www.microsoft.com/en-us/investor/earnings/fy-2023-q4/press-release-webcast",
+        "documentTitle": "Microsoft Cloud Strength Drives Fourth Quarter Results",
+        "publisherClockVerified": false
+      },
+      "facts": [
+        {
+          "factId": "msft-revenue",
+          "sourceId": "issuer-msft-q4-2023",
+          "statement": "Microsoft reported fiscal Q4 2023 total revenue of USD 56.189 billion."
+        },
+        {
+          "factId": "msft-azure",
+          "sourceId": "issuer-msft-q4-2023",
+          "statement": "Azure and other cloud services revenue grew 26 percent year over year in reported currency."
+        },
+        {
+          "factId": "msft-cloud",
+          "sourceId": "issuer-msft-q4-2023",
+          "statement": "Microsoft Cloud quarterly revenue reached USD 30.3 billion, up 21 percent year over year."
+        }
+      ]
+    },
+    {
+      "caseId": "GOOGL-2023-07-25-Q2",
+      "ticker": "GOOGL",
+      "issuer": "Alphabet",
+      "announcementDate": "2023-07-25",
+      "source": {
+        "sourceId": "issuer-alphabet-q2-2023",
+        "sourceKind": "OFFICIAL_SEC_EXHIBIT",
+        "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204423000067/googexhibit991q22023.htm",
+        "documentTitle": "Alphabet Announces Second Quarter 2023 Results",
+        "publisherClockVerified": false
+      },
+      "facts": [
+        {
+          "factId": "googl-revenue",
+          "sourceId": "issuer-alphabet-q2-2023",
+          "statement": "Alphabet reported Q2 2023 consolidated revenue of USD 74.604 billion."
+        },
+        {
+          "factId": "googl-cloud",
+          "sourceId": "issuer-alphabet-q2-2023",
+          "statement": "Google Cloud revenue was USD 8.031 billion versus USD 6.276 billion a year earlier."
+        },
+        {
+          "factId": "googl-operating",
+          "sourceId": "issuer-alphabet-q2-2023",
+          "statement": "Google Cloud operating income was USD 395 million versus a USD 590 million operating loss a year earlier."
+        }
+      ]
+    },
+    {
+      "caseId": "AMD-2023-08-01-Q2",
+      "ticker": "AMD",
+      "issuer": "AMD",
+      "announcementDate": "2023-08-01",
+      "source": {
+        "sourceId": "issuer-amd-q2-2023",
+        "sourceKind": "OFFICIAL_ISSUER_RELEASE",
+        "url": "https://www.amd.com/en/newsroom/press-releases/2023-8-1-amd-reports-second-quarter-2023-financial-results.html",
+        "documentTitle": "AMD Reports Second Quarter 2023 Financial Results",
+        "publisherClockVerified": false
+      },
+      "facts": [
+        {
+          "factId": "amd-revenue",
+          "sourceId": "issuer-amd-q2-2023",
+          "statement": "AMD reported second-quarter 2023 revenue of USD 5.359 billion, down 18 percent year over year."
+        },
+        {
+          "factId": "amd-gaap",
+          "sourceId": "issuer-amd-q2-2023",
+          "statement": "AMD reported GAAP operating loss of USD 20 million for Q2 2023."
+        },
+        {
+          "factId": "amd-mi300",
+          "sourceId": "issuer-amd-q2-2023",
+          "statement": "AMD stated it was on track to launch and ramp MI300 accelerator production in the fourth quarter of 2023; this was forward-looking guidance."
+        }
+      ]
+    }
+  ]
+}
