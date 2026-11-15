@@ -1,0 +1,118 @@
+"""Bounded, source-pinned real NEWS hypothesis pilot; never creates ground truth.
+
+Runs against the existing 48-candidate private packet, not an invented
+random selection and not a full-cohort train/validation accuracy claim.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from collections import Counter
+from pathlib import Path
+
+import httpx
+from pydantic import ValidationError
+
+from tris_market_event_intelligence.news_offline_review_page import (
+    _verify_pinned_sample,
+)
+from tris_market_event_intelligence.news_materiality_local import (
+    MODEL_HOST,
+    _analyze_one,
+    _local_model_ready,
+)
+from tris_market_event_intelligence.news_importance_review import _cohort
+
+MAX_PILOT = 3
+ALLOWED_MODELS = frozenset({"gemma4:e2b", "gemma2:latest"})
+
+
+def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
+                           model_id: str = "gemma4:e2b", run: bool = False,
+                           limit: int = 2,
+                           client: httpx.Client | None = None) -> dict:
+    """Validated candidate selection; model contract outcomes are not correctness."""
+    if model_id not in ALLOWED_MODELS:
+        raise ValueError("Pilot needs explicitly approved local model ID")
+    if type(limit) is not int or not 1 <= limit <= MAX_PILOT:
+        raise ValueError("News pilot must select 1..3 candidates")
+    cohort_raw, cohort = _cohort(cohort_path)
+    sample = _verify_pinned_sample(cohort_path, sample_path)
+    originals = {row["articleId"]: row for row in cohort["items"]}
+    selected = []
+    for representative in sample["items"][:limit]:
+        original = originals[representative["articleId"]]
+        if original["textSha256"] != representative["textSha256"]:
+            raise ValueError("Candidate source fingerprint mismatch")
+        selected.append(original)
+    common = {
+        "schemaVersion": "news_local_evidence_pilot_v1",
+        "cohortSha256": hashlib.sha256(cohort_raw).hexdigest(),
+        "sampleSha256": hashlib.sha256(sample_path.read_bytes()).hexdigest(),
+        "modelId": model_id,
+        "selectedArticles": len(selected),
+        "totalOriginalArticles": len(cohort["items"]),
+        "sampleCandidates": len(sample["items"]),
+        "completeCohortInferred": False,
+        "independentEventsVerified": False,
+        "humanGoldUsed": False,
+        "independentNewsAccuracyMeasured": False,
+        "modelImprovementValidated": False,
+        "promotionAllowed": False,
+        "stockPricesUsed": False,
+        "productionDbModified": False,
+        "modelDownloadedOrInstalled": False,
+        "outputIsUnverifiedResearch": True,
+    }
+    if not run:
+        return {**common, "status": "PREVIEW_ONLY",
+                "modelCalls": 0, "items": [], "counts": {}}
+    owned = client is None
+    session = client or httpx.Client(
+        timeout=httpx.Timeout(120), trust_env=False,
+    )
+    entries = []
+    counts: Counter[str] = Counter()
+    try:
+        if not _local_model_ready(session, model_id):
+            return {**common, "status": "LOCAL_MODEL_NOT_INSTALLED",
+                    "modelCalls": 0, "items": [], "counts": {}}
+        for article in selected:
+            try:
+                hypothesis = _analyze_one(session, article, model_id)
+            except (httpx.HTTPError, ValueError, KeyError, TypeError,
+                    ValidationError, json.JSONDecodeError):
+                code = "REJECTED_OR_MODEL_RUNTIME_FAILED"
+                row = {
+                    "articleId": article["articleId"],
+                    "textSha256": article["textSha256"],
+                    "status": code, "contractAccepted": False,
+                    "hypothesis": None,
+                }
+            else:
+                code = ("ACCEPTED_ABSTAINED" if hypothesis.potential_magnitude
+                        == "UNASSESSED" else "ACCEPTED_UNVERIFIED_HYPOTHESIS")
+                row = {
+                    "articleId": article["articleId"],
+                    "textSha256": article["textSha256"],
+                    "status": code, "contractAccepted": True,
+                    "hypothesis": hypothesis.model_dump(),
+                }
+            entries.append(row)
+            counts[code] += 1
+    except (httpx.HTTPError, ValueError, TypeError, KeyError,
+            json.JSONDecodeError):
+        return {**common, "status": "LOCAL_MODEL_PREFLIGHT_FAILED",
+                "modelCalls": 0, "items": [], "counts": {}}
+    finally:
+        if owned:
+            session.close()
+    return {
+        **common,
+        "status": "UNVERIFIED_LOCAL_NEWS_PILOT_RECORDED",
+        "modelCalls": len(entries),
+        "counts": dict(sorted(counts.items())),
+        "items": entries,
+        "contractAcceptanceNotSemanticAccuracy": True,
+        "modelClaimsRequireIndependentVerification": True,
+    }
