@@ -169,6 +169,9 @@ def test_source_cohort_hash_integrity_enforced(tmp_path: Path):
     "No mechanism identified.",
     "No impact found in the article.",
     "Not known from the information supplied.",
+    "No concrete conditional organizational mechanism can be inferred from the sourced event.",
+    "No specific economic impact mechanism was identified.",
+    "No identifiable causal mechanism can be established.",
 ])
 def test_assessed_magnitude_cannot_claim_no_mechanism(mechanism: str) -> None:
     article = {

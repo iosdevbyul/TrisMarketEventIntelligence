@@ -128,8 +128,11 @@ def _parse_model_hypothesis(article: dict[str, object],
     # A model cannot assert a materiality band while expressly admitting
     # it identified no mechanism. Do not fabricate a replacement mechanism.
     if obj.potential_magnitude != "UNASSESSED" and re.match(
-        r"^\s*(?:none(?:\s+identified)?|no\s+(?:mechanism|impact|effect)"
-        r"(?:\s+(?:identified|found))?|not\s+(?:identified|known))\b",
+        r"^\s*(?:none(?:\s+identified)?|"
+        r"no\s+(?:(?:concrete|specific|identifiable|clear)\s+)?"
+        r"(?:(?:conditional|organizational|economic|causal)\s+){0,3}"
+        r"(?:mechanism|impact|effect)(?:\s+(?:identified|found))?|"
+        r"not\s+(?:identified|known))\b",
         obj.conditional_mechanism, flags=re.IGNORECASE,
     ):
         raise ValueError("Assessed magnitude lacks an identified mechanism")
