@@ -26,7 +26,7 @@ def _read(path: Path) -> dict:
         raise ValueError("Invalid review input")
     document = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
-        raise ValueError("Expected JSON object")
+        raise TypeError("Expected JSON object")
     return document
 
 
