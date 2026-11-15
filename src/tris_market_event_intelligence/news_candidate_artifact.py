@@ -9,7 +9,6 @@ import hashlib
 import json
 import math
 import os
-import sqlite3
 from contextlib import closing
 from pathlib import Path
 
