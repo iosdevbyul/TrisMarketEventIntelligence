@@ -7,10 +7,10 @@ from pathlib import Path
 
 import httpx
 
-from tris_market_event_intelligence.news_pressure_pilot import run_pressure_pilot
-from tris_market_event_intelligence.news_pressure_provider import GemmaNewsPressureProvider
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_pressure_provider, with_model
+from tris_market_event_intelligence.news_pressure_pilot import run_pressure_pilot
+from tris_market_event_intelligence.news_pressure_provider import GemmaNewsPressureProvider
 
 
 def main() -> None:
