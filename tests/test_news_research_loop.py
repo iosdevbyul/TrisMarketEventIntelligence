@@ -20,10 +20,10 @@ from tris_market_event_intelligence.news_research_worker import audit_research_j
 def loop(
     paths: tuple[Path, Path, Path, Path], **options,
 ) -> dict[str, object]:
+    options.setdefault("interval_seconds", 0)
     return run_news_research_loop(
         cohort_path=paths[0], plan_path=paths[1],
-        review_path=paths[2], journal_path=paths[3],
-        interval_seconds=0, **options,
+        review_path=paths[2], journal_path=paths[3], **options,
     )
 
 
