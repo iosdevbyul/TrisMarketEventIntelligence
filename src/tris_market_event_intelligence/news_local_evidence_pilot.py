@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
+from tris_market_event_intelligence.llm_runtime import ConfiguredLLMProvider
 from tris_market_event_intelligence.news_importance_review import _cohort
 from tris_market_event_intelligence.news_materiality_local import (
     NewsModelGenerationError,
@@ -78,10 +79,13 @@ ALLOWED_MODELS = frozenset({"gemma4:e2b", "gemma2:latest"})
 def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
                            model_id: str = "gemma4:e2b", run: bool = False,
                            limit: int = 2,
-                           client: httpx.Client | None = None) -> dict:
+                           client: httpx.Client | None = None,
+                           runtime: ConfiguredLLMProvider | None = None) -> dict:
     """Validated candidate selection; model contract outcomes are not correctness."""
-    if model_id not in ALLOWED_MODELS:
+    if runtime is None and model_id not in ALLOWED_MODELS:
         raise ValueError("Pilot needs explicitly approved local model ID")
+    if runtime is not None and runtime.model_id != model_id:
+        raise ValueError("Explicit pilot model ID differs from injected model")
     if type(limit) is not int or not 1 <= limit <= MAX_PILOT:
         raise ValueError("News pilot must select 1..3 candidates")
     cohort_raw, cohort = _cohort(cohort_path)
@@ -115,19 +119,25 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
     if not run:
         return {**common, "status": "PREVIEW_ONLY",
                 "modelCalls": 0, "items": [], "counts": {}}
-    owned = client is None
-    session = client or httpx.Client(
+    owned = client is None and runtime is None
+    session = client or (httpx.Client(
         timeout=httpx.Timeout(120), trust_env=False,
-    )
+    ) if runtime is None else None)
     entries = []
     counts: Counter[str] = Counter()
     try:
-        if not _local_model_ready(session, model_id):
+        installed = (runtime.ensure_local_installed()
+                     if runtime is not None and runtime.settings.kind == "ollama"
+                     else True if runtime is not None
+                     else _local_model_ready(session, model_id))
+        if not installed:
             return {**common, "status": "LOCAL_MODEL_NOT_INSTALLED",
                     "modelCalls": 0, "items": [], "counts": {}}
         for article in selected:
             try:
-                hypothesis = _analyze_one(session, article, model_id, structured=True)
+                hypothesis = _analyze_one(
+                    session, article, model_id, structured=True, runtime=runtime,
+                )
             except (httpx.HTTPError, ValueError, KeyError, TypeError,
                     ValidationError, json.JSONDecodeError) as exc:
                 reason_code = _failure_code(exc)
@@ -161,7 +171,7 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
         return {**common, "status": "LOCAL_MODEL_PREFLIGHT_FAILED",
                 "modelCalls": 0, "items": [], "counts": {}}
     finally:
-        if owned:
+        if owned and session is not None:
             session.close()
     return {
         **common,
