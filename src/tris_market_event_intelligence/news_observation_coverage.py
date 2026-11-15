@@ -21,6 +21,8 @@ MAX_SINGLE_DAY_SHARE = 0.75
 def _complete_snapshot(path: Path) -> tuple[bytes, dict]:
     raw, doc = _cohort(path)
     articles = doc["items"]
+    if doc["schemaVersion"] != "historical_news_cohort_v2":
+        raise ValueError("Complete v2 provenance-pinned news cohort required")
     if (doc.get("hasMore") is not False or doc.get("pageAfterId") != 0
             or doc.get("totalObservedByCutoff") != len(articles)
             or doc.get("nextCursor") != articles[-1]["articleId"]):
@@ -142,7 +144,7 @@ def audit_news_observation_coverage(*, baseline_path: Path,
                                      - baseline_summary["observedActiveDaysUTC"]),
         "calendarSpanIncreaseDays": (current_summary["calendarSpanDaysUTC"]
                                      - baseline_summary["calendarSpanDaysUTC"]),
-        "newArticlesWithHumanVerifiedIndependence": 0,
+        "newArticlesWithHumanVerifiedIndependence": None,
         "historicalArticlesRevisedOrRemoved": False,
     }
     result["status"] = ("NEWER_SNAPSHOT_NEEDS_MORE_TEMPORAL_DIVERSITY"
