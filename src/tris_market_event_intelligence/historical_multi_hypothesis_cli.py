@@ -16,7 +16,9 @@ from tris_market_event_intelligence.historical_story_review import (
     prepare_historical_story_review,
 )
 from tris_market_event_intelligence.llm_runtime import (
-    LLMCapabilities, LLMExecutionError, LLMSettings,
+    LLMCapabilities,
+    LLMExecutionError,
+    LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
