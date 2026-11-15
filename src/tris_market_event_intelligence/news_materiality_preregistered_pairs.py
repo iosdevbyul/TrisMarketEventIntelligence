@@ -13,13 +13,13 @@ from pathlib import Path
 
 from tris_market_event_intelligence.news_importance_review import _cohort, _instant, _read
 from tris_market_event_intelligence.news_materiality_hypothesis import BANDS
+from tris_market_event_intelligence.news_materiality_review import _validation_ids
 from tris_market_event_intelligence.news_materiality_transition_review import (
     CHANGES,
     MIN_DESCRIPTIVE_PAIRS,
     RELATIONS,
     _pinned_pairs,
 )
-from tris_market_event_intelligence.news_materiality_review import _validation_ids
 
 SCHEMA = "news_materiality_preregistered_pairs_v1"
 SEED = "learning05-independent-news-pair-sampling-v1"
