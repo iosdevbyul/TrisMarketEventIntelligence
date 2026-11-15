@@ -30,7 +30,7 @@ def main() -> None:
     parser.add_argument("--max-wall-seconds", type=int, default=300)
     parser.add_argument("--max-rss-mb", type=int, default=1024)
     parser.add_argument("--max-iterations", type=int, default=1)
-    parser.add_argument("--research-mode", choices=("legacy", "train-cv"),
+    parser.add_argument("--research-mode", choices=("legacy", "train-cv", "policy"),
                         default="legacy")
     args = parser.parse_args()
     try:
