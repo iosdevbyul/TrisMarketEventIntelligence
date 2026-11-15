@@ -61,6 +61,7 @@ def run_guarded_news_research(
     stop_file: Path | None = None, max_cpu_seconds: int = 30,
     max_wall_seconds: int = 300, max_rss_mb: int = 1024,
     max_iterations: int = 1, poll_seconds: float = 0.25,
+    research_mode: str = "legacy",
     runner: list[str] | None = None,
     rss_reader: Callable[[int], float | None] = _rss_mb,
 ) -> dict[str, object]:
@@ -83,6 +84,10 @@ def run_guarded_news_research(
         poll_seconds
     ) or not 0.05 <= poll_seconds <= 2:
         raise ValueError("Polling interval must be 0.05..2 seconds")
+    if research_mode not in ("legacy", "train-cv"):
+        raise ValueError("Unsupported guarded NEWS research mode")
+    if research_mode == "train-cv" and max_iterations > 18:
+        raise ValueError("TRAIN-only CV batches are bounded to 18 experiments")
     for path in (cohort_path, plan_path, review_path):
         if path.is_symlink() or not path.is_file():
             raise ValueError("Private ordinary research source file required")
@@ -100,20 +105,31 @@ def run_guarded_news_research(
     if stop_file is not None and _check_stop_file(stop_file):
         return {
             "schemaVersion": SCHEMA, "status": "STOP_REQUESTED",
-            "childStarted": False, "productionChanged": False,
+            "childStarted": False, "researchMode": research_mode,
+            "productionChanged": False,
             "modelPromoted": False, "stockPricesUsed": False,
         }
-    command = runner if runner is not None else [
-        sys.executable, "-m",
-        "tris_market_event_intelligence.news_research_loop_cli",
-        "--run", "--cohort", str(cohort_path),
-        "--holdout", str(plan_path), "--review", str(review_path),
-        "--journal", str(journal_path),
-        "--max-iterations", str(max_iterations),
-        "--max-seconds", str(max_wall_seconds),
-        "--interval-seconds", "0",
-    ]
-    if runner is None and stop_file is not None:
+    if research_mode == "train-cv":
+        default_command = [
+            sys.executable, "-m",
+            "tris_market_event_intelligence.news_train_cv_exploration_cli",
+            "--batch", str(max_iterations),
+            "--cohort", str(cohort_path), "--holdout", str(plan_path),
+            "--review", str(review_path), "--journal", str(journal_path),
+        ]
+    else:
+        default_command = [
+            sys.executable, "-m",
+            "tris_market_event_intelligence.news_research_loop_cli",
+            "--run", "--cohort", str(cohort_path),
+            "--holdout", str(plan_path), "--review", str(review_path),
+            "--journal", str(journal_path),
+            "--max-iterations", str(max_iterations),
+            "--max-seconds", str(max_wall_seconds),
+            "--interval-seconds", "0",
+        ]
+    command = runner if runner is not None else default_command
+    if runner is None and research_mode == "legacy" and stop_file is not None:
         command.extend(["--stop-file", str(stop_file)])
     if not command or any(not isinstance(part, str) for part in command):
         raise ValueError("Invalid research child command")
@@ -133,6 +149,7 @@ def run_guarded_news_research(
             stream.write("\n")
         _write_status(status_path, {
             "schemaVersion": SCHEMA, "status": "STARTING",
+            "researchMode": research_mode,
             "updatedAt": datetime.now(UTC).isoformat(),
             "modelPromoted": False, "stockPricesUsed": False,
         })
@@ -178,6 +195,8 @@ def run_guarded_news_research(
             "updatedAt": datetime.now(UTC).isoformat(),
             "childExitCode": child_exit,
             "childStarted": True,
+            "researchMode": research_mode,
+            "modelImprovementValidated": False,
             "maxObservedChildRssMb": round(max_seen, 3),
             "maxCpuSecondsHardRlimit": max_cpu_seconds,
             "maxWallSeconds": max_wall_seconds,
@@ -195,6 +214,7 @@ def run_guarded_news_research(
             _stop_child(process)
         _write_status(status_path, {
             "schemaVersion": SCHEMA, "status": "FAILED_REQUIRES_INSPECTION",
+            "researchMode": research_mode,
             "updatedAt": datetime.now(UTC).isoformat(),
             "errorType": type(exc).__name__, "modelPromoted": False,
             "stockPricesUsed": False,
