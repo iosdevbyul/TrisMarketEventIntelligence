@@ -109,3 +109,35 @@ Neither independent Gold nor new market data are written by this
 workflow. Historic TOP100 membership is outcome-conditioned and must
 not enter future time-point predictor features. Mac worker/24-hour
 learning is not activated.
+
+## Local Ollama inference budget for historical research
+
+An actual 2026-11-15 Mac run of `historical-multi --run` with the
+44-reference NVIDIA scout failed with
+`historical-multi-research: MODEL_GENERATION_TRUNCATED`.
+The Ollama transport explicitly reported `done_reason=length`.
+The model output was **not** a complete JSON research artifact and
+was not saved or used as training, Gold, or a hypothesis.
+
+This research CLI now explicitly requests `num_ctx=8192` and
+`num_predict=3072` from local Ollama (thinking off), allowing
+space for three competing structured hypotheses and full 44-source
+context; these limits are **per-command**, not new global defaults.
+For a constrained host the operator may select
+`--context-tokens 4096..16384` and
+`--output-tokens 1024..4096` explicitly. Higher values increase
+local CPU/memory use and do not guarantee a valid model response.
+The same validated research schema and source-citation constraints apply.
+
+```sh
+bash scripts/news-learning-review.sh --update historical-multi \
+  --scout "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-gdelt-gkg-rank1.json" \
+  --run --model gemma4:e2b \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-multi-hypotheses-rank1-v3.json"
+```
+
+If the provider still reports `MODEL_GENERATION_TRUNCATED`, do not
+discard constraints, infer a partial output, or claim improvement.
+Investigate local `num_ctx` vs actual token usage and, if necessary,
+split independent topic-group analyses followed by a separate
+source-cited comparison. This command never downloads a larger model.
