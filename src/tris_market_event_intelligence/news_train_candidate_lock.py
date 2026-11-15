@@ -61,7 +61,9 @@ def _read_locked(path: Path) -> dict[str, object]:
             char not in "0123456789abcdef" for char in sha
         ):
             raise ValueError("Invalid candidate lock fingerprint")
-    if payload["selectionRule"] != "minimum_train_cv_log_loss_then_sha" or (
+    if payload["algorithm"] != "train_only_feature_hypothesis_cv_v1" or (
+        payload["featureMode"] not in ("WORD_PRESENCE", "CHAR_TRIGRAM_PRESENCE")
+    ) or payload["selectionRule"] != "minimum_train_cv_log_loss_then_sha" or (
         type(payload["catalogCount"]) is not int
         or payload["catalogCount"] != MAX_HYPOTHESES
         or type(payload["tokenCap"]) is not int
