@@ -18,7 +18,6 @@ from tris_market_event_intelligence.news_importance_review import _read
 from tris_market_event_intelligence.news_naive_bayes_model import NewsImportanceModel
 from tris_market_event_intelligence.news_research_worker import (
     _journal,
-    _tokens,
     _validate_inputs,
 )
 
