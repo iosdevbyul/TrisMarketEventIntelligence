@@ -117,7 +117,7 @@ def _validation_ids(plan_path: Path, raw_cohort: bytes,
     counts: Counter[str] = Counter()
     for row in items:
         if not isinstance(row, dict):
-            raise ValueError("Malformed NEWS holdout row")
+            raise TypeError("Malformed NEWS holdout row")
         article_id = row.get("articleId")
         if type(article_id) is not int or article_id not in articles or article_id in seen:
             raise ValueError("Repeated or unknown NEWS holdout article")
