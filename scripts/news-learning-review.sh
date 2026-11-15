@@ -18,6 +18,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh research-loop --stop STOP_FILE"
   echo "  bash scripts/news-learning-review.sh [--update] candidate --export --cohort FILE --holdout FILE --review FILE --journal SQLITE --experiment-sha256 SHA --artifact PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh candidate --verify --cohort FILE --holdout FILE --review FILE --journal SQLITE --artifact PRIVATE_JSON"
+  echo "  bash scripts/news-learning-review.sh [--update] compare-candidates --candidate FILE --candidate FILE --cohort FILE --holdout FILE --review FILE --journal SQLITE --output PRIVATE_JSON"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -70,6 +71,9 @@ case "$action" in
     ;;
   candidate)
     module="tris_market_event_intelligence.news_candidate_artifact_cli"
+    ;;
+  compare-candidates)
+    module="tris_market_event_intelligence.news_candidate_comparison_cli"
     ;;
   *)
     usage >&2
