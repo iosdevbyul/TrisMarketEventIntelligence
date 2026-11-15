@@ -15,7 +15,7 @@ from tris_market_event_intelligence.news_local_evidence_pilot import (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Audit 1..3 pinned real NEWS candidates with installed local Gemma"
+        description="Audit 1..12 pinned NEWS candidates in a specified source-sample range"
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
@@ -26,6 +26,8 @@ def main() -> None:
     parser.add_argument("--configured-llm", action="store_true",
                         help="Explicit generic LLM selection; legacy Gemma default unchanged")
     parser.add_argument("--limit", type=int, default=2)
+    parser.add_argument("--start-index", type=int, default=0,
+                        help="Zero-based index within the same pinned 48-candidate sample")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
@@ -47,7 +49,7 @@ def main() -> None:
         report = audit_local_news_pilot(
             cohort_path=args.cohort, sample_path=args.sample,
             model_id=model_id, run=args.run, limit=args.limit,
-            runtime=runtime,
+            start_index=args.start_index, runtime=runtime,
         )
         if args.output is not None:
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -65,6 +67,9 @@ def main() -> None:
             "status": report["status"],
             "modelId": report["modelId"],
             "selectedArticles": report["selectedArticles"],
+            "sampleStartIndex": report["sampleStartIndex"],
+            "sampleEndIndexExclusive": report["sampleEndIndexExclusive"],
+            "selectedArticleIds": report["selectedArticleIds"],
             "modelCalls": report["modelCalls"],
             "counts": report["counts"],
             "independentNewsAccuracyMeasured": False,
