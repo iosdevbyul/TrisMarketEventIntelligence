@@ -77,6 +77,9 @@ case "$action" in
   compare-candidates)
     module="tris_market_event_intelligence.news_candidate_comparison_cli"
     ;;
+  supervise)
+    module="tris_market_event_intelligence.news_research_supervisor_cli"
+    ;;
   *)
     usage >&2
     exit 2
