@@ -77,3 +77,33 @@ bash scripts/news-learning-review.sh --update evidence-pilot --run \\
 A failed model output is *never* retried automatically and none of the
 failure codes establish factual accuracy or model intelligence. Preserve
 the prior attempt's original private file unchanged.
+
+## Gemma4 structured-output correction (2026-11-15)
+
+Actual Mac Gemma4:e2b returned two `MODEL_SCHEMA_INVALID` results with
+the earlier unconstrained `format: "json"` generation. This confirms schema
+validation failed for both responses; the exact missing fields were **not**
+available in the original reports and content correctness is unknown.
+
+The small `evidence-pilot` now sends Ollama a flat explicit JSON schema
+with required keys, fixed enum values and three false-only flags. It still
+performs the existing complete Pydantic validation and immutable original
+news evidence checks afterward. The full-cohort `materiality-local` path
+is unchanged (plain JSON mode). A rejected sample includes only a
+whitelisted `schemaFailureField` and a `SCHEMA_FIELD_*` count, never the
+model's private completion or source excerpts in terminal output.
+
+After updating main, repeat the **same 2 candidates** using a new private
+filename (do not replace the earlier evidence files):
+
+```sh
+bash scripts/news-learning-review.sh --update evidence-pilot --run \
+  --cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \
+  --sample "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-review-sample-20261115.json" \
+  --model gemma4:e2b --limit 2 \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-evidence-pilot-structured-20261115.json"
+```
+
+Ollama may reject unsupported schema grammars and could still return bad
+outputs. This is evidence of actual runtime compatibility, not a hidden
+automatic fallback or a claim that any hypothesis is factually accurate.
