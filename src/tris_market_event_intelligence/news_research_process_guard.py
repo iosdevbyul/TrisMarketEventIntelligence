@@ -160,15 +160,19 @@ def run_guarded_news_research(
                 status = "WALL_TIME_LIMIT"
                 break
             current = rss_reader(process.pid)
-            if current is not None:
-                if not math.isfinite(current) or current < 0:
-                    raise ValueError("Invalid child resident-memory reading")
-                max_seen = max(max_seen, current)
-                if current >= max_rss_mb:
-                    status = "RSS_THRESHOLD_REACHED"
+            if current is None:
+                if process.poll() is None:
+                    status = "RSS_MONITOR_UNAVAILABLE"
                     break
+                continue
+            if not math.isfinite(current) or current < 0:
+                raise ValueError("Invalid child resident-memory reading")
+            max_seen = max(max_seen, current)
+            if current >= max_rss_mb:
+                status = "RSS_THRESHOLD_REACHED"
+                break
             time.sleep(poll_seconds)
-        if status in {"STOP_REQUESTED", "WALL_TIME_LIMIT", "RSS_THRESHOLD_REACHED"}:
+        if status in {"STOP_REQUESTED", "WALL_TIME_LIMIT", "RSS_THRESHOLD_REACHED", "RSS_MONITOR_UNAVAILABLE"}:
             _stop_child(process)
         child_exit = process.wait(timeout=3)
         report = {
