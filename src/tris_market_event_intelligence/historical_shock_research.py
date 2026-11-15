@@ -279,7 +279,7 @@ def build_historical_shock_research(
         "priceCandidateSessions": len(candidate),
         "stockDailySessions": len(stock),
         "benchmarkDailySessions": len(benchmark),
-        "commonPriceSessions": len(set(b.day for b in stock) & set(b.day for b in benchmark)),
+        "commonPriceSessions": len({b.day for b in stock} & {b.day for b in benchmark}),
         "topEventsWithPreOpenNews": sum(bool(e["context"]["newsAvailableBeforeOpenTotal"])
                                        for e in packaged_high),
         "topEventsWithMacroAsOf": sum(bool(e["context"]["macroObservationCount"])
