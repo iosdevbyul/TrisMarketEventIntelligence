@@ -23,6 +23,25 @@ from tris_market_event_intelligence.news_offline_review_page import (
 )
 
 
+# Whitelisted schema diagnostics only; never record a validation error's input.
+_ALLOWED_FIELDS = frozenset({
+    "schema_version", "article_id", "text_sha256", "entity",
+    "event_summary", "fact_status", "potential_magnitude", "direction",
+    "evidence_excerpt", "conditional_mechanism", "verification_needed",
+    "magnitude_basis", "market_prices_used", "price_prediction",
+    "independent_human_gold",
+})
+
+
+def _schema_failure_field(exc: ValidationError) -> str:
+    issues = exc.errors(include_input=False, include_context=False)
+    for issue in issues:
+        for member in issue.get("loc", ()):
+            if isinstance(member, str) and member in _ALLOWED_FIELDS:
+                return member
+    return "root"
+
+
 def _failure_code(exc: Exception) -> str:
     """Use only fixed diagnostic codes, never raw model/source/error text."""
     if isinstance(exc, httpx.TimeoutException):
@@ -106,15 +125,18 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
                     "modelCalls": 0, "items": [], "counts": {}}
         for article in selected:
             try:
-                hypothesis = _analyze_one(session, article, model_id)
+                hypothesis = _analyze_one(session, article, model_id, structured=True)
             except (httpx.HTTPError, ValueError, KeyError, TypeError,
                     ValidationError, json.JSONDecodeError) as exc:
                 reason_code = _failure_code(exc)
+                schema_field = (_schema_failure_field(exc)
+                                if isinstance(exc, ValidationError) else None)
                 code = "REJECTED_OR_MODEL_RUNTIME_FAILED"
                 row = {
                     "articleId": article["articleId"],
                     "textSha256": article["textSha256"],
                     "status": code, "failureCode": reason_code,
+                    "schemaFailureField": schema_field,
                     "contractAccepted": False, "hypothesis": None,
                 }
             else:
@@ -130,6 +152,8 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
             counts[code] += 1
             if not row["contractAccepted"]:
                 counts[reason_code] += 1
+                if schema_field is not None:
+                    counts["SCHEMA_FIELD_" + schema_field.upper()] += 1
     except (httpx.HTTPError, ValueError, TypeError, KeyError,
             json.JSONDecodeError):
         return {**common, "status": "LOCAL_MODEL_PREFLIGHT_FAILED",
