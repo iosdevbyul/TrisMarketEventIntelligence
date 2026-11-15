@@ -43,7 +43,7 @@ def evaluate_research(research: dict) -> dict:
 
     for index, row in enumerate(research["hypotheses"]):
         if not isinstance(row, dict):
-            raise ValueError("Invalid hypothesis entry")
+            raise TypeError("Invalid hypothesis entry")
         location = f"hypotheses[{index}]"
         refs = row.get("reference_ids")
         if not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
@@ -68,20 +68,20 @@ def evaluate_research(research: dict) -> dict:
                  "References are candidates only; confirm why evidence is insufficient")
         mechanism = row.get("mechanism")
         if not isinstance(mechanism, str):
-            raise ValueError("Invalid mechanism")
+            raise TypeError("Invalid mechanism")
         if TITLE_ONLY.fullmatch(mechanism.strip()):
             flag("MECHANISM_TITLE_ONLY", location, "Mechanism is a topic label, not an economic chain")
         for key in EXPLANATION_FIELDS:
             value = row.get(key)
             if not isinstance(value, str):
-                raise ValueError("Invalid explanation text")
+                raise TypeError("Invalid explanation text")
             if CAUSAL_ASSERTIONS.search(value):
                 flag("UNVERIFIED_CAUSAL_LANGUAGE", f"{location}.{key}",
                      "Causal language exceeds unverified retrospective evidence")
     for field in ("researchSummary", "missingEvidence"):
         value = research.get(field)
         if not isinstance(value, str):
-            raise ValueError("Invalid summary field")
+            raise TypeError("Invalid summary field")
         if CAUSAL_ASSERTIONS.search(value):
             flag("UNVERIFIED_CAUSAL_LANGUAGE", field,
                  "Causal language exceeds unverified retrospective evidence")
