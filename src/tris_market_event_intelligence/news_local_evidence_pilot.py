@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from tris_market_event_intelligence.news_importance_review import _cohort
 from tris_market_event_intelligence.news_materiality_local import (
+    NewsModelGenerationError,
     _analyze_one,
     _local_model_ready,
 )
@@ -43,6 +44,8 @@ def _schema_failure_field(exc: ValidationError) -> str:
 
 def _failure_code(exc: Exception) -> str:
     """Use only fixed diagnostic codes, never raw model/source/error text."""
+    if isinstance(exc, NewsModelGenerationError):
+        return exc.code
     if isinstance(exc, httpx.TimeoutException):
         return "MODEL_TIMEOUT"
     if isinstance(exc, httpx.HTTPStatusError):

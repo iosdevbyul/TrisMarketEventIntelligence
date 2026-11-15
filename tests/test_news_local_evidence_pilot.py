@@ -254,3 +254,44 @@ def test_schema_rejection_includes_safe_field_name_only(tmp_path: Path) -> None:
         "conditional_mechanism", "verification_needed", "magnitude_basis",
     }
     assert "secret" not in json.dumps(report)
+
+
+@pytest.mark.parametrize(("done_reason", "content", "expected"), [
+    ("length", '{"article_id":', "MODEL_GENERATION_TRUNCATED"),
+    ("stop", "", "MODEL_EMPTY_CONTENT"),
+    ("stop", '{"article_id":', "MODEL_JSON_INVALID"),
+])
+def test_real_ollama_incomplete_json_is_distinguished_from_schema_failure(
+    tmp_path: Path, done_reason: str, content: str, expected: str,
+) -> None:
+    cohort, sample = _inputs(tmp_path)
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [
+                {"name": "gemma2:latest"},
+            ]})
+        body = json.loads(request.content)
+        assert body["format"]["type"] == "object"
+        assert body["think"] is False
+        assert body["options"]["num_predict"] == 2048
+        return httpx.Response(200, json={
+            "message": {"content": content},
+            "done_reason": done_reason,
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = audit_local_news_pilot(
+            cohort_path=cohort, sample_path=sample, model_id="gemma2:latest",
+            run=True, limit=1, client=client,
+        )
+    assert requests == ["/api/tags", "/api/chat"]
+    assert report["modelCalls"] == 1
+    assert report["items"][0]["failureCode"] == expected
+    assert report["counts"][expected] == 1
+    assert report["items"][0]["hypothesis"] is None
+    assert report["promotionAllowed"] is False
+    if content:
+        assert content not in json.dumps(report)
