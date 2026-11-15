@@ -22,7 +22,6 @@ from tris_market_event_intelligence.news_offline_review_page import (
     _verify_pinned_sample,
 )
 
-
 # Whitelisted schema diagnostics only; never record a validation error's input.
 _ALLOWED_FIELDS = frozenset({
     "schema_version", "article_id", "text_sha256", "entity",
