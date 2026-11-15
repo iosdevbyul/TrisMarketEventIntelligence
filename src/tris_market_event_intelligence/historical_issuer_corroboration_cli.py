@@ -114,7 +114,7 @@ def corroborate_sources(*, review: dict, review_sha: str,
         })
     groups = review.get("candidateStoryGroups")
     if not isinstance(groups, list):
-        raise ValueError("Missing original GKG duplicate-group evidence")
+        raise TypeError("Missing original GKG duplicate-group evidence")
     for group in groups:
         if (not isinstance(group, dict)
                 or not isinstance(group.get("referenceIds"), list)
