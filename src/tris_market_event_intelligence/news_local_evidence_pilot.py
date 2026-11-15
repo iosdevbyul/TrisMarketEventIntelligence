@@ -137,6 +137,8 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
             try:
                 hypothesis = _analyze_one(
                     session, article, model_id, structured=True, runtime=runtime,
+                    runtime_json_schema=(runtime.settings.capabilities.json_schema
+                                         if runtime is not None else True),
                 )
             except (httpx.HTTPError, ValueError, KeyError, TypeError,
                     ValidationError, json.JSONDecodeError) as exc:
