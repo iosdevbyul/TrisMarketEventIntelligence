@@ -1,7 +1,6 @@
 """Preregistered NEWS pairs are chosen without using model scores or TEST."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
