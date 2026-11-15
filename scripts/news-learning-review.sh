@@ -86,6 +86,9 @@ case "$action" in
   guard-research)
     module="tris_market_event_intelligence.news_research_process_guard_cli"
     ;;
+  gemma-compare)
+    module="tris_market_event_intelligence.gemma4_news_comparison_cli"
+    ;;
   *)
     usage >&2
     exit 2
