@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 from collections import Counter
-from datetime import date
 from itertools import pairwise
 from math import isfinite
 from pathlib import Path
@@ -47,6 +46,10 @@ def build_news_price_outcome_cohort(
         read_macro_releases(macro_csv) if macro_csv is not None else ([], None)
     )
     market_by_day = {bar.day: bar for bar in market}
+    stock_by_day = {bar.day: bar for bar in stock}
+    aligned_dates = [bar.day for bar in stock if bar.day in market_by_day]
+    date_positions = {day: idx for idx, day in enumerate(aligned_dates)}
+    news_by_id = {row["articleId"]: row for row in rows_news}
     # Pairwise stock sessions are used as the observed outcome calendar.
     # Never bridge missing benchmark sessions or missing stock trading dates.
     records: list[dict[str, object]] = []
@@ -64,10 +67,7 @@ def build_news_price_outcome_cohort(
             "source": row["source"],
             "sourceUrl": row["sourceUrl"],
             "textSha256": row["textSha256"],
-            "captureSha256": next(
-                article["captureSha256"] for article in rows_news
-                if article["articleId"] == row["articleId"]
-            ),
+            "captureSha256": news_by_id[row["articleId"]]["captureSha256"],
             "firstObservedAt": row["firstObservedAt"],
             "title": row["title"],
             "issuerAssociationVerified": False,
@@ -78,9 +78,7 @@ def build_news_price_outcome_cohort(
         if not news_rows:
             news_counts["NO_OBSERVED_NEWS_AT_CUTOFF"] += 1
         horizon_labels: dict[str, object] = {}
-        stock_by_day = {bar.day: bar for bar in stock}
-        aligned_dates = [bar.day for bar in stock if bar.day in market_by_day]
-        position = aligned_dates.index(today.day)
+        position = date_positions[today.day]
         for horizon in HORIZONS:
             future_idx = position + horizon - 1
             if future_idx >= len(aligned_dates):
