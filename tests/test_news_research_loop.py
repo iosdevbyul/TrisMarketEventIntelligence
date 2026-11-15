@@ -82,8 +82,9 @@ def test_missing_gold_exits_without_polling_and_model_training(tmp_path: Path) -
         for field in ("importance", "sourceAlignment", "reviewer", "reviewedAt", "reason"):
             entry[field] = None
     paths[2].write_text(json.dumps(review))
-    from tris_market_event_intelligence.news_holdout_plan import plan_news_holdout
     from test_news_research_worker import TRAIN_END, VALIDATION_END
+
+    from tris_market_event_intelligence.news_holdout_plan import plan_news_holdout
 
     plan = plan_news_holdout(
         paths[0], train_end=TRAIN_END, validation_end=VALIDATION_END,
