@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh [--update] historical-shocks --symbol NVDA --benchmark-symbol SPY --stock-csv FILE --benchmark-csv FILE --news-cohort FILE --macro-csv FILE [--top 100 --controls 100] [--preview|--output PRIVATE_JSON]"
   echo "  bash scripts/news-learning-review.sh [--update] cohort --as-of ISO_TIME --output FILE [--limit N]"
   echo "  bash scripts/news-learning-review.sh [--update] prepare --cohort FILE --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] score --cohort FILE --score HUMAN_REVIEW_JSON --output FILE"
@@ -74,6 +75,9 @@ fi
 shift
 
 case "$action" in
+  historical-shocks)
+    module="tris_market_event_intelligence.historical_shock_research_cli"
+    ;;
   cohort)
     module="tris_market_event_intelligence.historical_news_cohort_cli"
     ;;
