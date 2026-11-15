@@ -107,3 +107,30 @@ bash scripts/news-learning-review.sh --update evidence-pilot --run \
 Ollama may reject unsupported schema grammars and could still return bad
 outputs. This is evidence of actual runtime compatibility, not a hidden
 automatic fallback or a claim that any hypothesis is factually accurate.
+
+## Gemma4 root-level JSON parsing failure follow-up
+
+The real Mac structured trial returned `MODEL_JSON_INVALID: 2` with
+`SCHEMA_FIELD_ROOT: 2`. This is a *parse* failure, not an identified missing
+field or evidence mismatch. The earlier reports omit Ollama completion metadata,
+so an output limit, empty answer and malformed complete JSON cannot be
+distinguished retroactively.
+
+The opt-in small pilot now asks Ollama to disable thinking (`think: false`)
+and allocates a bounded **2048 output tokens** only in structured pilot mode.
+Other full-cohort production/research routes keep their original settings.
+It checks `done_reason: length` and empty content before the Pydantic parser.
+Explicit codes `MODEL_GENERATION_TRUNCATED`, `MODEL_EMPTY_CONTENT`, and
+`MODEL_JSON_INVALID` are distinct. No automatic second attempt, no silent
+text repair, no relaxing evidence checks or inventing human gold.
+
+Use a **new** create-only private output for the next single small Mac check:
+```sh
+bash scripts/news-learning-review.sh --update evidence-pilot --run \
+  --cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \
+  --sample "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-review-sample-20261115.json" \
+  --model gemma4:e2b --limit 2 \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-evidence-pilot-completion-20261115.json"
+```
+If the installed Ollama build does not accept `think: false`, it will fail
+closed with an HTTP status error. We cannot claim support until a real Mac run.
