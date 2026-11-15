@@ -114,7 +114,7 @@ def prepare_historical_story_review(path: Path) -> dict[str, object]:
                 raise ValueError("GKG reference archive slot mismatch")
             url = ref["sourceUrl"]
             if not isinstance(url, str):
-                raise ValueError("Invalid source URL")
+                raise TypeError("Invalid source URL")
             if url in seen:
                 continue
             seen.add(url)
