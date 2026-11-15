@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "historical_issuer_primary_evidence_v1",
+  "eventId": "NVDA-FY2019-Q3-2018-11-15",
+  "ticker": "NVDA",
+  "shockDate": "2018-11-16",
+  "primarySource": {
+    "id": "nvidia-fy2019-q3-earnings-official",
+    "sourceType": "ISSUER_ORIGINAL_PRESS_RELEASE",
+    "sourceUrl": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-third-quarter-fiscal-2019-6747552",
+    "sourceTitle": "NVIDIA Announces Financial Results for Third Quarter Fiscal 2019",
+    "announcementDate": "2018-11-15",
+    "dateDisplayedOnOriginal": true,
+    "publisherFirstPublicationTimeUtc": null,
+    "firstTradableAvailabilityVerified": false,
+    "originalBytesPinned": false,
+    "documentReadForFacts": true
+  },
+  "facts": [
+    {
+      "id": "q3-revenue",
+      "statement": "For fiscal 2019 third quarter NVIDIA reported revenue of USD 3.18 billion, up 21 percent year over year.",
+      "evidenceSection": "opening financial summary",
+      "nature": "REPORTED_RESULT"
+    },
+    {
+      "id": "q4-revenue-outlook",
+      "statement": "NVIDIA projected fiscal 2019 fourth-quarter revenue of USD 2.70 billion plus or minus 2 percent.",
+      "evidenceSection": "outlook",
+      "nature": "FORWARD_LOOKING_GUIDANCE"
+    },
+    {
+      "id": "inventory-crypto",
+      "statement": "NVIDIA said its near-term results reflected excess channel inventory after the cryptocurrency boom.",
+      "evidenceSection": "executive quotation",
+      "nature": "ISSUER_EXPLANATION"
+    }
+  ],
+  "independentTimeContext": {
+    "sourceUrl": "https://finance.yahoo.com/news/nvidia-forecasts-current-quarter-revenue-213521688.html",
+    "sourceType": "CONTEMPORANEOUS_REUTERS_REPORT_SYNDICATED",
+    "sourceDateDisplayed": "2018-11-15",
+    "actualOriginalPublicationClockVerified": false,
+    "historicalAvailabilityVerified": false,
+    "sourceTextRightsForTrainingVerified": false,
+    "assertedPriceCausality": false
+  },
+  "truthControls": {
+    "issuerEvidenceRelevance": "VERIFIED_ISSUER_PRIMARY_SOURCE",
+    "firstPublishedBeforeNyOpen": "UNVERIFIED",
+    "dateEarlierThanShockDate": true,
+    "issuerExplanationIsNotIndependentCausality": true,
+    "marketPriceDirectionNotIncluded": true,
+    "sufficientForProspectiveTraining": false
+  }
+}

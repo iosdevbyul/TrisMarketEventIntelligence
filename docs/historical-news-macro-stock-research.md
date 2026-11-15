@@ -362,3 +362,58 @@ reference can enter forward-replay prediction inputs. Original 2026 RSS
 capture times must not be rewritten or backdated. No user-approved
 long-running loop, automatic worker install, model training or promotion
 is performed here.
+
+## Historical issuer primary-source corroboration: 2018-11-16 NVIDIA
+
+Real Mac GDELT rank-2 collection confirmed 21 2018-11-16 archive URL
+candidates, and the user ran `historical-story --prepare` to obtain
+`referenceCount=21`, one possible repost group, 12 unclear categories,
+3 sector/competitor, 3 company other, 1 earnings/guidance and 2 macro.
+There was **no verified official primary source within that GKG URL-only
+review** (`officialPrimarySource=false`). Article bodies and actual first
+publisher times remain unknown.
+
+Public research identified a separate first-party
+[NVIDIA FY2019 Q3 earnings press release](https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-third-quarter-fiscal-2019-6747552),
+dated 2018-11-15, preceding the 2018-11-16 shock trading day.
+It confirms third-quarter revenue about USD 3.18bn, next-quarter outlook
+USD 2.70bn +/- 2%, and management's discussion of excess channel
+inventory after the cryptocurrency boom. These facts are pinned as short
+paraphrases in
+`research/nvda-2018-11-15-issuer-primary-evidence.json`.
+A contemporaneous Reuters report syndicated on Yahoo Finance exists as
+secondary timing context, but its original publication/first-tradable
+clock is **not independently verified** in this local study.
+
+New `historical-issuer-corroborate` strictly checks the original
+historical-story review and curated issuer evidence contract, retains
+hashes of both documents, counts source categories and original URL
+matches, and emits a 0600 private comparative research packet with
+distinct **verified issuer source relevance** versus **unverified GKG
+organization/article association**. A document's calendar date does
+not establish that it was already available at 09:30 the following
+morning; even a plausible contemporaneous report is not automatically
+proof that it caused the adjusted share return.
+
+Use the already generated rank-2 private story review:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update historical-issuer-corroborate \
+  --review "$DATA/nvda-story-review-rank2-v1.json" \
+  --issuer research/nvda-2018-11-15-issuer-primary-evidence.json \
+  --output "$DATA/nvda-2018-issuer-corroboration-v1.json"
+```
+
+This command is offline and does not call Gemma. It does **not** fetch a
+copyrighted news article into training, fabricate an intraday release
+timestamp, independently authenticate historic issuer PR original bytes,
+promote any GKG URL to a PIT-valid model input or verify a causal
+price impact. The current output keeps
+`replayTrainingEligible=false`, `priceImpactCausalityVerified=false`,
+`prospectiveForecastProduced=false`.
+
+The next useful feature is independently verifiable first-publication
+timing and issuer link/duplicate cluster validation so genuine
+contemporaneous news can join the previously pinned NVDA/SPY price-outcome
+calendar, followed by an independently scored time-forward prediction.
