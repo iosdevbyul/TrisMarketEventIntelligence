@@ -10,6 +10,7 @@ from test_news_materiality_local import _make_client, _model_result
 from test_news_research_worker import files
 
 from tris_market_event_intelligence.news_local_evidence_pilot import (
+    _failure_code,
     audit_local_news_pilot,
 )
 from tris_market_event_intelligence.news_review_sample import (
@@ -96,6 +97,8 @@ def test_invented_source_entity_is_rejected_without_fake_gold(tmp_path: Path) ->
         )
     assert report["counts"]["REJECTED_OR_MODEL_RUNTIME_FAILED"] == 1
     assert report["items"][0]["contractAccepted"] is False
+    assert report["items"][0]["failureCode"] == "SOURCE_EVIDENCE_MISMATCH"
+    assert report["counts"]["SOURCE_EVIDENCE_MISMATCH"] == 1
     assert report["items"][0]["hypothesis"] is None
     assert report["modelCalls"] == 2
 
@@ -149,3 +152,22 @@ def test_unbounded_limit_rejected(tmp_path: Path, limit) -> None:
             cohort_path=tmp_path / "missing",
             sample_path=tmp_path / "missing2", limit=limit,
         )
+
+
+@pytest.mark.parametrize(("failure", "code"), [
+    (httpx.ReadTimeout("private socket text"), "MODEL_TIMEOUT"),
+    (httpx.ConnectError("secret internal URL"), "MODEL_TRANSPORT_ERROR"),
+    (ValueError("Model JSON exceeds bounded size"), "MODEL_JSON_TOO_LARGE"),
+    (ValueError("Model article provenance mismatch"), "ARTICLE_PROVENANCE_MISMATCH"),
+    (ValueError("Unassessed source must not assert a direction"),
+     "ABSTENTION_DIRECTION_MISMATCH"),
+    (ValueError("unexpected secret model output"), "MODEL_CONTENT_INVALID"),
+    (TypeError("raw model data must not appear"), "MODEL_RESPONSE_INVALID"),
+])
+def test_failure_codes_never_expose_raw_exception_text(
+    failure: Exception, code: str,
+) -> None:
+    result = _failure_code(failure)
+    assert result == code
+    assert "secret" not in result.lower()
+    assert "private" not in result.lower()
