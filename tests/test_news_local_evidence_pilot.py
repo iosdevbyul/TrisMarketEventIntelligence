@@ -147,9 +147,9 @@ def test_disallowed_model_rejected_before_io(tmp_path: Path, model: str) -> None
         )
 
 
-@pytest.mark.parametrize("limit", [-1, 0, 4, True])
+@pytest.mark.parametrize("limit", [-1, 0, 13, True])
 def test_unbounded_limit_rejected(tmp_path: Path, limit) -> None:
-    with pytest.raises(ValueError, match="1..3"):
+    with pytest.raises(ValueError, match="1..12"):
         audit_local_news_pilot(
             cohort_path=tmp_path / "missing",
             sample_path=tmp_path / "missing2", limit=limit,
@@ -295,3 +295,58 @@ def test_real_ollama_incomplete_json_is_distinguished_from_schema_failure(
     assert report["promotionAllowed"] is False
     if content:
         assert content not in json.dumps(report)
+
+
+@pytest.mark.parametrize("start,limit", [
+    (-1, 2), (100, 1), (True, 2), (7, 1), (6, 2), (0, 8),
+])
+def test_candidate_range_outside_pinned_sample_fails_before_model(
+    tmp_path: Path, start: int, limit: int,
+) -> None:
+    cohort, sample = _inputs(tmp_path)
+    calls = []
+    with _make_client(json.loads(cohort.read_text())["items"], calls) as client:
+        with pytest.raises(ValueError, match="start-index|range|1..12"):
+            audit_local_news_pilot(
+                cohort_path=cohort, sample_path=sample,
+                model_id="gemma2:latest", run=True, start_index=start,
+                limit=limit, client=client,
+            )
+    assert calls == []
+
+
+def test_nonoverlapping_range_preview_without_model_or_mutation(tmp_path: Path) -> None:
+    cohort, sample = _inputs(tmp_path)
+    before = cohort.read_bytes(), sample.read_bytes()
+    ids = [item["articleId"] for item in json.loads(sample.read_text())["items"]]
+    first = audit_local_news_pilot(cohort_path=cohort, sample_path=sample, limit=2)
+    expanded = audit_local_news_pilot(
+        cohort_path=cohort, sample_path=sample, limit=5, start_index=2,
+    )
+    assert first["selectedArticleIds"] == ids[:2]
+    assert expanded["selectedArticleIds"] == ids[2:7]
+    assert not set(first["selectedArticleIds"]) & set(expanded["selectedArticleIds"])
+    assert expanded["sampleStartIndex"] == 2
+    assert expanded["sampleEndIndexExclusive"] == 7
+    assert expanded["modelCalls"] == 0
+    assert (cohort.read_bytes(), sample.read_bytes()) == before
+
+
+def test_real_range_avoids_previous_two_candidates(tmp_path: Path) -> None:
+    cohort, sample = _inputs(tmp_path)
+    originals = json.loads(cohort.read_text())["items"]
+    ids = [item["articleId"] for item in json.loads(sample.read_text())["items"]]
+    calls = []
+    with _make_client(originals, calls) as client:
+        report = audit_local_news_pilot(
+            cohort_path=cohort, sample_path=sample,
+            model_id="gemma2:latest", run=True, limit=3,
+            start_index=2, client=client,
+        )
+    assert report["modelCalls"] == 3
+    assert report["sampleStartIndex"] == 2
+    assert report["selectedArticleIds"] == ids[2:5]
+    assert [row["articleId"] for row in report["items"]] == ids[2:5]
+    assert report["humanGoldUsed"] is False
+    assert report["promotionAllowed"] is False
+    assert len(calls) == 4
