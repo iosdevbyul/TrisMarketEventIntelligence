@@ -34,6 +34,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh train-cv --audit --journal SQLITE"
   echo "  bash scripts/news-learning-review.sh [--update] research-policy --batch 12 --cohort FILE --holdout FILE --review FILE --journal SQLITE"
   echo "  bash scripts/news-learning-review.sh research-policy --audit --journal SQLITE"
+  echo "  bash scripts/news-learning-review.sh [--update] learning-readiness --cohort FILE --holdout FILE --review FILE [--manifest FILE --journal SQLITE --usage-ledger SQLITE]"
   echo "  bash scripts/news-learning-review.sh [--update] candidate-lock --lock --cohort FILE --holdout FILE --review FILE --journal SQLITE --manifest PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh candidate-lock --audit --manifest PRIVATE_JSON [--usage-ledger SQLITE]"
   echo "  bash scripts/news-learning-review.sh [--update] guard-research --run --research-mode policy --max-iterations 12 --cohort FILE --holdout FILE --review FILE --journal SQLITE --status-file FILE --lock-file FILE"
@@ -113,6 +114,9 @@ case "$action" in
     ;;
   candidate-lock)
     module="tris_market_event_intelligence.news_train_candidate_lock_cli"
+    ;;
+  learning-readiness)
+    module="tris_market_event_intelligence.news_learning_readiness_cli"
     ;;
   research-policy)
     module="tris_market_event_intelligence.news_research_policy_cli"
