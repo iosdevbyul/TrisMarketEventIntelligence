@@ -29,6 +29,8 @@ usage() {
   echo "  bash scripts/news-learning-review.sh gemma-blind --audit --packet FILE --review HUMAN_JSON --reviewer ID --output AUDIT_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] gemma-reveal --packet FILE --mapping SECRET_FILE --review HUMAN_JSON --reviewer ID [--review HUMAN_JSON --reviewer ID] --output PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] gemma-mac-preflight [--gemma4 gemma4:e4b] [--output PRIVATE_JSON]"
+  echo "  bash scripts/news-learning-review.sh [--update] train-cv --once|--batch 18 --cohort FILE --holdout FILE --review FILE --journal SQLITE"
+  echo "  bash scripts/news-learning-review.sh train-cv --audit --journal SQLITE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
