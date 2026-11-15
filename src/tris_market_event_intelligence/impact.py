@@ -6,13 +6,12 @@ import json
 from dataclasses import dataclass
 from typing import Protocol
 
-from tris_market_event_intelligence.llm_runtime import LLMProvider
-
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
+from tris_market_event_intelligence.llm_runtime import LLMProvider
 
 PROMPT_VERSION = "market-impact-v8"
 
