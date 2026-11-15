@@ -16,6 +16,8 @@ usage() {
   echo "  bash scripts/news-learning-review.sh research --audit --journal SQLITE"
   echo "  bash scripts/news-learning-review.sh [--update] research-loop --run --cohort FILE --holdout FILE --review FILE --journal SQLITE [--stop-file FILE]"
   echo "  bash scripts/news-learning-review.sh research-loop --stop STOP_FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] candidate --export --cohort FILE --holdout FILE --review FILE --journal SQLITE --experiment-sha256 SHA --artifact PRIVATE_JSON"
+  echo "  bash scripts/news-learning-review.sh candidate --verify --cohort FILE --holdout FILE --review FILE --journal SQLITE --artifact PRIVATE_JSON"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
