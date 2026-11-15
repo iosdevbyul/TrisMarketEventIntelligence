@@ -22,7 +22,11 @@ NEWS hypothesis schema and unassessed/uncertain consistency apply.
   `ACCEPTED_UNVERIFIED_HYPOTHESIS`, **not** a proven correct inference.
 - Contract accepted but magnitude withheld: `ACCEPTED_ABSTAINED`.
 - Invalid response, invented entity/excerpt, or request failure:
-  `REJECTED_OR_MODEL_RUNTIME_FAILED`. No invented fallback gold.
+  `REJECTED_OR_MODEL_RUNTIME_FAILED` with a fixed `failureCode` such as
+  `MODEL_TIMEOUT`, `MODEL_SCHEMA_INVALID`, `SOURCE_EVIDENCE_MISMATCH`,
+  or `ABSTENTION_DIRECTION_MISMATCH`. Counts include the failure reason
+  separately. No raw model output or exception strings appear in stdout.
+  No invented fallback gold.
 - Missing local model: `LOCAL_MODEL_NOT_INSTALLED`, no pull/download.
 
 A local 0600 create-only JSON contains source excerpts and unverified
@@ -55,3 +59,21 @@ Only execute when the operator explicitly decides to run local inference.
 The model must already be installed and Ollama running at 127.0.0.1:11434.
 If the original local output already exists, use a new filename rather than
 overwriting it. Inspect outcomes for operational quality, not model accuracy.
+
+## After a rejection on the earlier pilot
+
+Old JSON files cannot reconstruct the underlying exception; two rejected
+calls in the original run are still **unknown cause**. Run the same 2
+candidates again with a new output filename after pulling the fix:
+
+```sh
+bash scripts/news-learning-review.sh --update evidence-pilot --run \\
+  --cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \\
+  --sample "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-review-sample-20261115.json" \\
+  --model gemma4:e2b --limit 2 \\
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-evidence-pilot-diagnostic-20261115.json"
+```
+
+A failed model output is *never* retried automatically and none of the
+failure codes establish factual accuracy or model intelligence. Preserve
+the prior attempt's original private file unchanged.
