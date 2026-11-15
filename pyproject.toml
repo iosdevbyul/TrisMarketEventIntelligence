@@ -57,6 +57,7 @@ market-event-news-test-usage = "tris_market_event_intelligence.news_test_usage_l
 market-event-news-near-duplicates = "tris_market_event_intelligence.news_near_duplicate_audit_cli:main"
 market-event-news-cross-page = "tris_market_event_intelligence.news_cross_page_holdout_audit_cli:main"
 market-event-news-research = "tris_market_event_intelligence.news_research_worker_cli:main"
+market-event-news-research-loop = "tris_market_event_intelligence.news_research_loop_cli:main"
 market-event-pilot-checklist = "tris_market_event_intelligence.news_pilot_checklist_cli:main"
 market-event-study = "tris_market_event_intelligence.event_study_cli:main"
 market-event-krx-readiness = "tris_market_event_intelligence.krx_snapshot_cli:main"

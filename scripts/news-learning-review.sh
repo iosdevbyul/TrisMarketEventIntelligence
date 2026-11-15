@@ -14,6 +14,8 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] cross-page --cohort PAGE1 --holdout PLAN1 --cohort PAGE2 --holdout PLAN2 --output FILE"
   echo "  bash scripts/news-learning-review.sh [--update] research --once --cohort FILE --holdout FILE --review FILE --journal SQLITE"
   echo "  bash scripts/news-learning-review.sh research --audit --journal SQLITE"
+  echo "  bash scripts/news-learning-review.sh [--update] research-loop --run --cohort FILE --holdout FILE --review FILE --journal SQLITE [--stop-file FILE]"
+  echo "  bash scripts/news-learning-review.sh research-loop --stop STOP_FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -60,6 +62,9 @@ case "$action" in
     ;;
   research)
     module="tris_market_event_intelligence.news_research_worker_cli"
+    ;;
+  research-loop)
+    module="tris_market_event_intelligence.news_research_loop_cli"
     ;;
   *)
     usage >&2
