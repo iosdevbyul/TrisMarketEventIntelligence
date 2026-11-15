@@ -21,6 +21,8 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] compare-candidates --candidate FILE --candidate FILE --cohort FILE --holdout FILE --review FILE --journal SQLITE --output PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] supervise --run --cohort FILE --holdout FILE --review FILE --journal SQLITE --status-file FILE --lock-file FILE"
   echo "  bash scripts/news-learning-review.sh supervise --status --status-file FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] guard-research --run --cohort FILE --holdout FILE --review FILE --journal SQLITE --status-file FILE --lock-file FILE"
+  echo "  bash scripts/news-learning-review.sh guard-research --status --status-file FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -79,6 +81,9 @@ case "$action" in
     ;;
   supervise)
     module="tris_market_event_intelligence.news_research_supervisor_cli"
+    ;;
+  guard-research)
+    module="tris_market_event_intelligence.news_research_process_guard_cli"
     ;;
   *)
     usage >&2
