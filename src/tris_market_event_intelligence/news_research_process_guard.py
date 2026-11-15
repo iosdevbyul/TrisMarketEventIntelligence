@@ -84,10 +84,12 @@ def run_guarded_news_research(
         poll_seconds
     ) or not 0.05 <= poll_seconds <= 2:
         raise ValueError("Polling interval must be 0.05..2 seconds")
-    if research_mode not in ("legacy", "train-cv"):
+    if research_mode not in ("legacy", "train-cv", "policy"):
         raise ValueError("Unsupported guarded NEWS research mode")
     if research_mode == "train-cv" and max_iterations > 18:
         raise ValueError("TRAIN-only CV batches are bounded to 18 experiments")
+    if research_mode == "policy" and max_iterations > 12:
+        raise ValueError("Research policy batches are bounded to 12 hypotheses")
     for path in (cohort_path, plan_path, review_path):
         if path.is_symlink() or not path.is_file():
             raise ValueError("Private ordinary research source file required")
@@ -109,7 +111,15 @@ def run_guarded_news_research(
             "productionChanged": False,
             "modelPromoted": False, "stockPricesUsed": False,
         }
-    if research_mode == "train-cv":
+    if research_mode == "policy":
+        default_command = [
+            sys.executable, "-m",
+            "tris_market_event_intelligence.news_research_policy_cli",
+            "--batch", str(max_iterations),
+            "--cohort", str(cohort_path), "--holdout", str(plan_path),
+            "--review", str(review_path), "--journal", str(journal_path),
+        ]
+    elif research_mode == "train-cv":
         default_command = [
             sys.executable, "-m",
             "tris_market_event_intelligence.news_train_cv_exploration_cli",
