@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
-from test_news_research_worker import files, step
+from test_news_research_worker import TRAIN_END, VALIDATION_END, files, step
 
 from tris_market_event_intelligence.news_candidate_artifact import (
     build_candidate_artifact,
@@ -13,6 +13,7 @@ from tris_market_event_intelligence.news_candidate_artifact import (
     read_candidate_artifact,
     write_candidate_artifact,
 )
+from tris_market_event_intelligence.news_holdout_plan import plan_news_holdout
 from tris_market_event_intelligence.news_naive_bayes_model import NewsImportanceModel
 
 
@@ -103,9 +104,6 @@ def test_artifact_valid_but_different_research_inputs_fail_replay(tmp_path: Path
     doc = json.loads(paths[2].read_text())
     doc["judgments"][10]["importance"] = "IMPORTANT"
     paths[2].write_text(json.dumps(doc))
-    from tris_market_event_intelligence.news_holdout_plan import plan_news_holdout
-    from test_news_research_worker import TRAIN_END, VALIDATION_END
-
     plan = plan_news_holdout(
         paths[0], train_end=TRAIN_END, validation_end=VALIDATION_END,
         review_path=paths[2],
