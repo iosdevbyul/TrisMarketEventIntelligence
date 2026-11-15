@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from itertools import pairwise
 from math import isfinite
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -126,7 +126,7 @@ def read_macro_releases(path: Path) -> tuple[list[MacroRelease], str]:
 
 
 def _timestamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.utcoffset() is None:
         raise ValueError("Point-in-time NEWS timestamps must be timezone-aware")
     return parsed.astimezone(UTC)
@@ -222,7 +222,7 @@ def build_historical_shock_research(
     base = {bar.day: bar for bar in benchmark}
     # Adjacent daily closes only: no returns across missing stock observations.
     candidate: list[dict[str, object]] = []
-    for previous, current in zip(stock, stock[1:]):
+    for previous, current in pairwise(stock):
         if previous.day not in base or current.day not in base:
             continue
         sr = current.adjusted_close / previous.adjusted_close - 1
