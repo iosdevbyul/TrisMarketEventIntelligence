@@ -18,7 +18,10 @@ from tris_market_event_intelligence.gemma4_blind_review_cli import (
     _read_private,
 )
 from tris_market_event_intelligence.impact import (
-    EventInput, Impact, ImpactAnalysisError, ImpactResult,
+    EventInput,
+    Impact,
+    ImpactAnalysisError,
+    ImpactResult,
 )
 
 
