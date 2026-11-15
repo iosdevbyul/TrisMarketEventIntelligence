@@ -6,14 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tris_market_event_intelligence.historical_independent_news_cli import (
-    _digest,
-    _safe_response,
-    evaluate_cases,
-    main,
-    run_cases,
-    validate_cohort,
-)
+from tris_market_event_intelligence import historical_independent_news_cli as independent
 
 
 CASE_FILE = Path("research/independent-historical-news-2023.json")
@@ -74,7 +67,7 @@ class FakeProvider:
 
 def test_three_verified_historical_cases_have_disjoint_primary_sources() -> None:
     cohort = _cohort()
-    validate_cohort(cohort)
+    independent.validate_cohort(cohort)
     assert {x["ticker"] for x in cohort["cases"]} == {"MSFT", "GOOGL", "AMD"}
     assert len({x["announcementDate"] for x in cohort["cases"]}) == 2
     assert sum(len(x["facts"]) for x in cohort["cases"]) == 9
@@ -84,8 +77,8 @@ def test_three_verified_historical_cases_have_disjoint_primary_sources() -> None
 def test_independent_inference_and_structural_evaluation_are_separate() -> None:
     cohort = _cohort()
     fake = FakeProvider()
-    research = run_cases(cohort, fake)
-    evaluation = evaluate_cases(cohort, research)
+    research = independent.run_cases(cohort, fake)
+    evaluation = independent.evaluate_cases(cohort, research)
     assert fake.calls == 3
     assert research["modelCalls"] == 3
     assert research["reviewedLessonsUsed"] is False
@@ -108,30 +101,30 @@ def test_forged_source_or_causality_rejected() -> None:
     ))
     data["fact_assessments"][0]["source_id"] = "invented-article"
     with pytest.raises(ValueError, match="attribution"):
-        _safe_response(case, json.dumps(data))
+        independent._safe_response(case, json.dumps(data))
     data["fact_assessments"][0]["source_id"] = case["source"]["sourceId"]
     data["causal_proof"] = True
     with pytest.raises(ValueError, match="unsupported"):
-        _safe_response(case, json.dumps(data))
+        independent._safe_response(case, json.dumps(data))
 
 
 def test_tampered_case_results_cannot_pass_evaluation() -> None:
     cohort = _cohort()
-    research = run_cases(cohort, FakeProvider())
+    research = independent.run_cases(cohort, FakeProvider())
     research["cohortSha256"] = "0" * 64
     with pytest.raises(ValueError, match="integrity mismatch"):
-        evaluate_cases(cohort, research)
-    research["cohortSha256"] = _digest(cohort)
+        independent.evaluate_cases(cohort, research)
+    research["cohortSha256"] = independent._digest(cohort)
     research["cases"][1]["response"]["hypotheses"][0]["source_ids"] = ["made-up"]
     with pytest.raises(ValueError, match="source"):
-        evaluate_cases(cohort, research)
+        independent.evaluate_cases(cohort, research)
 
 
 def test_nonnvidia_case_cannot_reuse_same_issuer() -> None:
     cohort = _cohort()
     cohort["cases"][1]["issuer"] = cohort["cases"][0]["issuer"]
     with pytest.raises(ValueError, match="Duplicate"):
-        validate_cohort(cohort)
+        independent.validate_cohort(cohort)
 
 
 def test_preview_cli_uses_real_sources_without_model(
@@ -142,14 +135,14 @@ def test_preview_cli_uses_real_sources_without_model(
     monkeypatch.setattr(sys, "argv", [
         "historical-independent", "--cohort", str(CASE_FILE), "--preview",
     ])
-    main()
+    independent.main()
     output = json.loads(capsys.readouterr().out)
     assert output["officialSourceCount"] == 3
     assert output["modelCalls"] == 0
     source = _cohort()
     source_path = tmp_path / "cohort.json"
     source_path.write_text(json.dumps(source))
-    fake = run_cases(source, FakeProvider())
+    fake = independent.run_cases(source, FakeProvider())
     research_file = tmp_path / "research.json"
     research_file.write_text(json.dumps(fake))
     report = tmp_path / "report.json"
@@ -158,6 +151,6 @@ def test_preview_cli_uses_real_sources_without_model(
         "--evaluate", "--research", str(research_file),
         "--output", str(report),
     ])
-    main()
+    independent.main()
     assert report.stat().st_mode & 0o777 == 0o600
     assert json.loads(report.read_text())["casesEvaluated"] == 3
