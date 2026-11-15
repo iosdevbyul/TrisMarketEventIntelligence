@@ -17,8 +17,6 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from tris_market_event_intelligence.historical_shock_research import _checked_bytes
-
 NY = ZoneInfo("America/New_York")
 MAX_ZIP_BYTES = 24_000_000
 MAX_DECOMPRESSED_BYTES = 100_000_000
@@ -83,7 +81,11 @@ def _fetch(client: httpx.Client, *, slot: datetime, url: str) -> dict:
         raise ValueError("GDELT_ARCHIVE_FETCH_FAILED") from exc
     hits: dict[str, dict] = {}
     total_rows = 0
-    with zipfile.ZipFile(io.BytesIO(buf)) as archive:
+    try:
+        archive_context = zipfile.ZipFile(io.BytesIO(buf))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("GDELT_ARCHIVE_INVALID") from exc
+    with archive_context as archive:
         infos = archive.infolist()
         if len(infos) != 1 or infos[0].file_size > MAX_DECOMPRESSED_BYTES:
             raise ValueError("Unexpected GDELT archive structure or decompressed size")
