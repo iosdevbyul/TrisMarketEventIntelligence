@@ -64,6 +64,7 @@ market-event-news-supervisor = "tris_market_event_intelligence.news_research_sup
 market-event-news-process-guard = "tris_market_event_intelligence.news_research_process_guard_cli:main"
 market-event-news-gemma-compare = "tris_market_event_intelligence.gemma4_news_comparison_cli:main"
 market-event-news-gemma-blind = "tris_market_event_intelligence.gemma4_blind_review_cli:main"
+market-event-news-gemma-reveal = "tris_market_event_intelligence.gemma4_blind_reveal_cli:main"
 market-event-pilot-checklist = "tris_market_event_intelligence.news_pilot_checklist_cli:main"
 market-event-study = "tris_market_event_intelligence.event_study_cli:main"
 market-event-krx-readiness = "tris_market_event_intelligence.krx_snapshot_cli:main"
