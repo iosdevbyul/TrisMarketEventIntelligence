@@ -102,7 +102,7 @@ def test_artifact_valid_but_different_research_inputs_fail_replay(tmp_path: Path
     paths, artifact, sha = setup(tmp_path)
     write_candidate_artifact(artifact, build(paths, sha))
     doc = json.loads(paths[2].read_text())
-    doc["judgments"][10]["importance"] = "IMPORTANT"
+    doc["judgments"][10]["importance"] = "UNIMPORTANT"
     paths[2].write_text(json.dumps(doc))
     plan = plan_news_holdout(
         paths[0], train_end=TRAIN_END, validation_end=VALIDATION_END,
