@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import sqlite3
 import time
 from pathlib import Path
 from threading import Event
@@ -83,6 +84,7 @@ def run_news_research_loop(
     attempts = 0
     new_experiments = 0
     blocked = 0
+    retryable_db_errors = 0
     last_iteration_status: str | None = None
     status = "ITERATION_LIMIT_REACHED"
     while attempts < max_iterations:
@@ -92,11 +94,34 @@ def run_news_research_loop(
         if timer() - start >= max_seconds:
             status = "TIME_BUDGET_EXHAUSTED"
             break
-        outcome = research_news_once(
-            cohort_path=cohort_path, plan_path=plan_path,
-            review_path=review_path, journal_path=journal_path,
-        )
+        try:
+            outcome = research_news_once(
+                cohort_path=cohort_path, plan_path=plan_path,
+                review_path=review_path, journal_path=journal_path,
+            )
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            attempts += 1
+            retryable_db_errors += 1
+            last_iteration_status = "TRANSIENT_RESEARCH_LEDGER_BUSY"
+            remaining = max_seconds - (timer() - start)
+            if remaining <= 0:
+                status = "TIME_BUDGET_EXHAUSTED"
+                break
+            if attempts == max_iterations:
+                status = "TRANSIENT_RETRY_LIMIT_REACHED"
+                break
+            backoff = min(float(max_backoff_seconds), 2 ** min(retryable_db_errors - 1, 10))
+            if _wait(
+                min(backoff, remaining), stop_file=stop_file, stop_event=event,
+                wait=wait_fn,
+            ):
+                status = "STOP_REQUESTED"
+                break
+            continue
         attempts += 1
+        retryable_db_errors = 0
         last_iteration_status = outcome["status"]
         if last_iteration_status == "EXPERIMENT_GRID_EXHAUSTED":
             status = "NO_NEW_EXPERIMENTS"
@@ -126,6 +151,7 @@ def run_news_research_loop(
         "attemptedIterations": attempts,
         "newResearchExperiments": new_experiments,
         "blockedForHumanGold": blocked,
+        "retryableResearchLedgerErrors": retryable_db_errors,
         "lastIterationStatus": last_iteration_status,
         "maxIterations": max_iterations,
         "maxRunSeconds": max_seconds,
