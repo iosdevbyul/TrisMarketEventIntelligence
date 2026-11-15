@@ -96,6 +96,9 @@ case "$action" in
   gemma-blind)
     module="tris_market_event_intelligence.gemma4_blind_review_cli"
     ;;
+  gemma-reveal)
+    module="tris_market_event_intelligence.gemma4_blind_reveal_cli"
+    ;;
   *)
     usage >&2
     exit 2
