@@ -6,9 +6,13 @@ from pathlib import Path
 
 import pytest
 from test_news_research_worker import TRAIN_END, VALIDATION_END, files
+
 from tris_market_event_intelligence.news_holdout_plan import plan_news_holdout
 from tris_market_event_intelligence.news_research_policy import (
-    MAX_HYPOTHESES, _representation, audit_policy, run_policy_once,
+    MAX_HYPOTHESES,
+    _representation,
+    audit_policy,
+    run_policy_once,
 )
 
 
