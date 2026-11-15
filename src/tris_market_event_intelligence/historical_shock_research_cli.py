@@ -20,7 +20,8 @@ def main() -> None:
     parser.add_argument("--stock-csv", type=Path, required=True)
     parser.add_argument("--benchmark-csv", type=Path, required=True)
     parser.add_argument("--news-cohort", type=Path, required=True)
-    parser.add_argument("--macro-csv", type=Path, required=True)
+    parser.add_argument("--macro-csv", type=Path,
+                        help="Optional verified time-aware macro releases; omit if unavailable")
     parser.add_argument("--top", type=int, default=100)
     parser.add_argument("--controls", type=int, default=100)
     parser.add_argument("--output", type=Path)
@@ -58,6 +59,16 @@ def main() -> None:
             "status": report["status"],
             "symbol": report["symbol"],
             "topCount": len(report["topEvents"]),
+            "priceCandidateSessions": report["priceCandidateSessions"],
+            "commonPriceSessions": report["commonPriceSessions"],
+            "macroStatus": report["macroStatus"],
+            "topEventsWithPreOpenNews": report["topEventsWithPreOpenNews"],
+            "topEventsWithMacroAsOf": report["topEventsWithMacroAsOf"],
+            "topTen": [{
+                "date": e["date"], "stockReturn": e["stockReturn"],
+                "benchmarkReturn": e["benchmarkReturn"],
+                "excessReturn": e["excessReturn"],
+            } for e in report["topEvents"][:10]],
             "controlCount": len(report["controlEvents"]),
             "newsObservedDatesUTC": report["newsObservedDatesUTC"],
             "macroSourceAuthenticityVerified": False,

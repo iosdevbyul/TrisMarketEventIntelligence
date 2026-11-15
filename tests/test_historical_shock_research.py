@@ -149,3 +149,41 @@ def test_historical_packet_does_not_claim_news_caused_price_move(tmp_path: Path)
     assert packet["topEvents"][0]["context"]["newsIssuerLinksVerified"] is False
     assert packet["forwardPredictionSealed"] is False
     assert packet["humanGoldCreated"] is False
+
+
+def test_price_first_study_without_macro_never_invents_indicators(tmp_path: Path) -> None:
+    stock, benchmark, macro, news = _setup(tmp_path)
+    baseline = [p.read_bytes() for p in (stock, benchmark, macro, news)]
+    report = build_historical_shock_research(
+        symbol="NVDA", benchmark_symbol="SPY",
+        stock_path=stock, benchmark_path=benchmark,
+        news_cohort_path=news, top=10, controls=10,
+    )
+    assert report["topCount"] == 10
+    assert report["controlCount"] == 10
+    assert report["priceCandidateSessions"] == 44
+    assert report["commonPriceSessions"] == 45
+    assert report["macroSha256"] is None
+    assert report["macroStatus"] == "NOT_PROVIDED"
+    assert report["macroEvidenceProvided"] is False
+    assert report["topEventsWithMacroAsOf"] == 0
+    assert all(event["context"]["macroPointInTime"] == []
+               for event in report["topEvents"])
+    assert report["topEvents"][0]["date"] == "2026-10-21"
+    assert report["newsAndMacroCompleteForTenYears"] is False
+    assert report["calibrationOrPredictiveImprovementMeasured"] is False
+    assert report["llmCalls"] == 0
+    assert [p.read_bytes() for p in (stock, benchmark, macro, news)] == baseline
+
+
+def test_macro_supplied_still_uses_original_pit_logic(tmp_path: Path) -> None:
+    stock, benchmark, macro, news = _setup(tmp_path)
+    report = build_historical_shock_research(
+        symbol="NVDA", benchmark_symbol="SPY",
+        stock_path=stock, benchmark_path=benchmark,
+        news_cohort_path=news, macro_path=macro, top=2, controls=2,
+    )
+    assert report["macroEvidenceProvided"] is True
+    assert report["macroStatus"] == "PRESENT_UNVERIFIED"
+    assert report["macroSha256"] is not None
+    assert report["topEventsWithMacroAsOf"] >= 1

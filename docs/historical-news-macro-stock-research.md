@@ -204,3 +204,43 @@ to its 2016 supposed publication.
 - No human-independent forward evaluation: **no forecast skill claim**.
 - No automatic model promotion, investment execution or Mac 24/7
   activation.
+
+## Real NVDA + SPY 10-year price-first run (2026-11-15)
+
+Operator reports successful **real Tiingo EOD responses** for NVDA and SPY,
+both 2513 dates, from 2016-11-15 to 2026-11-13. Private files on the Mac:
+
+- `nvda-eod-2016-2026.csv` SHA256
+  `25585b28fd93f419a6d962f5db16b7aac6e38c7868de31b41435db64a4c40338`
+- `spy-eod-2016-2026.csv` SHA256
+  `7a5712013f3d57f6bac7b163d1821e0f55247eec10dfcd0b59bfc3aeb6d02064`
+
+These are operator-reported acquisition summaries; the actual CSVs were
+not uploaded and independent price-vendor/corporate-action audits were not
+performed. Same row counts do not prove all session dates align.
+
+**Real next action** uses the two existing price files, the already pinned
+local recent NEWS cohort, and **does not invent macro input**. It produces
+a 100-shock + 100-quiet-session retrospective private packet:
+
+```sh
+bash scripts/news-learning-review.sh --update historical-shocks \
+  --symbol NVDA --benchmark-symbol SPY \
+  --stock-csv "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-eod-2016-2026.csv" \
+  --benchmark-csv "$HOME/Library/Application Support/TrisMarketEventIntelligence/spy-eod-2016-2026.csv" \
+  --news-cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \
+  --top 100 --controls 100 \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-spy-shocks-2016-2026.json"
+```
+
+Optional `--macro-csv FILE` is only for source-attested actual
+`release_at` / `available_at` historical observations. The downloaded
+FRED date-only vintage JSON is **NOT** eligible and must not be renamed
+to a CSV or assigned fabricated release times.
+
+The short stdout shows up to ten most extreme historical shock days with
+their actual adjusted-close returns, plus source coverage counts. The
+create-only private JSON has the full 100/100 candidates. No model calls,
+automatic training, economic attribution or promotion occurs; news and
+macro availability can legitimately be zero on 2016-2025 shock days.
+Do not misrepresent these as 10-year complete news/macro cohorts.
