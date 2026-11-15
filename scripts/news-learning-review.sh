@@ -37,6 +37,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] learning-readiness --cohort FILE --holdout FILE --review FILE [--manifest FILE --journal SQLITE --usage-ledger SQLITE]"
   echo "  bash scripts/news-learning-review.sh [--update] mac-inventory [--data-dir PRIVATE_DIR]"
   echo "  bash scripts/news-learning-review.sh [--update] coverage --cohort ORIGINAL_JSON [--newer LATER_JSON]"
+  echo "  bash scripts/news-learning-review.sh [--update] coverage-refresh --baseline ORIGINAL_JSON --output NEW_JSON [--as-of ISO]"
   echo "  bash scripts/news-learning-review.sh [--update] review-sample --cohort FILE --max-selected 48 --output PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] review-page --cohort FILE --sample PRIVATE_JSON --output PRIVATE_HTML"
   echo "  bash scripts/news-learning-review.sh [--update] review-bridge --audit --cohort FILE --sample HUMAN_EDITED --importance-template FILE --materiality-template FILE"
@@ -149,6 +150,9 @@ case "$action" in
     ;;
   review-sample)
     module="tris_market_event_intelligence.news_review_sample_cli"
+    ;;
+  coverage-refresh)
+    module="tris_market_event_intelligence.news_coverage_refresh_cli"
     ;;
   coverage)
     module="tris_market_event_intelligence.news_observation_coverage_cli"
