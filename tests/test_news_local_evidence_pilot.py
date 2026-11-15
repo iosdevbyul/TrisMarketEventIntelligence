@@ -293,4 +293,5 @@ def test_real_ollama_incomplete_json_is_distinguished_from_schema_failure(
     assert report["counts"][expected] == 1
     assert report["items"][0]["hypothesis"] is None
     assert report["promotionAllowed"] is False
-    assert content not in json.dumps(report)
+    if content:
+        assert content not in json.dumps(report)
