@@ -15,13 +15,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.news_importance_evaluation import _metrics
-from tris_market_event_intelligence.news_naive_bayes_model import NewsImportanceModel
 from tris_market_event_intelligence.news_importance_review import (
     _cohort,
     _instant,
     _read,
     score_review,
 )
+from tris_market_event_intelligence.news_naive_bayes_model import NewsImportanceModel
 from tris_market_event_intelligence.story_index import WORD
 
 ALPHAS = (0.25, 0.5, 1.0, 2.0, 4.0)
