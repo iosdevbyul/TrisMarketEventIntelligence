@@ -197,7 +197,7 @@ def _context(
 
 def build_historical_shock_research(
     *, symbol: str, benchmark_symbol: str, stock_path: Path,
-    benchmark_path: Path, news_cohort_path: Path, macro_path: Path,
+    benchmark_path: Path, news_cohort_path: Path, macro_path: Path | None = None,
     top: int = 100, controls: int = 100,
 ) -> dict[str, object]:
     """Select historical shock days and small-move controls for *research*.
@@ -214,7 +214,7 @@ def build_historical_shock_research(
         raise ValueError("Research groups must be 1..100 days")
     stock, stock_sha = read_daily_prices(stock_path)
     benchmark, benchmark_sha = read_daily_prices(benchmark_path)
-    macro, macro_sha = read_macro_releases(macro_path)
+    macro, macro_sha = read_macro_releases(macro_path) if macro_path is not None else ([], None)
     news_raw, cohort = _cohort(news_cohort_path)
     articles = cohort["items"]
     if len(articles) > MAX_NEWS:
@@ -254,6 +254,8 @@ def build_historical_shock_research(
             "causalNewsAttributionVerified": False,
             "prospectivePrediction": False,
         } for row in rows]
+    packaged_high = package(high)
+    packaged_low = package(low)
     counts = Counter(_timestamp(str(a["firstObservedAt"])).date().isoformat()
                      for a in articles)
     return {
@@ -267,14 +269,25 @@ def build_historical_shock_research(
         "priceSourceAuthenticityVerified": False,
         "priceAdjustmentsExternallyVerified": False,
         "macroSourceAuthenticityVerified": False,
+        "macroEvidenceProvided": macro_path is not None,
+        "macroStatus": ("PRESENT_UNVERIFIED" if macro_path is not None
+                        else "NOT_PROVIDED"),
         "newsAndMacroCompleteForTenYears": False,
         "historicalNewsObservationDays": len(counts),
         "newsObservedDatesUTC": sorted(counts),
         "rankingIsRetrospectiveNotProspective": True,
+        "priceCandidateSessions": len(candidate),
+        "stockDailySessions": len(stock),
+        "benchmarkDailySessions": len(benchmark),
+        "commonPriceSessions": len(set(b.day for b in stock) & set(b.day for b in benchmark)),
+        "topEventsWithPreOpenNews": sum(bool(e["context"]["newsAvailableBeforeOpenTotal"])
+                                       for e in packaged_high),
+        "topEventsWithMacroAsOf": sum(bool(e["context"]["macroObservationCount"])
+                                        for e in packaged_high),
         "controlSampling": "smallest-absolute-benchmark-excess-return",
         "calibrationOrPredictiveImprovementMeasured": False,
         "forwardPredictionSealed": False,
         "humanGoldCreated": False, "productionDbModified": False,
         "llmCalls": 0, "modelPromotionAllowed": False,
-        "topEvents": package(high), "controlEvents": package(low),
+        "topEvents": packaged_high, "controlEvents": packaged_low,
     }
