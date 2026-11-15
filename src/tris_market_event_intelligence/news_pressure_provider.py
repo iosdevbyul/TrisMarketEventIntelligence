@@ -20,6 +20,7 @@ from tris_market_event_intelligence.impact import (
     is_eligible,
     validate_result,
 )
+from tris_market_event_intelligence.llm_runtime import LLMProvider
 from tris_market_event_intelligence.news_impact_signal import (
     NewsEvidenceAssessment,
     NewsImpactSignal,
@@ -98,12 +99,16 @@ class GemmaNewsPressureProvider:
         self, *, model: str = "gemma2:latest",
         client: httpx.Client | None = None,
         timeout_seconds: int = 300,
+        runtime: LLMProvider | None = None,
+        runtime_json_schema: bool = True,
     ) -> None:
         if not model.strip() or not 1 <= timeout_seconds <= 900:
             raise ValueError("Valid model and timeout required")
         self.model = model
         self.client = client
         self.timeout_seconds = timeout_seconds
+        self.runtime = runtime
+        self.runtime_json_schema = runtime_json_schema
 
     def analyze(
         self, event: EventInput, impact: Impact, *,
@@ -126,10 +131,10 @@ class GemmaNewsPressureProvider:
                     event, impact, intensity="UNASSESSED",
                 ),
             )
-        owned = self.client is None
-        client = self.client or httpx.Client(
+        owned = self.client is None and self.runtime is None
+        client = self.client or (httpx.Client(
             timeout=httpx.Timeout(self.timeout_seconds), trust_env=False
-        )
+        ) if self.runtime is None else None)
         payload = {
             "model": self.model, "stream": False,
             "format": {
@@ -167,10 +172,18 @@ class GemmaNewsPressureProvider:
         }
         try:
             try:
-                response = client.post("http://127.0.0.1:11434/api/chat", json=payload)
-                response.raise_for_status()
-                body = response.json()
-                raw = body["message"]["content"]
+                if self.runtime is not None:
+                    raw = self.runtime.generate_json(
+                        system=SYSTEM,
+                        user=payload["messages"][1]["content"],
+                        schema=payload["format"] if self.runtime_json_schema else None,
+                    )
+                else:
+                    assert client is not None
+                    response = client.post("http://127.0.0.1:11434/api/chat", json=payload)
+                    response.raise_for_status()
+                    body = response.json()
+                    raw = body["message"]["content"]
                 if not isinstance(raw, str) or len(raw) > 10000:
                     raise ValueError("Invalid native response content")
                 grade = PressureGrade.model_validate_json(raw)
@@ -180,7 +193,7 @@ class GemmaNewsPressureProvider:
                     "Local model returned invalid news-pressure output",
                 ) from exc
         finally:
-            if owned:
+            if owned and client is not None:
                 client.close()
 
         # The pressure model has no price data. Reject numeric percentages in

@@ -12,6 +12,11 @@ from tris_market_event_intelligence.impact import OpenAICompatibleProvider
 from tris_market_event_intelligence.impact_diagnostics import inspect_errors
 from tris_market_event_intelligence.impact_pilot import pilot_candidates
 from tris_market_event_intelligence.impact_store import ImpactProcessor
+from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.news_llm_factory import (
+    build_impact_provider,
+    with_model,
+)
 
 
 def main() -> None:
@@ -31,6 +36,10 @@ def main() -> None:
     )
     parser.add_argument("--provider", choices=("local", "remote"), default="local")
     parser.add_argument("--list-local-models", action="store_true")
+    parser.add_argument("--configured-llm", action="store_true",
+                        help="Explicit opt-in to provider-independent configured model")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Model override (requires --configured-llm)")
     parser.add_argument("--show-errors", action="store_true",
                         help="Read saved analysis failures without invoking a model")
     parser.add_argument("--error-limit", type=int, default=10)
@@ -43,6 +52,8 @@ def main() -> None:
         help="Per-HTTP-operation timeout (local default: 300, remote default: 90; max: 900)",
     )
     args = parser.parse_args()
+    if args.model is not None and not args.configured_llm:
+        parser.error("--model requires --configured-llm")
     if args.show_errors:
         try:
             result = inspect_errors(args.db.expanduser(), limit=args.error_limit)
@@ -97,6 +108,35 @@ def main() -> None:
         parser.error("--live-freshness-minutes must be 1..1440")
     if not 1 <= args.source_success_minutes <= 1440:
         parser.error("--source-success-minutes must be 1..1440")
+    if args.configured_llm:
+        try:
+            settings = LLMSettings.from_environment(explicit=True)
+            if args.model is not None:
+                settings = with_model(settings, args.model)
+            if args.timeout_seconds is not None:
+                from dataclasses import replace
+
+                settings = replace(settings, timeout_seconds=args.timeout_seconds)
+            provider = build_impact_provider(settings, confirm_model=True)
+            stats = ImpactProcessor(args.db.expanduser(), provider).process_pending(
+                args.batch_size, event_ids=selected_ids,
+                live_freshness_seconds=(
+                    args.live_freshness_minutes * 60
+                    if args.live_freshness_minutes is not None else None
+                ),
+                source_success_seconds=args.source_success_minutes * 60,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        output = asdict(stats)
+        if not stats.already_running:
+            output.pop("already_running")
+        if args.live_freshness_minutes is None:
+            output.pop("deferred")
+        print(json.dumps(output))
+        if stats.already_running:
+            raise SystemExit(2)
+        return
     model = os.getenv("MARKET_EVENT_LLM_MODEL")
     if not model:
         parser.error("Set MARKET_EVENT_LLM_MODEL to an installed model name")

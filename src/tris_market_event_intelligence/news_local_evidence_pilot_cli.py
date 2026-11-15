@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 
+from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.news_llm_factory import build_runtime, with_model
 from tris_market_event_intelligence.news_local_evidence_pilot import (
     audit_local_news_pilot,
 )
@@ -20,7 +22,9 @@ def main() -> None:
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--cohort", type=Path, required=True)
     parser.add_argument("--sample", type=Path, required=True)
-    parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--configured-llm", action="store_true",
+                        help="Explicit generic LLM selection; legacy Gemma default unchanged")
     parser.add_argument("--limit", type=int, default=2)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -32,9 +36,18 @@ def main() -> None:
             or not args.output.parent.is_dir() or args.output.parent.is_symlink()
         ):
             raise ValueError("Existing ordinary directory and new output file required")
+        runtime = None
+        model_id = args.model or "gemma4:e2b"
+        if args.configured_llm:
+            settings = LLMSettings.from_environment(explicit=True)
+            if args.model is not None:
+                settings = with_model(settings, args.model)
+            runtime = build_runtime(settings)
+            model_id = settings.model_id
         report = audit_local_news_pilot(
             cohort_path=args.cohort, sample_path=args.sample,
-            model_id=args.model, run=args.run, limit=args.limit,
+            model_id=model_id, run=args.run, limit=args.limit,
+            runtime=runtime,
         )
         if args.output is not None:
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL

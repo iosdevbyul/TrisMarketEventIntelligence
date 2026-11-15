@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
+from tris_market_event_intelligence.llm_runtime import LLMProvider
 
 PROMPT_VERSION = "market-impact-v8"
 
@@ -300,6 +301,7 @@ class OpenAICompatibleProvider:
         self, *, base_url: str, api_key: str, model: str, client: httpx.Client | None = None,
         timeout_seconds: int = 90, structured_output: bool = False,
         native_ollama: bool = False,
+        runtime: LLMProvider | None = None,
     ) -> None:
         if not base_url.startswith(("https://", "http://127.0.0.1:", "http://localhost:")):
             raise ValueError("Provider endpoint must use HTTPS or loopback HTTP")
@@ -314,6 +316,7 @@ class OpenAICompatibleProvider:
         self._api_key = api_key
         self._model = model
         self._client = client
+        self._runtime = runtime
 
     @property
     def model_id(self) -> str:
@@ -322,6 +325,33 @@ class OpenAICompatibleProvider:
     def analyze(self, event: EventInput) -> ImpactResult:
         if not is_eligible(event):
             raise ValueError("Event is not eligible for impact analysis")
+        if self._runtime is not None:
+            source = json.dumps({
+                "classification": event.classification,
+                "status": event.status,
+                "claim_kind": event.claim_kind,
+                "verification_note": event.verification_note,
+                "tags": event.tags,
+                "direction": event.direction,
+                "change_basis_points": event.change_basis_points,
+                "source": event.source,
+                "source_url": event.source_url,
+                "detected_at": event.detected_at,
+                "evidence": event.evidence,
+            }, ensure_ascii=False)
+            try:
+                raw = self._runtime.generate_json(
+                    system=SYSTEM_PROMPT + "\n" + event_specific_instructions(event),
+                    user=source,
+                    schema=(structured_impact_schema(event)
+                            if self._structured_output else None),
+                )
+                parsed = ImpactResult.model_validate_json(raw)
+            except ValidationError as exc:
+                raise ImpactAnalysisError(
+                    schema_error_code(exc), "Model response violates impact schema"
+                ) from exc
+            return validate_result(event, parsed)
         payload = {
             "model": self._model,
             "temperature": 0,

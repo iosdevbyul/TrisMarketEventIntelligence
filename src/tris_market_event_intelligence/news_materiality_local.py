@@ -14,6 +14,7 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
+from tris_market_event_intelligence.llm_runtime import LLMProvider
 from tris_market_event_intelligence.news_importance_review import _cohort, _instant
 from tris_market_event_intelligence.news_materiality_hypothesis import (
     BANDS,
@@ -138,7 +139,16 @@ def _local_model_ready(client: httpx.Client, model: str) -> bool:
 
 
 def _analyze_one(client: httpx.Client, article: dict[str, object],
-                 model: str, *, structured: bool = False) -> NewsMaterialityHypothesis:
+                 model: str, *, structured: bool = False,
+                 runtime: LLMProvider | None = None,
+                 runtime_json_schema: bool = True) -> NewsMaterialityHypothesis:
+    if runtime is not None:
+        content = runtime.generate_json(
+            system=SYSTEM,
+            user=json.dumps(_request_data(article), ensure_ascii=False),
+            schema=(NEWS_HYPOTHESIS_OUTPUT_SCHEMA if runtime_json_schema else None),
+        )
+        return _parse_model_hypothesis(article, content)
     response = client.post(MODEL_HOST + "/api/chat", json={
         "model": model,
         "stream": False,
