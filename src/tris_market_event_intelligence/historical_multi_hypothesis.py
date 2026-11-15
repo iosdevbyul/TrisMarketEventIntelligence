@@ -233,12 +233,44 @@ def compare_historical_hypotheses(
     input_json = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
     if len(input_json.encode()) > MAX_INPUT:
         raise ValueError("Bounded whole-cohort input exceeded resource cap")
+    model_calls = 0
     response = provider.generate_json(
         system=SYSTEM, user=input_json, schema=SCHEMA,
     )
+    model_calls += 1
     if not isinstance(response, str) or len(response.encode()) > MAX_OUTPUT:
         raise ValueError("Oversized model response")
     data = json.loads(response)
+
+    # One bounded retry for an internally inconsistent primary-source claim.
+    # Never insert an issuer citation ourselves or downgrade evidence strength.
+    initial_rows = data.get("hypotheses") if isinstance(data, dict) else None
+    if isinstance(initial_rows, list) and any(
+        isinstance(row, dict)
+        and row.get("evidence_strength") == "PRIMARY_DOCUMENT"
+        and (
+            not isinstance(row.get("reference_ids"), list)
+            or PRIMARY_ID not in row["reference_ids"]
+        )
+        for row in initial_rows
+    ):
+        response = provider.generate_json(
+            system=SYSTEM + (
+                "\nREPAIR INSTRUCTION: An earlier response claimed PRIMARY_DOCUMENT "
+                "without citing issuer-primary in the same hypothesis. "
+                "Return a complete replacement JSON with three hypotheses. "
+                "Only claim PRIMARY_DOCUMENT when issuer-primary truly supports "
+                "that hypothesis and is explicitly present in its reference_ids. "
+                "Otherwise use URL_HINT_ONLY or INSUFFICIENT as appropriate. "
+                "Never invent source IDs, and keep all other restrictions.\n"
+            ),
+            user=input_json,
+            schema=SCHEMA,
+        )
+        model_calls += 1
+        if not isinstance(response, str) or len(response.encode()) > MAX_OUTPUT:
+            raise ValueError("Oversized model response")
+        data = json.loads(response)
     if not isinstance(data, dict) or set(data) != set(SCHEMA["required"]):
         raise ValueError("Research model contract violated")
     if data["causal_proof"] is not False or data["prospective_prediction"] is not False:
@@ -292,7 +324,7 @@ def compare_historical_hypotheses(
         "hypotheses": rows,
         "researchSummary": data["research_summary"],
         "missingEvidence": data["missing_evidence"],
-        "modelCalls": 1,
+        "modelCalls": model_calls,
         "noArticleTextsOrMacroProvided": True,
         "prospectivePrediction": False,
         "independentGoldCreated": False,
