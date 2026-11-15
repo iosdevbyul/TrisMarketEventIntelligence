@@ -27,9 +27,9 @@ from tris_market_event_intelligence.impact import (
 )
 from tris_market_event_intelligence.news_two_stage_pilot import select_news_events
 
-PACKET_SCHEMA = "gemma4_blind_news_review_packet_v1"
+PACKET_SCHEMA = "news_blind_review_packet_v1"
 KEY_SCHEMA = "gemma4_blind_news_mapping_v1"
-REVIEW_SCHEMA = "gemma4_blind_news_judgments_v1"
+REVIEW_SCHEMA = "news_blind_human_judgments_v1"
 MAX_NEWS = 3
 RATINGS = {"SUPPORTED", "PARTIAL", "UNSUPPORTED", "UNASSESSABLE"}
 VERDICTS = {"A", "B", "TIE", "BOTH_INADEQUATE", "UNDECIDED"}
@@ -202,7 +202,7 @@ def audit_blind_judgments(
         raise ValueError("Original blind packet required")
     if not isinstance(reviewed, dict) or reviewed.get("schemaVersion") != REVIEW_SCHEMA:
         raise ValueError("Human review document required")
-    if reviewed.get("packetSha256") != _hash(packet):
+    if reviewed.get("humanReviewCompleted") is not True:\n        raise ValueError("Explicit human completion required")\n    if reviewed.get("packetSha256") != _hash(packet):
         raise ValueError("Human ratings refer to a different blind packet")
     decisions = reviewed.get("items")
     original = packet.get("items")
@@ -258,7 +258,7 @@ def prepare_blind_judgments(packet: dict[str, object]) -> dict[str, object]:
             {
                 "eventId": row["eventId"],
                 "newsInputSha256": row["newsInputSha256"],
-                "humanReview": row["humanReview"],
+                "humanReview": json.loads(json.dumps(row["humanReview"])),
             } for row in items
         ],
         "humanReviewCompleted": False,
