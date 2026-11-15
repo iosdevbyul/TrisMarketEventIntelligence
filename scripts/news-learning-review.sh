@@ -92,6 +92,9 @@ case "$action" in
   gemma-compare)
     module="tris_market_event_intelligence.gemma4_news_comparison_cli"
     ;;
+  gemma-blind)
+    module="tris_market_event_intelligence.gemma4_blind_review_cli"
+    ;;
   *)
     usage >&2
     exit 2
