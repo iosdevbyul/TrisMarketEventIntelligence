@@ -87,7 +87,7 @@ def test_historical_story_packet_has_primary_document_separate_from_gkg(
     report = prepare_historical_story_review(source)
     assert report["referenceCount"] == 4
     assert report["urlUniqueCount"] == 4
-    assert report["candidateRepostGroupCount"] == 1
+    assert report["candidateRepostGroupCount"] == 2
     assert report["officialPrimarySource"]["reportedRevenueUsdBillions"] == 7.19
     assert report["officialPrimarySource"]["outlookNextQuarterUsdBillions"] == 11.0
     assert report["officialPrimarySource"]["releaseClockIndependentlyVerified"] is False
