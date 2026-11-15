@@ -22,6 +22,33 @@ from tris_market_event_intelligence.news_offline_review_page import (
     _verify_pinned_sample,
 )
 
+def _failure_code(exc: Exception) -> str:
+    """Use only fixed diagnostic codes, never raw model/source/error text."""
+    if isinstance(exc, httpx.TimeoutException):
+        return "MODEL_TIMEOUT"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return "MODEL_HTTP_ERROR"
+    if isinstance(exc, httpx.HTTPError):
+        return "MODEL_TRANSPORT_ERROR"
+    if isinstance(exc, ValidationError):
+        errors = exc.errors(include_input=False, include_context=False)
+        if errors and errors[0].get("type") == "json_invalid":
+            return "MODEL_JSON_INVALID"
+        return "MODEL_SCHEMA_INVALID"
+    if isinstance(exc, json.JSONDecodeError):
+        return "MODEL_RESPONSE_JSON_INVALID"
+    if isinstance(exc, ValueError):
+        return {
+            "Model JSON exceeds bounded size": "MODEL_JSON_TOO_LARGE",
+            "Model article provenance mismatch": "ARTICLE_PROVENANCE_MISMATCH",
+            "Model invented evidence or entity not present in source":
+                "SOURCE_EVIDENCE_MISMATCH",
+            "Unassessed source must not assert a direction":
+                "ABSTENTION_DIRECTION_MISMATCH",
+        }.get(str(exc), "MODEL_CONTENT_INVALID")
+    return "MODEL_RESPONSE_INVALID"
+
+
 MAX_PILOT = 3
 ALLOWED_MODELS = frozenset({"gemma4:e2b", "gemma2:latest"})
 
@@ -80,13 +107,14 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
             try:
                 hypothesis = _analyze_one(session, article, model_id)
             except (httpx.HTTPError, ValueError, KeyError, TypeError,
-                    ValidationError, json.JSONDecodeError):
+                    ValidationError, json.JSONDecodeError) as exc:
+                reason_code = _failure_code(exc)
                 code = "REJECTED_OR_MODEL_RUNTIME_FAILED"
                 row = {
                     "articleId": article["articleId"],
                     "textSha256": article["textSha256"],
-                    "status": code, "contractAccepted": False,
-                    "hypothesis": None,
+                    "status": code, "failureCode": reason_code,
+                    "contractAccepted": False, "hypothesis": None,
                 }
             else:
                 code = ("ACCEPTED_ABSTAINED" if hypothesis.potential_magnitude
@@ -99,6 +127,8 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
                 }
             entries.append(row)
             counts[code] += 1
+            if not row["contractAccepted"]:
+                counts[reason_code] += 1
     except (httpx.HTTPError, ValueError, TypeError, KeyError,
             json.JSONDecodeError):
         return {**common, "status": "LOCAL_MODEL_PREFLIGHT_FAILED",
