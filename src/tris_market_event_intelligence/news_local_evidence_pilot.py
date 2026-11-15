@@ -74,13 +74,14 @@ def _failure_code(exc: Exception) -> str:
     return "MODEL_RESPONSE_INVALID"
 
 
-MAX_PILOT = 3
+MAX_PILOT = 12
 ALLOWED_MODELS = frozenset({"gemma4:e2b", "gemma2:latest"})
 
 
 def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
                            model_id: str = "gemma4:e2b", run: bool = False,
                            limit: int = 2,
+                           start_index: int = 0,
                            client: httpx.Client | None = None,
                            runtime: ConfiguredLLMProvider | None = None) -> dict:
     """Validated candidate selection; model contract outcomes are not correctness."""
@@ -89,12 +90,18 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
     if runtime is not None and runtime.model_id != model_id:
         raise ValueError("Explicit pilot model ID differs from injected model")
     if type(limit) is not int or not 1 <= limit <= MAX_PILOT:
-        raise ValueError("News pilot must select 1..3 candidates")
+        raise ValueError("News pilot must select 1..12 candidates")
+    if type(start_index) is not int or not 0 <= start_index < 100:
+        raise ValueError("News pilot start-index must be 0..99")
     cohort_raw, cohort = _cohort(cohort_path)
     sample = _verify_pinned_sample(cohort_path, sample_path)
     originals = {row["articleId"]: row for row in cohort["items"]}
+    if start_index >= len(sample["items"]):
+        raise ValueError("News pilot start-index exceeds pinned sample")
+    if start_index + limit > len(sample["items"]):
+        raise ValueError("News pilot range exceeds pinned sample")
     selected = []
-    for representative in sample["items"][:limit]:
+    for representative in sample["items"][start_index:start_index + limit]:
         original = originals[representative["articleId"]]
         if original["textSha256"] != representative["textSha256"]:
             raise ValueError("Candidate source fingerprint mismatch")
@@ -105,6 +112,9 @@ def audit_local_news_pilot(*, cohort_path: Path, sample_path: Path,
         "sampleSha256": hashlib.sha256(sample_path.read_bytes()).hexdigest(),
         "modelId": model_id,
         "selectedArticles": len(selected),
+        "sampleStartIndex": start_index,
+        "sampleEndIndexExclusive": start_index + len(selected),
+        "selectedArticleIds": [row["articleId"] for row in selected],
         "totalOriginalArticles": len(cohort["items"]),
         "sampleCandidates": len(sample["items"]),
         "completeCohortInferred": False,
