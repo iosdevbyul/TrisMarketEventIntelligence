@@ -16,11 +16,9 @@ from tris_market_event_intelligence.news_importance_review import (
     _instant,
     _read,
     prepare_review,
-    score_review,
 )
 from tris_market_event_intelligence.news_materiality_hypothesis import BANDS
 from tris_market_event_intelligence.news_materiality_review import (
-    _validated_reviews,
     prepare_materiality_review,
 )
 from tris_market_event_intelligence.news_review_sample import prepare_news_review_sample
@@ -35,7 +33,7 @@ def bridge_review_sample(*, cohort_path: Path, sample_path: Path,
                          importance_template_path: Path,
                          materiality_template_path: Path) -> dict[str, object]:
     """Return two valid *self-attested* full reviews; never write or train."""
-    cohort_raw, cohort = _cohort(cohort_path)
+    cohort_raw, _ = _cohort(cohort_path)
     observed_sha = hashlib.sha256(cohort_raw).hexdigest()
     sample = json.loads(_read(sample_path))
     if not isinstance(sample, dict) or sample.get("schemaVersion") != (
@@ -128,11 +126,6 @@ def bridge_review_sample(*, cohort_path: Path, sample_path: Path,
             })
             magnitude_count += 1
         story_count += story is not None
-    # Explicitly validate generated documents using the existing exact
-    # complete-cohort validators (without opening TEST or scoring models).
-    # The same validators check provenance and each individual judgment.
-    # Temporary file writes are avoided by extracting equivalent checks
-    # above and asserting all untouched fields are inherited from templates.
     if not (importance_count or magnitude_count):
         status = "NO_HUMAN_IMPORTANCE_OR_MAGNITUDE_JUDGMENTS"
     else:
