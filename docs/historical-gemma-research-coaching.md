@@ -177,3 +177,46 @@ a private `human_reviewed_research_lessons_v1` file using the
 documented optional `--reviewed-lessons` path. Evaluation of improved
 behavior requires separate held-out cases rather than repeating only
 the same NVIDIA example.
+
+## Learning 06: explicit analyst review of research findings
+
+After `historical-quality` successfully produces a private audit, prepare a
+human-review template. Preparation never accepts or trains anything:
+
+```sh
+bash scripts/news-learning-review.sh --update historical-human-review --prepare \
+  --audit "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-research-quality-v2.json" \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-human-review-template-v1.json"
+```
+
+The template starts with `status=AWAITING_HUMAN_REVIEW`,
+`sourceEvidenceReviewed=false`, `approved=false`, every finding decision
+`PENDING`, and every proposed lesson `selected=false`. No approved
+lesson file is created at this stage. The analyst must inspect independent
+sources and explicitly edit the private template: set a reviewer identifier,
+`sourceEvidenceReviewed=true`, `approved=true`, decide every finding
+(`CONFIRMED`, `REJECTED`, or `UNCERTAIN`) and enter a specific
+`reviewNote` for each. Select only lessons supported by independently
+inspected evidence and add at least 30 characters of `independentEvidence`
+for each selected lesson. No evidence may be added to unselected lessons.
+
+Only after that manual work, the analyst can explicitly attest and export:
+
+```sh
+bash scripts/news-learning-review.sh historical-human-review --finalize \
+  --audit "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-research-quality-v2.json" \
+  --review "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-human-review-template-v1.json" \
+  --reviewer HUMAN_IDENTIFIER --confirm-human-review \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-reviewed-lessons-v1.json"
+```
+
+The implementation verifies the original audit digest, unchanged finding
+identities, explicit decisions and notes, lesson identities, independent
+evidence, and reviewer confirmation; it never silently sets human approval.
+This is an attestation mechanism, not cryptographic proof that a human
+actually looked at sources. Keep review and approved lessons private, never
+commit them to Git. The approved output is compatible with the existing
+`historical-multi --reviewed-lessons` option but remains a procedural
+memory hint, never independent Gold, ground truth, weight fine-tuning,
+permission to trade, or proof of generalization. Evaluate improvements on
+independent cases before making claims of better research quality.
