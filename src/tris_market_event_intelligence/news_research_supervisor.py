@@ -12,9 +12,9 @@ import os
 import resource
 import sys
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from tris_market_event_intelligence.news_research_loop import (
     _check_stop_file,
