@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from test_news_materiality_local import _make_client
+from test_news_materiality_local import _make_client, _model_result
 from test_news_research_worker import files
 
 from tris_market_event_intelligence.news_local_evidence_pilot import (
@@ -67,10 +67,29 @@ def test_real_two_news_contract_validation_no_gold(tmp_path: Path) -> None:
 def test_invented_source_entity_is_rejected_without_fake_gold(tmp_path: Path) -> None:
     cohort, sample = _inputs(tmp_path)
     original = json.loads(cohort.read_text())["items"]
-    selected = json.loads(sample.read_text())["items"]
+    indexed = {row["articleId"]: row for row in original}
+    selected_id = json.loads(sample.read_text())["items"][0]["articleId"]
     calls = []
-    with _make_client(original, calls,
-                      bad_article=selected[0]["articleId"]) as client:
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [
+                {"name": "gemma2:latest"},
+            ]})
+        payload = json.loads(request.content)
+        sent = json.loads(payload["messages"][1]["content"])
+        article = indexed[sent["article_id"]]
+        result = _model_result(article, "CRITICAL")
+        if "Major regulatory decision" not in article["title"]:
+            result["entity"] = "Routine local community"
+        if article["articleId"] == selected_id:
+            result["entity"] = "Invented unmentioned corporation"
+        return httpx.Response(200, json={"message": {
+            "content": json.dumps(result),
+        }})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         report = audit_local_news_pilot(
             cohort_path=cohort, sample_path=sample, model_id="gemma2:latest",
             run=True, limit=2, client=client,
@@ -104,8 +123,8 @@ def test_modified_source_sample_fails_before_network(tmp_path: Path) -> None:
     data["items"][0]["title"] = "Injected altered headline"
     sample.write_text(json.dumps(data))
     calls = []
-    with _make_client(json.loads(cohort.read_text())["items"], calls) as client:
-        with pytest.raises(ValueError, match="provenance"):
+    with (_make_client(json.loads(cohort.read_text())["items"], calls) as client,
+          pytest.raises(ValueError, match="provenance")):
             audit_local_news_pilot(
                 cohort_path=cohort, sample_path=sample,
                 model_id="gemma2:latest", run=True, client=client,
