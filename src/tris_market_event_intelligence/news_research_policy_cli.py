@@ -7,7 +7,9 @@ import sqlite3
 from pathlib import Path
 
 from tris_market_event_intelligence.news_research_policy import (
-    MAX_HYPOTHESES, audit_policy, run_policy_once,
+    MAX_HYPOTHESES,
+    audit_policy,
+    run_policy_once,
 )
 
 
