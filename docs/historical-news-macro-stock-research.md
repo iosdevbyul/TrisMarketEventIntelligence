@@ -310,3 +310,55 @@ into a model prompt. Using a settlement-based label as if it were a
 09:30 executable forward return would be wrong; choose a properly
 tradable return horizon or acquire authenticated interval/open prices
 before model backtest.
+
+## Historical GDELT coverage expansion after real Mac 0/2512 news result
+
+On 2026-11-16 a real Mac `historical-price-outcomes --preview` run using
+existing NVDA/SPY and `news-cohort-20261115.json` returned
+`observations=2512`, `newsCoveredSessions=0`,
+`newsMissingSessions=2512`, `trainingReady=false`.
+The price join is operational; the **supplied 2026 RSS cohort** has no
+usable first-observed-at-or-before-09:30 records in these historical
+trade-date windows. This does not disprove the collector or other already
+archived historical source references.
+
+New opt-in `gdelt-replay` reuses the existing 100-rank NVDA/SPY
+retrospective shock packet and the proven `gdelt-scout` collector. It can
+fetch up to **three ranks in one explicitly invoked batch** and pins four
+GKG archives per rank in independent, private `0600` receipts. It
+re-validates any existing receipt against exact underlying study SHA, rank,
+shock day, expected GDELT slots, archived ZIP SHA field, and strict
+unverified issuer/article flags. Valid older rank-1 files are **reused**,
+never re-fetched; a bad or mismatched receipt causes an explicit failure
+rather than silently overwriting. If a later rank fails, completed earlier
+ranks persist and can be replayed safely.
+
+To inspect coverage without a network request:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update gdelt-replay \
+  --study "$DATA/nvda-spy-shocks-2016-2026.json" \
+  --data-dir "$DATA" --start-rank 1 --count 3 --preview
+```
+
+To run a *small* missing-rank acquisition (up to four real GKG ZIP downloads,
+no LLM calls; reuse the pinned actual rank-1 result when supplied):
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh gdelt-replay \
+  --study "$DATA/nvda-spy-shocks-2016-2026.json" \
+  --data-dir "$DATA" --start-rank 2 --count 1 --run
+```
+
+This is a **research source inventory** only, not a completed news-to-price
+training cohort. A GKG archive slot, organization mention and article URL
+do not attest first article publication/tradable availability, read the
+original publisher's body, or prove market causality. Source rights,
+duplicate story grouping, first-publication evidence, issuer matching,
+controls, and independent as-of checks are needed before any historic
+reference can enter forward-replay prediction inputs. Original 2026 RSS
+capture times must not be rewritten or backdated. No user-approved
+long-running loop, automatic worker install, model training or promotion
+is performed here.
