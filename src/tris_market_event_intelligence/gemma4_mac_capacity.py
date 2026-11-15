@@ -18,7 +18,7 @@ from tris_market_event_intelligence.gemma4_news_comparison import _validate_mode
 
 MAX_COMMAND_SECONDS = 5
 MAX_OUTPUT = 32768
-PAGE_RE = re.compile(r"^page size of (\d+) bytes$")
+PAGE_RE = re.compile(r"\bpage size of (\d+) bytes\b")
 STAT_RE = re.compile(r"^Pages (free|inactive|speculative|purgeable|wired down|active):\s*(\d+)\.$")
 RAM_RESERVE_GIB = 4
 
