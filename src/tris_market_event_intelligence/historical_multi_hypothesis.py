@@ -16,7 +16,7 @@ from tris_market_event_intelligence.historical_story_review import (
 )
 from tris_market_event_intelligence.llm_runtime import LLMProvider
 
-VERSION = "historical-multi-evidence-v1"
+VERSION = "historical-multi-evidence-v2"
 MAX_INPUT = 40_000
 MAX_OUTPUT = 24_000
 MAX_MEMORY = 20_000
@@ -117,6 +117,38 @@ def build_research_context(
     }
 
 
+
+def _compact_model_context(context: dict) -> dict:
+    """All 44 references, but omit 44 repeated verbose state flags.
+
+    Each source remains only a URL-derived hint (never article text).
+    The dictionary's "sourceLimitations" applies to EVERY listed row.
+    """
+    flat = [
+        [r["referenceId"], r["urlDerivedHint"], r["archiveSlotUtc"]]
+        for rows in context["referencesByHeuristicCategory"].values()
+        for r in rows
+    ]
+    if len(flat) != context["allReferencesProvided"]:
+        raise ValueError("Historical reference coverage mismatch")
+    return {
+        "task": context["task"],
+        "shockDate": context["shockDate"],
+        "sourceLimitations": ("All snippets are URL-path hints, not article "
+                              "texts; archive slot is not publisher release "
+                              "or proof of premarket availability."),
+        "urlHintRows": flat,
+        "issuerPrimary": context["firstPartyDisclosureSeparateFromUrlHints"],
+        "macroVintageAvailable": False,
+        "repostGroupsUnverified": [
+            g["referenceIds"] for g in context["candidateStoryGroupsUnverified"]
+            if len(g["referenceIds"]) > 1
+        ],
+        "reviewedLessons": context["humanReviewedMethodLessons"],
+        "priorOutcomeNotProvided": True,
+    }
+
+
 SYSTEM = """You are Gemma, a research assistant for an INDEPENDENT market-event
 intelligence project. You do NOT change your own model weights by responding.
 Goal: learn a disciplined research METHOD across historical cases, not
@@ -197,7 +229,8 @@ def compare_historical_hypotheses(
     lessons: list[dict] | None = None, lesson_sha: str | None = None,
 ) -> dict:
     context = build_research_context(story=story, lessons=lessons)
-    input_json = json.dumps(context, ensure_ascii=False)
+    compact = _compact_model_context(context)
+    input_json = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
     if len(input_json.encode()) > MAX_INPUT:
         raise ValueError("Bounded whole-cohort input exceeded resource cap")
     response = provider.generate_json(
@@ -250,6 +283,8 @@ def compare_historical_hypotheses(
         "humanReviewedLessonsSha256": lesson_sha,
         "usedHumanReviewedLessons": bool(lessons),
         "allCandidateReferenceCount": len(story["references"]),
+        "modelContextFormat": "compact-all-archive-references-v1",
+        "modelInputBytes": len(input_json.encode()),
         "inputCategoryCounts": dict(Counter(
             r["candidateCategory"] for r in story["references"]
         )),

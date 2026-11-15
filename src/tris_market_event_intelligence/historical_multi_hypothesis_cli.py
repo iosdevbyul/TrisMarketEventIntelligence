@@ -15,7 +15,7 @@ from tris_market_event_intelligence.historical_multi_hypothesis import (
 from tris_market_event_intelligence.historical_story_review import (
     prepare_historical_story_review,
 )
-from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.llm_runtime import LLMExecutionError, LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 
@@ -84,7 +84,28 @@ def main() -> None:
             "outputCreated": True,
         }, ensure_ascii=False))
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        parser.exit(2, f"historical-multi-research: FAILED ({type(exc).__name__})\n")
+        # Stable diagnostic codes only, never original source/model text or keys.
+        if isinstance(exc, LLMExecutionError):
+            reason = exc.code
+        elif isinstance(exc, json.JSONDecodeError):
+            reason = "MODEL_JSON_INVALID"
+        elif isinstance(exc, ValueError):
+            reason = {
+                "Bounded whole-cohort input exceeded resource cap": "MODEL_INPUT_OVERSIZED",
+                "Require three competing hypotheses": "MODEL_HYPOTHESES_COUNT_INVALID",
+                "Oversized model response": "MODEL_OUTPUT_OVERSIZED",
+                "Research model contract violated": "MODEL_OUTPUT_SCHEMA_INVALID",
+                "Malformed candidate hypothesis": "MODEL_HYPOTHESIS_SCHEMA_INVALID",
+                "Unsupported source reference or evidence class": "MODEL_SOURCE_PROVENANCE_INVALID",
+                "Primary evidence not cited": "MODEL_PRIMARY_EVIDENCE_MISSING",
+                "Model cannot certify causality or forecast skill": "MODEL_UNSAFE_CLAIM_REJECTED",
+                "Missing substantive research caveats": "MODEL_EXPLANATION_INCOMPLETE",
+                "Model omitted research limitation": "MODEL_LIMITATION_INCOMPLETE",
+                "Research artifact must be a new private file": "OUTPUT_ALREADY_EXISTS_OR_UNSAFE",
+            }.get(str(exc), "SOURCE_OR_CONFIG_VALIDATION_FAILED")
+        else:
+            reason = "SOURCE_OR_OUTPUT_IO_INVALID"
+        parser.exit(2, f"historical-multi-research: {reason}\\n")
 
 
 if __name__ == "__main__":
