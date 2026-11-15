@@ -202,7 +202,9 @@ def audit_blind_judgments(
         raise ValueError("Original blind packet required")
     if not isinstance(reviewed, dict) or reviewed.get("schemaVersion") != REVIEW_SCHEMA:
         raise ValueError("Human review document required")
-    if reviewed.get("humanReviewCompleted") is not True:\n        raise ValueError("Explicit human completion required")\n    if reviewed.get("packetSha256") != _hash(packet):
+    if reviewed.get("humanReviewCompleted") is not True:
+        raise ValueError("Explicit human completion required")
+    if reviewed.get("packetSha256") != _hash(packet):
         raise ValueError("Human ratings refer to a different blind packet")
     decisions = reviewed.get("items")
     original = packet.get("items")
