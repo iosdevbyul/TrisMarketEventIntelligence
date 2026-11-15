@@ -135,7 +135,15 @@ def _analyze_one(client: httpx.Client, article: dict[str, object],
         "format": NEWS_HYPOTHESIS_OUTPUT_SCHEMA if structured else "json",
         "options": {"temperature": 0, "num_predict": 800},
         "messages": [
-            {"role": "system", "content": SYSTEM + (\n                "Include EVERY schema field with the exact type. Copy article_id and "\n                "text_sha256 exactly from the user input. Use exact news title/summary "\n                "substrings for entity and evidence_excerpt. If potential_magnitude is "\n                "UNASSESSED, set magnitude_basis to NOT_ASSESSED and direction to "\n                "UNCERTAIN. Otherwise use HUMAN_OR_MODEL_HYPOTHESIS_UNCALIBRATED. "\n                "All three boolean flags MUST be false. Do not emit extra keys. "\n                if structured else ""\n            )},
+            {"role": "system", "content": SYSTEM + (
+                "Include EVERY schema field with the exact type. Copy article_id and "
+                "text_sha256 exactly from the user input. Use exact news title/summary "
+                "substrings for entity and evidence_excerpt. If potential_magnitude is "
+                "UNASSESSED, set magnitude_basis to NOT_ASSESSED and direction to "
+                "UNCERTAIN. Otherwise use HUMAN_OR_MODEL_HYPOTHESIS_UNCALIBRATED. "
+                "All three boolean flags MUST be false. Do not emit extra keys. "
+                if structured else ""
+            )},
             {"role": "user", "content": json.dumps(
                 _request_data(article), ensure_ascii=False,
             )},
