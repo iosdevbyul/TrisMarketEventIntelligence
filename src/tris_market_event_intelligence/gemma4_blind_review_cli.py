@@ -13,10 +13,10 @@ from tris_market_event_intelligence.gemma4_blind_review import (
     build_blind_packet,
     prepare_blind_judgments,
 )
+from tris_market_event_intelligence.gemma4_news_comparison import _validate_models
 from tris_market_event_intelligence.gemma4_news_comparison_cli import (
     local_model_preflight,
 )
-from tris_market_event_intelligence.gemma4_news_comparison import _validate_models
 from tris_market_event_intelligence.impact import OpenAICompatibleProvider
 
 MAX_PRIVATE_BYTES = 250000
