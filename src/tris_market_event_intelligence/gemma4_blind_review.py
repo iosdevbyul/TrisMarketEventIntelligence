@@ -216,7 +216,7 @@ def audit_blind_judgments(
     seen: set[int] = set()
     for source, decision in zip(original, decisions, strict=True):
         if not isinstance(source, dict) or not isinstance(decision, dict):
-            raise ValueError("Malformed original news or reviewed decision")
+            raise TypeError("Malformed original news or reviewed decision")
         article_id = source.get("eventId")
         if type(article_id) is not int or article_id in seen or (
             decision.get("eventId") != article_id
