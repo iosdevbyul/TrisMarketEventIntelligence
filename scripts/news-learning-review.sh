@@ -105,6 +105,9 @@ case "$action" in
   gemma-mac-preflight)
     module="tris_market_event_intelligence.gemma4_mac_capacity_cli"
     ;;
+  train-cv)
+    module="tris_market_event_intelligence.news_train_cv_exploration_cli"
+    ;;
   *)
     usage >&2
     exit 2
