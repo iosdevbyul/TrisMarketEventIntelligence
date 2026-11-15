@@ -139,8 +139,8 @@ def test_missing_installed_model_does_not_attempt_inference(tmp_path: Path):
 def test_incomplete_cohort_run_is_refused_before_network(tmp_path: Path):
     paths = files(tmp_path)
     calls = []
-    with _make_client(json.loads(paths[0].read_text())["items"], calls) as client:
-        with pytest.raises(ValueError, match="complete cohort"):
+    with (_make_client(json.loads(paths[0].read_text())["items"], calls) as client,
+          pytest.raises(ValueError, match="complete cohort")):
             generate_materiality_hypotheses(
                 cohort_path=paths[0], client=client, run=True, limit=11,
             )
