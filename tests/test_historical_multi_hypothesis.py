@@ -109,6 +109,48 @@ def test_gemma_compares_three_distinct_research_candidates(tmp_path: Path) -> No
     assert result["independentGoldCreated"] is False
 
 
+def test_primary_evidence_mismatch_gets_one_bounded_retry(
+    tmp_path: Path,
+) -> None:
+    class RetryPrimaryProvider(FakeProvider):
+        def generate_json(
+            self, *, system: str, user: str, schema: dict[str, object] | None,
+        ) -> str:
+            result = json.loads(super().generate_json(
+                system=system, user=user, schema=schema,
+            ))
+            if self.calls == 1:
+                result["hypotheses"][0]["reference_ids"] = ["ref-001"]
+            else:
+                assert "REPAIR INSTRUCTION" in system
+            return json.dumps(result)
+
+    provider = RetryPrimaryProvider()
+    result = research_from_scout(_fixture(tmp_path), provider=provider)
+    assert result["modelCalls"] == 2
+    assert provider.calls == 2
+    assert PRIMARY_ID in result["hypotheses"][0]["reference_ids"]
+
+
+def test_primary_evidence_mismatch_still_fails_after_retry(
+    tmp_path: Path,
+) -> None:
+    class NeverCitesPrimary(FakeProvider):
+        def generate_json(
+            self, *, system: str, user: str, schema: dict[str, object] | None,
+        ) -> str:
+            result = json.loads(super().generate_json(
+                system=system, user=user, schema=schema,
+            ))
+            result["hypotheses"][0]["reference_ids"] = ["ref-001"]
+            return json.dumps(result)
+
+    provider = NeverCitesPrimary()
+    with pytest.raises(ValueError, match="Primary evidence not cited"):
+        research_from_scout(_fixture(tmp_path), provider=provider)
+    assert provider.calls == 2
+
+
 def test_model_cannot_invent_sources_or_certify_causation(tmp_path: Path) -> None:
     study = prepare_historical_story_review(_fixture(tmp_path))
     with pytest.raises(ValueError, match="Unsupported source"):
