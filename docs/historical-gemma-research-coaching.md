@@ -269,3 +269,65 @@ work. This fixes the actual handoff contract, not the quality score.
 The `--update` script now restarts the latest version of itself after
 `git pull --ff-only`, preventing new subcommands from unexpectedly printing
 the old usage instructions during the very first updated invocation.
+
+## Learning 06: independent historical NEWS case cohort (2023, no prices)
+
+Three **new** historical events were sourced from publicly reachable original
+issuer disclosures and separately pinned in
+`research/independent-historical-news-2023.json`:
+
+| Company | Original disclosure date | Issuer/SEC URL | Confirmed evidence |
+| --- | --- | --- | --- |
+| Microsoft | 2023-07-25 | https://www.microsoft.com/en-us/investor/earnings/fy-2023-q4/press-release-webcast | Revenue USD 56.189bn; Azure +26% reported YoY; Microsoft Cloud USD 30.3bn |
+| Alphabet | 2023-07-25 | https://www.sec.gov/Archives/edgar/data/1652044/000165204423000067/googexhibit991q22023.htm | Revenue USD 74.604bn; Google Cloud USD 8.031bn vs 6.276bn; Cloud operating profit USD 395m vs a USD 590m loss |
+| AMD | 2023-08-01 | https://www.amd.com/en/newsroom/press-releases/2023-8-1-amd-reports-second-quarter-2023-financial-results.html | Revenue USD 5.359bn; GAAP operating loss USD 20m; planned Q4 2023 MI300 launch and ramp |
+
+The nine statements are **short factual paraphrases** of verified source
+disclosures, not scraped copyrighted articles, synthetic GDELT references,
+unverified publisher clocks, model training labels, or claims about stock
+returns. A disclosure date is not independently verified intraday
+availability. These issuer documents do not provide independent sector news;
+unsupported alternative explanations must remain tentative.
+
+Three actual issuer releases are **three primary sources**, not a 44-article
+GDELT sample. Existing NVIDIA 2023-05-25 lessons and human-review template
+must stay untouched. This independent challenge is kept separate from
+NVIDIA's retrospectively chosen case and does not use price or return inputs.
+
+Inspect exact source inventory with no model calls:
+
+```sh
+bash scripts/news-learning-review.sh --update historical-independent \
+  --cohort research/independent-historical-news-2023.json --preview
+```
+
+Opt in to three real locally installed Ollama Gemma4:e2b research calls,
+with no approved NVIDIA lessons:
+
+```sh
+bash scripts/news-learning-review.sh historical-independent \
+  --cohort research/independent-historical-news-2023.json \
+  --run --model gemma4:e2b \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/independent-news-research-v1.json"
+```
+
+Only after a completed output, evaluate provenance and structural safeguards:
+
+```sh
+bash scripts/news-learning-review.sh historical-independent \
+  --cohort research/independent-historical-news-2023.json \
+  --evaluate \
+  --research "$HOME/Library/Application Support/TrisMarketEventIntelligence/independent-news-research-v1.json" \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/independent-news-evaluation-v1.json"
+```
+
+The evaluator checks exact case/cohort digest, all nine factual-source
+references, three hypothesis types per case, source IDs, mandatory
+noncausality and evidence-limitation fields. Heuristic flags identify
+unsupported sector source citations and overconfident market attribution.
+These are **mechanical attribution checks**, not verified independent
+semantic correctness. Real-case Gemma performance and cross-case
+generalization remain **unverified until actual Mac inference and human
+inspection**. There is no auto-approved Gold, model-weight training,
+promotion, or investment execution. Comparisons with future approved
+lessons must not train on or preselect this independent evaluation cohort.
