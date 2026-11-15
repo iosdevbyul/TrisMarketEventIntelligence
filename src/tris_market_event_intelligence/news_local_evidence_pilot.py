@@ -13,15 +13,14 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
-from tris_market_event_intelligence.news_offline_review_page import (
-    _verify_pinned_sample,
-)
 from tris_market_event_intelligence.news_materiality_local import (
-    MODEL_HOST,
     _analyze_one,
     _local_model_ready,
 )
 from tris_market_event_intelligence.news_importance_review import _cohort
+from tris_market_event_intelligence.news_offline_review_page import (
+    _verify_pinned_sample,
+)
 
 MAX_PILOT = 3
 ALLOWED_MODELS = frozenset({"gemma4:e2b", "gemma2:latest"})
