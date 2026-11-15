@@ -98,9 +98,8 @@ def test_fred_archive_keeps_revision_dates_and_never_fakes_release_clock(
 def test_price_rejects_invalid_provider_rows(record: dict) -> None:
     with httpx.Client(transport=httpx.MockTransport(
         lambda request: httpx.Response(200, json=[record] * 4),
-    )) as session:
-        with pytest.raises(HistoricalProviderError):
-            tiingo_eod(
+    )) as session, pytest.raises(HistoricalProviderError):
+        tiingo_eod(
                 symbol="NVDA", start=date(2026, 10, 1),
                 end=date(2026, 10, 9), token="SECRET", client=session,
             )
@@ -109,9 +108,9 @@ def test_price_rejects_invalid_provider_rows(record: dict) -> None:
 def test_provider_error_does_not_leak_http_credential() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(403, json={"message": "private token SECRET"})
-    with httpx.Client(transport=httpx.MockTransport(handler)) as session:
-        with pytest.raises(HistoricalProviderError) as failure:
-            tiingo_eod(
+    with (httpx.Client(transport=httpx.MockTransport(handler)) as session,
+          pytest.raises(HistoricalProviderError) as failure):
+        tiingo_eod(
                 symbol="NVDA", start=date(2026, 10, 1),
                 end=date(2026, 10, 9), token="SECRET", client=session,
             )
@@ -123,9 +122,9 @@ def test_no_macro_key_fails_before_network() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return httpx.Response(200, json={})
-    with httpx.Client(transport=httpx.MockTransport(handler)) as session:
-        with pytest.raises(HistoricalProviderError, match="FRED_API_KEY_REQUIRED"):
-            fred_revision_archive(
+    with (httpx.Client(transport=httpx.MockTransport(handler)) as session,
+          pytest.raises(HistoricalProviderError, match="FRED_API_KEY_REQUIRED")):
+        fred_revision_archive(
                 series_id="CPIAUCSL", start=date(2026, 1, 1),
                 end=date(2026, 12, 31), api_key="", client=session,
             )
