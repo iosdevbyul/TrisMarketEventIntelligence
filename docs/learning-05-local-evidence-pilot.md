@@ -134,3 +134,50 @@ bash scripts/news-learning-review.sh --update evidence-pilot --run \
 ```
 If the installed Ollama build does not accept `think: false`, it will fail
 closed with an HTTP status error. We cannot claim support until a real Mac run.
+
+## Learning-05 — expand the pinned 48-candidate window safely
+
+The original 2 news hypotheses (sample indexes 0 and 1; article IDs 336,
+410) have already been generated and reviewed. Do **not** re-run those
+same candidates when expanding coverage.
+
+The existing opt-in `evidence-pilot` can now process a *contiguous*
+zero-based window of the immutable deterministic 48-candidate packet.
+The previous `--limit 2` default and `--start-index 0` default remain
+unchanged for compatibility. At most 12 selected news articles can be
+sent per explicit command. The range must fit entirely within the pinned
+sample; all original 482-article cohort and sample integrity checks occur
+before the first local model call.
+
+A first extension is the six **new** candidates at indexes 2 through 7:
+
+```sh
+bash scripts/news-learning-review.sh --update evidence-pilot --preview \
+  --cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \
+  --sample "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-review-sample-20261115.json" \
+  --model gemma4:e2b --start-index 2 --limit 6
+```
+
+To actually run the same six items only after choosing to execute locally:
+
+```sh
+bash scripts/news-learning-review.sh evidence-pilot --run \
+  --cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \
+  --sample "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-review-sample-20261115.json" \
+  --model gemma4:e2b --start-index 2 --limit 6 \
+  --output "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-evidence-pilot-candidates-02-07-20261115.json"
+```
+
+The report includes `sampleStartIndex`, `sampleEndIndexExclusive`,
+and ordered `selectedArticleIds` so every subset is auditable. This
+operation does not globally schedule, train, or promote the model and does
+not modify a prior evidence file or source database. No retries/repairs
+are invented for rejected cases. It is not automatically resumable or
+a claim of full 48-candidate coverage: separate, explicitly initiated
+non-overlapping windows are needed if the six-item analysis is acceptable.
+
+Do not equate source-literal and schema contract acceptance with
+human adjudication, semantic accuracy, or evidence of LLM improvement.
+The original sample still spans too few UTC observation days for
+independent generalization claims. Its human gold remains absent, TEST
+sealed, and all stock prices/returns/OHLCV outside the project.
