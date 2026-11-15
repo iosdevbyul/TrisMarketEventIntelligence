@@ -46,6 +46,7 @@ def build_news_price_outcome_cohort(
         read_macro_releases(macro_csv) if macro_csv is not None else ([], None)
     )
     market_by_day = {bar.day: bar for bar in market}
+    market_positions = {bar.day: idx for idx, bar in enumerate(market)}
     stock_by_day = {bar.day: bar for bar in stock}
     aligned_dates = [bar.day for bar in stock if bar.day in market_by_day]
     date_positions = {day: idx for idx, day in enumerate(aligned_dates)}
@@ -56,6 +57,9 @@ def build_news_price_outcome_cohort(
     news_counts: Counter[str] = Counter()
     for prior, today in pairwise(stock):
         if prior.day not in market_by_day or today.day not in market_by_day:
+            continue
+        if market_positions[today.day] != market_positions[prior.day] + 1:
+            # Do not bridge a missing stock session using an extra market day.
             continue
         ctx = _context(day=today.day, articles=rows_news, macro=macro)
         cutoff = ctx["asOf"]
