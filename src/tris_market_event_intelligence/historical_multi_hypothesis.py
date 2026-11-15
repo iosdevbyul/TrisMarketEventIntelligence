@@ -39,12 +39,30 @@ def read_reviewed_lessons(path: Path | None) -> tuple[list[dict], str | None]:
         raise ValueError("Invalid bounded human-reviewed lessons file")
     raw = path.read_bytes()
     doc = json.loads(raw)
+    permitted = {
+        "schemaVersion", "reviewedByHuman", "lessons",
+        "reviewer", "auditSha256", "researchSha256",
+    }
     if (not isinstance(doc, dict)
+            or not {"schemaVersion", "reviewedByHuman", "lessons"} <= set(doc)
+            or not set(doc) <= permitted
             or doc.get("schemaVersion") != "human_reviewed_research_lessons_v1"
             or doc.get("reviewedByHuman") is not True
             or not isinstance(doc.get("lessons"), list)
             or not 1 <= len(doc["lessons"]) <= MAX_REVIEW_NOTES):
         raise ValueError("Only human-reviewed lessons are eligible")
+    lineage = {"reviewer", "auditSha256", "researchSha256"}
+    if lineage.intersection(doc):
+        if (not lineage <= set(doc)
+                or not isinstance(doc["reviewer"], str)
+                or not 2 <= len(doc["reviewer"].strip()) <= 80
+                or any(
+                    not isinstance(doc[key], str)
+                    or len(doc[key]) != 64
+                    or any(char not in "0123456789abcdef" for char in doc[key])
+                    for key in ("auditSha256", "researchSha256")
+                )):
+            raise ValueError("Invalid human review provenance")
     lessons = []
     for entry in doc["lessons"]:
         if (not isinstance(entry, dict) or set(entry) != {"lesson", "evidence"}
