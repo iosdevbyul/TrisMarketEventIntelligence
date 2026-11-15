@@ -13,7 +13,7 @@ import sqlite3
 import time
 from pathlib import Path
 from threading import Event
-from typing import Callable
+from collections.abc import Callable
 
 from tris_market_event_intelligence.news_research_worker import research_news_once
 
