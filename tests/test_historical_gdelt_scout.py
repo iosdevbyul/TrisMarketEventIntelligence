@@ -38,11 +38,11 @@ def _study(tmp_path: Path) -> Path:
 
 def _archive() -> bytes:
     content = (
-        "20230524130000-1\t20230524130000\t1\tnews.example\t"
-        "https://news.example/nvda\t\t\t\t\t\t\t\t\tNvidia Corporation;\tNvidia,123;\n"
-        "20230524130000-2\t20230524130000\t1\tnews.example\t"
-        "https://news.example/other\t\t\t\t\t\t\t\t\tAnother company\t\n"
-    ).encode()
+        b"20230524130000-1\t20230524130000\t1\tnews.example\t"
+        b"https://news.example/nvda\t\t\t\t\t\t\t\t\tNvidia Corporation;\tNvidia,123;\n"
+        b"20230524130000-2\t20230524130000\t1\tnews.example\t"
+        b"https://news.example/other\t\t\t\t\t\t\t\t\tAnother company\t\n"
+    )
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("20230524130000.gkg.csv", content)
