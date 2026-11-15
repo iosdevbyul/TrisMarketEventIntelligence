@@ -11,11 +11,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from datetime import date
 
 import httpx
 
 from tris_market_event_intelligence.historical_gdelt_scout import (
     _read_study,
+    _slots,
     scout_historical_gdelt,
 )
 
@@ -54,11 +56,13 @@ def _read_receipt(path: Path, *, study_sha: str, rank: int, day: str) -> dict:
     if not isinstance(plan, list) or len(plan) != 4:
         raise ValueError("Unpinned prior archive plan")
     totals = 0
-    for archived, planned in zip(archives, plan, strict=True):
+    for archived, planned, (expected_slot, expected_url) in zip(
+        archives, plan, _slots(date.fromisoformat(day)), strict=True,
+    ):
         if (not isinstance(archived, dict) or not isinstance(planned, dict)
                 or archived.get("gkgSlot") != planned.get("slotUtc")
-                or not isinstance(planned.get("url"), str)
-                or not planned["url"].startswith("https://data.gdeltproject.org/gdeltv2/")
+                or planned.get("slotUtc") != expected_slot.isoformat()
+                or planned.get("url") != expected_url
                 or archived.get("archiveSlotNotPublicationTimestamp") is not True
                 or archived.get("earliestArticleAvailabilityVerified") is not False):
             raise ValueError("Invalid prior GDELT archive time provenance")
