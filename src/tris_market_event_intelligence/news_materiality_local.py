@@ -42,6 +42,46 @@ Evidence excerpt MUST be a literal substring of the provided title or summary.
 Return a single JSON object matching the supplied schema and nothing else.
 """
 
+# Ollama's native structured-output grammar: flat, enumerated and small.
+# This is a generation hint, NEVER a substitute for Pydantic/source checks.
+NEWS_HYPOTHESIS_OUTPUT_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "schema_version", "article_id", "text_sha256", "entity",
+        "event_summary", "fact_status", "potential_magnitude", "direction",
+        "evidence_excerpt", "conditional_mechanism", "verification_needed",
+        "magnitude_basis", "market_prices_used", "price_prediction",
+        "independent_human_gold",
+    ],
+    "properties": {
+        "schema_version": {"type": "string", "enum": ["news_materiality_hypothesis_v1"]},
+        "article_id": {"type": "integer"},
+        "text_sha256": {"type": "string"},
+        "entity": {"type": "string"},
+        "event_summary": {"type": "string"},
+        "fact_status": {"type": "string", "enum": [
+            "ALLEGED", "REPORTED", "CONFIRMED", "DISPUTED",
+        ]},
+        "potential_magnitude": {"type": "string", "enum": [
+            "LOW", "MODERATE", "HIGH", "CRITICAL", "UNASSESSED",
+        ]},
+        "direction": {"type": "string", "enum": [
+            "POSITIVE", "NEGATIVE", "MIXED", "UNCERTAIN",
+        ]},
+        "evidence_excerpt": {"type": "string"},
+        "conditional_mechanism": {"type": "string"},
+        "verification_needed": {"type": "array", "items": {"type": "string"}},
+        "magnitude_basis": {"type": "string", "enum": [
+            "HUMAN_OR_MODEL_HYPOTHESIS_UNCALIBRATED", "NOT_ASSESSED",
+        ]},
+        "market_prices_used": {"type": "boolean", "enum": [False]},
+        "price_prediction": {"type": "boolean", "enum": [False]},
+        "independent_human_gold": {"type": "boolean", "enum": [False]},
+    },
+}
+
+
 RANKS = {name: index for index, name in enumerate(BANDS)}
 
 
@@ -88,14 +128,22 @@ def _local_model_ready(client: httpx.Client, model: str) -> bool:
 
 
 def _analyze_one(client: httpx.Client, article: dict[str, object],
-                 model: str) -> NewsMaterialityHypothesis:
+                 model: str, *, structured: bool = False) -> NewsMaterialityHypothesis:
     response = client.post(MODEL_HOST + "/api/chat", json={
         "model": model,
         "stream": False,
-        "format": "json",
+        "format": NEWS_HYPOTHESIS_OUTPUT_SCHEMA if structured else "json",
         "options": {"temperature": 0, "num_predict": 800},
         "messages": [
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": SYSTEM + (
+                "Include EVERY schema field with the exact type. Copy article_id and "
+                "text_sha256 exactly from the user input. Use exact news title/summary "
+                "substrings for entity and evidence_excerpt. If potential_magnitude is "
+                "UNASSESSED, set magnitude_basis to NOT_ASSESSED and direction to "
+                "UNCERTAIN. Otherwise use HUMAN_OR_MODEL_HYPOTHESIS_UNCALIBRATED. "
+                "All three boolean flags MUST be false. Do not emit extra keys. "
+                if structured else ""
+            )},
             {"role": "user", "content": json.dumps(
                 _request_data(article), ensure_ascii=False,
             )},

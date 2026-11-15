@@ -6,11 +6,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from test_news_materiality_local import _make_client, _model_result
 from test_news_research_worker import files
 
 from tris_market_event_intelligence.news_local_evidence_pilot import (
     _failure_code,
+    _schema_failure_field,
     audit_local_news_pilot,
 )
 from tris_market_event_intelligence.news_review_sample import (
@@ -171,3 +173,84 @@ def test_failure_codes_never_expose_raw_exception_text(
     assert result == code
     assert "secret" not in result.lower()
     assert "private" not in result.lower()
+
+
+def test_validation_field_report_uses_allowlist_only() -> None:
+    from tris_market_event_intelligence.news_materiality_hypothesis import (
+        NewsMaterialityHypothesis,
+    )
+
+    with pytest.raises(ValidationError) as failure:
+        NewsMaterialityHypothesis.model_validate({
+            "schema_version": "news_materiality_hypothesis_v1",
+            "article_id": 7,
+            "text_sha256": "f" * 64,
+            "entity": "Some Entity",
+            "event_summary": "Event appeared in the source",
+            "fact_status": "REPORTED",
+            "potential_magnitude": "HIGH",
+            "direction": "UNCERTAIN",
+            "evidence_excerpt": "Some Entity reported something",
+            "conditional_mechanism": "If verified the organizational impact may be meaningful",
+            "verification_needed": [],
+            "magnitude_basis": "HUMAN_OR_MODEL_HYPOTHESIS_UNCALIBRATED",
+            "market_prices_used": True,
+            "price_prediction": False,
+            "independent_human_gold": False,
+        })
+    assert _schema_failure_field(failure.value) == "market_prices_used"
+
+
+def test_structured_ollama_format_sent_in_pilot(tmp_path: Path) -> None:
+    cohort, sample = _inputs(tmp_path)
+    articles = json.loads(cohort.read_text())["items"]
+    indexed = {row["articleId"]: row for row in articles}
+    seen_formats = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "gemma2:latest"}]})
+        payload = json.loads(request.content)
+        seen_formats.append(payload["format"])
+        user = json.loads(payload["messages"][1]["content"])
+        article = indexed[user["article_id"]]
+        result = _model_result(article, "HIGH")
+        if "Major regulatory decision" not in article["title"]:
+            result["entity"] = "Routine local community"
+        return httpx.Response(200, json={"message": {"content": json.dumps(result)}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = audit_local_news_pilot(
+            cohort_path=cohort, sample_path=sample,
+            model_id="gemma2:latest", limit=2, run=True, client=client,
+        )
+    assert report["modelCalls"] == 2
+    assert len(seen_formats) == 2
+    assert all(isinstance(fmt, dict) for fmt in seen_formats)
+    assert all("verification_needed" in fmt["required"] for fmt in seen_formats)
+    assert all(fmt["properties"]["price_prediction"]["enum"] == [False]
+               for fmt in seen_formats)
+
+
+def test_schema_rejection_includes_safe_field_name_only(tmp_path: Path) -> None:
+    cohort, sample = _inputs(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "gemma2:latest"}]})
+        return httpx.Response(200, json={"message": {
+            "content": json.dumps({"article_id": 99, "privateNews": "secret"}),
+        }})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = audit_local_news_pilot(
+            cohort_path=cohort, sample_path=sample,
+            model_id="gemma2:latest", limit=1, run=True, client=client,
+        )
+    assert report["counts"]["MODEL_SCHEMA_INVALID"] == 1
+    assert report["items"][0]["schemaFailureField"] in {
+        "schema_version", "text_sha256", "entity", "event_summary",
+        "fact_status", "potential_magnitude", "direction", "evidence_excerpt",
+        "conditional_mechanism", "verification_needed", "magnitude_basis",
+    }
+    assert "secret" not in json.dumps(report)
