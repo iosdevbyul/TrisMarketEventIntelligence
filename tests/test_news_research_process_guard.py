@@ -145,3 +145,40 @@ def test_os_cpu_limit_terminates_busy_subprocess(tmp_path: Path) -> None:
     assert report["childExitCode"] != 0
     assert report["maxCpuSecondsHardRlimit"] == 1
     assert os.path.exists(tmp_path / "guard-status.json")
+
+
+def test_guarded_train_cv_runs_and_resumes(tmp_path: Path) -> None:
+    paths = files(tmp_path)
+    original_inputs = [p.read_bytes() for p in paths[:3]]
+    first = guarded(paths, tmp_path, research_mode="train-cv",
+                    max_iterations=2, max_cpu_seconds=15,
+                    max_wall_seconds=20, max_rss_mb=256)
+    assert first["status"] == "COMPLETED"
+    assert first["researchMode"] == "train-cv"
+    assert first["modelImprovementValidated"] is False
+    assert first["modelPromoted"] is False
+    assert first["stockPricesUsed"] is False
+    from tris_market_event_intelligence.news_train_cv_exploration import (
+        audit_train_exploration,
+    )
+    count = audit_train_exploration(paths[3])["totalExperiments"]
+    assert 0 <= count <= 2
+    second = guarded(paths, tmp_path, research_mode="train-cv",
+                     max_iterations=2, max_cpu_seconds=15,
+                     max_wall_seconds=20, max_rss_mb=256)
+    assert second["status"] == "COMPLETED"
+    assert count <= audit_train_exploration(paths[3])["totalExperiments"] <= count + 2
+    assert [p.read_bytes() for p in paths[:3]] == original_inputs
+
+
+@pytest.mark.parametrize("mode,iterations", [
+    ("invalid", 1), ("train-cv", 19),
+])
+def test_invalid_train_cv_mode_or_limit_is_rejected_before_lock(
+    tmp_path: Path, mode: str, iterations: int,
+) -> None:
+    paths = files(tmp_path)
+    with pytest.raises(ValueError):
+        guarded(paths, tmp_path, research_mode=mode, max_iterations=iterations)
+    assert not (tmp_path / "guard.lock").exists()
+    assert not (tmp_path / "guard-status.json").exists()
