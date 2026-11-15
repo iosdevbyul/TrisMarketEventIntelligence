@@ -15,7 +15,9 @@ from tris_market_event_intelligence.historical_multi_hypothesis import (
 from tris_market_event_intelligence.historical_story_review import (
     prepare_historical_story_review,
 )
-from tris_market_event_intelligence.llm_runtime import LLMExecutionError, LLMSettings
+from tris_market_event_intelligence.llm_runtime import (
+    LLMCapabilities, LLMExecutionError, LLMSettings,
+)
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 
@@ -27,6 +29,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--reviewed-lessons", type=Path)
+    parser.add_argument("--context-tokens", type=int, default=8192)
+    parser.add_argument("--output-tokens", type=int, default=3072)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
@@ -53,8 +57,20 @@ def main() -> None:
                 "promotionAllowed": False,
             }
         else:
+            if not 4096 <= args.context_tokens <= 16384:
+                raise ValueError("Invalid historical research context token budget")
+            if not 1024 <= args.output_tokens <= 4096:
+                raise ValueError("Invalid historical research output token budget")
+            original = LLMSettings.from_environment(explicit=True)
+            if original.kind != "ollama":
+                raise ValueError("This bounded historical workflow requires local Ollama")
             settings = replace(
-                LLMSettings.from_environment(explicit=True), model_id=args.model,
+                original, model_id=args.model,
+                capabilities=LLMCapabilities(
+                    json_schema=True, thinking=False,
+                    context_window=args.context_tokens,
+                    max_output_tokens=args.output_tokens,
+                ),
             )
             runtime = build_runtime(settings, confirm_model=True)
             result = research_from_scout(
@@ -80,6 +96,8 @@ def main() -> None:
             "hypotheses": len(result.get("hypotheses", [])),
             "modelCalls": result["modelCalls"],
             "trainingWeightsChanged": False,
+            "contextTokensConfigured": (args.context_tokens if args.run else None),
+            "outputTokensConfigured": (args.output_tokens if args.run else None),
             "predictionReady": False,
             "outputCreated": True,
         }, ensure_ascii=False))
@@ -102,10 +120,13 @@ def main() -> None:
                 "Missing substantive research caveats": "MODEL_EXPLANATION_INCOMPLETE",
                 "Model omitted research limitation": "MODEL_LIMITATION_INCOMPLETE",
                 "Research artifact must be a new private file": "OUTPUT_ALREADY_EXISTS_OR_UNSAFE",
+                "Invalid historical research context token budget": "CONTEXT_TOKEN_BUDGET_INVALID",
+                "Invalid historical research output token budget": "OUTPUT_TOKEN_BUDGET_INVALID",
+                "This bounded historical workflow requires local Ollama": "LOCAL_OLLAMA_REQUIRED",
             }.get(str(exc), "SOURCE_OR_CONFIG_VALIDATION_FAILED")
         else:
             reason = "SOURCE_OR_OUTPUT_IO_INVALID"
-        parser.exit(2, f"historical-multi-research: {reason}\\n")
+        parser.exit(2, f"historical-multi-research: {reason}\n")
 
 
 if __name__ == "__main__":
