@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter, defaultdict
-from datetime import UTC
 from pathlib import Path
 
 from tris_market_event_intelligence.news_importance_review import _cohort, _instant
