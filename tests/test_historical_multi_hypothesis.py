@@ -38,7 +38,12 @@ class FakeProvider:
         assert "GOOD REASONING EXAMPLE" in system
         assert schema is not None
         assert "stockReturn" not in user
-        assert len(self.seen["referencesByHeuristicCategory"]) == 5
+        assert len(self.seen["urlHintRows"]) == 4
+        assert {row[0] for row in self.seen["urlHintRows"]} == {
+            "ref-001", "ref-002", "ref-003", "ref-004"
+        }
+        assert self.seen["macroVintageAvailable"] is False
+        assert self.seen["priorOutcomeNotProvided"] is True
         evidence = ("ref-999" if self.unsupported else PRIMARY_ID)
         return json.dumps({
             "hypotheses": [
@@ -130,7 +135,7 @@ def test_human_lessons_required_and_separately_pinned(tmp_path: Path) -> None:
     )
     assert result["usedHumanReviewedLessons"] is True
     assert result["humanReviewedLessonsSha256"] == digest
-    assert provider.seen["humanReviewedMethodLessons"] == lessons
+    assert provider.seen["reviewedLessons"] == lessons
     assert result["weightTrainingPerformed"] is False
     tampered = json.loads(path.read_text())
     tampered["reviewedByHuman"] = False
@@ -148,3 +153,26 @@ def test_model_output_cannot_be_used_as_learning_memory(tmp_path: Path) -> None:
     }))
     with pytest.raises(ValueError, match="human-reviewed"):
         read_reviewed_lessons(path)
+
+
+def test_compact_model_input_contains_44_sources_without_repeating_caveats(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.historical_multi_hypothesis import (
+        _compact_model_context,
+    )
+
+    story = prepare_historical_story_review(_fixture(tmp_path))
+    source = story["references"][0]
+    while len(story["references"]) < 44:
+        next_ref = dict(source)
+        next_ref["referenceId"] = f"ref-{len(story['references']) + 1:03d}"
+        next_ref["urlDerivedHint"] = "nvidia quarterly earnings revenue outlook ai"
+        story["references"].append(next_ref)
+    context = build_research_context(story=story)
+    slim = _compact_model_context(context)
+    assert len(slim["urlHintRows"]) == 44
+    assert len({row[0] for row in slim["urlHintRows"]}) == 44
+    assert "publisherFirstPublishedAt" not in json.dumps(slim)
+    assert len(json.dumps(slim).encode()) < 12000
+    assert slim["sourceLimitations"]
