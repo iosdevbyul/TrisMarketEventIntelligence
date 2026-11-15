@@ -24,7 +24,7 @@ def local_model_preflight(
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
-        raise ValueError("Invalid local Ollama model-list response")
+        raise TypeError("Invalid local Ollama model-list response")
     installed = {
         entry["name"] for entry in payload["models"]
         if isinstance(entry, dict) and isinstance(entry.get("name"), str)
