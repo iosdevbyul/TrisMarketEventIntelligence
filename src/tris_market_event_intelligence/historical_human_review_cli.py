@@ -11,8 +11,6 @@ import json
 import os
 from pathlib import Path
 
-from tris_market_event_intelligence.historical_multi_hypothesis import read_reviewed_lessons
-
 MAX_BYTES = 100_000
 DECISIONS = {"CONFIRMED", "REJECTED", "UNCERTAIN"}
 
