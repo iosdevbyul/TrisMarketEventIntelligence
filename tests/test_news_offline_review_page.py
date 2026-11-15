@@ -28,8 +28,8 @@ def test_generates_self_contained_offline_html_without_model_calls(tmp_path: Pat
     old_bytes = sample.read_bytes()
     html = render_offline_review(cohort_path=cohort, sample_path=sample)
     assert "<!doctype html>" in html
-    assert "connect-src 'none'" in html
-    assert "img-src 'none'" in html
+    assert "connect-src &#x27;none&#x27;" in html
+    assert "img-src &#x27;none&#x27;" in html
     assert 'id="packet-data"' in html
     assert 'id="export"' in html
     assert "JSON.stringify(output" in html
