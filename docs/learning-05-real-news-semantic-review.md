@@ -52,3 +52,38 @@ event adjudication, appropriate abstention rates, broader 48-candidate
 coverage across diverse dates, repeat stability, and real Mac validation
 with newly generated outputs. Do not promote or activate a model.
 No price/return/volume/OHLCV data, investment execution or TEST scoring.
+
+## Actual same-news recheck after PR #156
+
+The operator ran the real local `gemma4:e2b` against the same two pinned
+news articles and supplied the new create-only private output
+`news-evidence-pilot-semantic-recheck-20261115.json`.
+Both still passed the **contract**, but the model did **not** demonstrate
+semantic correctness. The report explicitly flags independent accuracy and
+model improvement as unverified.
+
+- Article 336: entity Microsoft; `CONFIRMED / MODERATE / UNCERTAIN`.
+  The new mechanism now describes possible user dissatisfaction, data-loss
+  concerns, and reputational effects. These are clearly potential outcomes,
+  **not independently observed impacts**. `CONFIRMED` still risks treating
+  an attributed Microsoft restoration update as externally verified.
+- Article 410: `REPORTED / LOW / UNCERTAIN`, entity remains presenter
+  Ammie Sekhon. The model's mechanism is **exactly**
+  `No concrete conditional organizational mechanism can be inferred from
+  the sourced event.` The old validator only recognized shorter
+  `No mechanism...` prefixes; it incorrectly accepted this explicit
+  admission alongside the assessed LOW magnitude.
+
+This follow-up expands that **same deterministic missing-mechanism guard**
+to optionally qualified no/none statements such as `No concrete conditional
+organizational mechanism` and `No specific economic impact mechanism`.
+It refuses the contradictory assessed magnitude with the existing safe
+`MATERIALITY_MECHANISM_NOT_IDENTIFIED` code. It does not turn the model's
+claim into a human Gold label, silently rewrite LOW to UNASSESSED, or
+assert that subjective news importance is solved. The existing plain
+`UNASSESSED/NOT_ASSESSED/UNCERTAIN` contract still accepts valid abstention.
+
+The earlier results are kept unchanged. Broader sample diversity and
+semantic quality require actual separate research evidence, not a 2/2
+technical acceptance rate. No operational scheduler, production DB,
+TEST/holdout, investment price or auto-promotion changes.
