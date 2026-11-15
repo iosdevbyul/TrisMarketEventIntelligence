@@ -82,6 +82,9 @@ case "$action" in
   supervise)
     module="tris_market_event_intelligence.news_research_supervisor_cli"
     ;;
+  guard-research)
+    module="tris_market_event_intelligence.news_research_process_guard_cli"
+    ;;
   *)
     usage >&2
     exit 2
