@@ -110,6 +110,8 @@ def prepare_historical_story_review(path: Path) -> dict[str, object]:
         if not isinstance(refs, list) or len(refs) > 50:
             raise ValueError("Invalid archive reference count")
         for ref in refs:
+            if ref.get("gkgBatchSlotUtc") != archive["gkgSlot"]:
+                raise ValueError("GKG reference archive slot mismatch")
             url = ref["sourceUrl"]
             if not isinstance(url, str):
                 raise ValueError("Invalid source URL")
@@ -138,7 +140,7 @@ def prepare_historical_story_review(path: Path) -> dict[str, object]:
         # Exact slug fingerprint is an unambiguous hint, not event equivalence.
         normalized = " ".join(sorted(tokens))
         key = ("slug:" + hashlib.sha256(normalized.encode()).hexdigest()[:12]
-               if len(tokens) >= 4 else "unique:" + row["referenceId"])
+               if len(tokens) >= 2 else "unique:" + row["referenceId"])
         groups.setdefault(key, []).append(row["referenceId"])
     suggestions = [
         {"candidateGroupId": f"group-{i:03d}", "referenceIds": ids,
