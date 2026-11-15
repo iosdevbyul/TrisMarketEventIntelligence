@@ -47,13 +47,21 @@ def compare_gemma_news(
     *, db_path: Path, models: tuple[str, str] = MODELS,
     analyzers: tuple[NewsDirectionAnalyzer, NewsDirectionAnalyzer] | None = None,
     limit: int = 2, clock: Callable[[], float] = time.monotonic,
+    generic_models: bool = False,
 ) -> dict[str, object]:
     """Compare schema/evidence acceptance and latency on identical sourced events.
 
     This intentionally never scores semantic correctness or self-judged
     intelligence. Each event's original news text stays out of the report.
     """
-    _validate_models(models)
+    if generic_models:
+        if (type(models) is not tuple or len(models) != 2
+                or not all(isinstance(model, str) and model.strip()
+                           and len(model) <= 120 for model in models)
+                or models[0] == models[1]):
+            raise ValueError("Two distinct explicit model IDs are required")
+    else:
+        _validate_models(models)
     if type(limit) is not int or not 1 <= limit <= MAX_EVENTS:
         raise ValueError("Maximum 1..3 NEWS-only events per controlled pilot")
     if analyzers is not None and (
@@ -116,7 +124,8 @@ def compare_gemma_news(
                 counts[name][model_row["status"]] += 1
         entries.append(row)
     return {
-        "schemaVersion": "gemma4_news_side_by_side_v1",
+        "schemaVersion": ("news_llm_side_by_side_v1" if generic_models
+                          else "gemma4_news_side_by_side_v1"),
         "status": "PREVIEW_ONLY" if analyzers is None else (
             "NO_ELIGIBLE_NEWS" if not events else "COMPARISON_RECORDED_UNGRADED"
         ),
@@ -143,3 +152,15 @@ def compare_gemma_news(
             "understands the news better. Independent human review is required."
         ),
     }
+
+
+def compare_news_models(
+    *, db_path: Path, models: tuple[str, str],
+    analyzers: tuple[NewsDirectionAnalyzer, NewsDirectionAnalyzer] | None = None,
+    limit: int = 2, clock: Callable[[], float] = time.monotonic,
+) -> dict[str, object]:
+    """Generic pair using the original same-news selector and evidence validator."""
+    return compare_gemma_news(
+        db_path=db_path, models=models, analyzers=analyzers,
+        limit=limit, clock=clock, generic_models=True,
+    )
