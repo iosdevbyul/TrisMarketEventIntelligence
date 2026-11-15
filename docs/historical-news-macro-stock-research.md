@@ -244,3 +244,69 @@ create-only private JSON has the full 100/100 candidates. No model calls,
 automatic training, economic attribution or promotion occurs; news and
 macro availability can legitimately be zero on 2016-2025 shock days.
 Do not misrepresent these as 10-year complete news/macro cohorts.
+
+## Phase 3: PIT news-to-real-price observational outcome cohort (PR #172)
+
+Reuses operator-confirmed **existing** private NVDA/SPY Tiingo exports
+(`nvda-eod-2016-2026.csv`, `spy-eod-2016-2026.csv`, 2513 sessions
+reported each, first 2016-11-15 and last 2026-11-13). No new stock API
+calls, no download, and no price data committed to Git.
+
+The new `historical-price-outcomes` CLI joins **all available daily
+sessions**, not only the retrospective TOP100, to avoid automatically
+training only on outcome-selected shock dates. Each row keeps strictly
+separate:
+
+- `features`: as of **09:30 America/New_York** on the event session,
+  previous trading session's known adjusted closes, and articles first
+  observed before the cutoff in the last three days. Source URLs/capture
+  SHA and first-observed times are pinned; missing 10-year news coverage
+  is recorded as missing, not fabricated. News candidate links to the
+  issuer remain unverified.
+- `outcome`: future-labeled adjusted close-to-close stock/benchmark
+  return and benchmark-excess direction for 1/3/5 trading sessions
+  beginning at the **previous trading session's close**. These are
+  only observational outcome values, not a tradable 09:30 return:
+  the return includes premarket movement before cutoff, and end-of-day
+  values become observable only after market close. Neither label values
+  nor TOP100 selection are inserted into `features`.
+- Optional source-attested timestamped macro revision CSV uses the
+  existing `read_macro_releases` and `_context` point-in-time logic.
+  FRED *date-only* vintage JSON is not accepted as this CSV.
+
+The source file hashes, covered/missing sessions and context truncation
+are reported. The private generated JSON file is create-only mode 0600;
+source inputs and production DB remain unchanged. This is a robust
+**join and outcome-label foundation**, not a validated training corpus:
+`trainingReady=false`, `modelPredictionGenerated=false`,
+`priceVendorAuthenticityIndependentlyVerified=false`, no independent
+causal attribution and no real forecasting accuracy claim. In particular,
+a historical RSS item first captured in 2026 is never silently dated as
+known in 2016.
+
+First inspect local source coverage, without a model call or an output file:
+
+```sh
+bash scripts/news-learning-review.sh --update historical-price-outcomes \
+  --symbol NVDA --benchmark-symbol SPY \
+  --stock-csv "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-eod-2016-2026.csv" \
+  --benchmark-csv "$HOME/Library/Application Support/TrisMarketEventIntelligence/spy-eod-2016-2026.csv" \
+  --news-cohort "$HOME/Library/Application Support/TrisMarketEventIntelligence/news-cohort-20261115.json" \
+  --preview
+```
+
+Once the preview confirms source presence, run the same command without
+`--preview` and add
+`--output "$HOME/Library/Application Support/TrisMarketEventIntelligence/nvda-spy-news-price-outcomes-v1.json"`.
+Do not overwrite existing private reports.
+
+**Next logical feature after confirming the real Mac output:**
+a genuinely point-in-time company/sector news association and deduped
+story-corpus enrichment; keep unverified issuer associations and missing
+historic source timestamps out of supervised training. Then build a
+time-split sealed prediction/actual-outcome evaluation, using the above
+separated feature/outcome contract rather than copying outcome fields
+into a model prompt. Using a settlement-based label as if it were a
+09:30 executable forward return would be wrong; choose a properly
+tradable return horizon or acquire authenticated interval/open prices
+before model backtest.
