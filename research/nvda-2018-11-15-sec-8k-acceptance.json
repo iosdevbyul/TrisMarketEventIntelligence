@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "historical_sec_acceptance_evidence_v1",
+  "ticker": "NVDA",
+  "eventId": "NVDA-FY2019-Q3-2018-11-15",
+  "formType": "8-K",
+  "secAccession": "0001045810-18-000148",
+  "secFilingIndex": "https://www.sec.gov/Archives/edgar/data/1045810/0001045810-18-000148-index.htm",
+  "secExhibit99_1": "https://www.sec.gov/Archives/edgar/data/1045810/000104581018000148/q3fy19pr.htm",
+  "form8kAcceptedEastern": "2018-11-15T16:21:48-05:00",
+  "acceptanceTimeEvidence": "SEC_EDGAR_ACCEPTED",
+  "issuer": "NVIDIA CORP",
+  "sourceDocumentType": "EX-99.1",
+  "exhibitAttachedToAcceptedFiling": true,
+  "secAcceptanceIsPublisherInitialRelease": false,
+  "secAcceptanceIsVerifiedTradableMarketAvailability": false,
+  "retrospective": true,
+  "causalPriceEffectEstablished": false,
+  "trainingGoldCreated": false
+}
