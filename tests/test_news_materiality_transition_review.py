@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from test_news_research_worker import files
 
-from tris_market_event_intelligence.news_materiality_local import (
-    _story_transitions,
-)
 from tris_market_event_intelligence.news_materiality_hypothesis import (
     NewsMaterialityHypothesis,
+)
+from tris_market_event_intelligence.news_materiality_local import (
+    _story_transitions,
 )
 from tris_market_event_intelligence.news_materiality_transition_review import (
     evaluate_transition_review,
