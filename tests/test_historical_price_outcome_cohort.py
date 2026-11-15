@@ -83,7 +83,10 @@ def test_future_news_is_excluded_instead_of_backdated(tmp_path: Path) -> None:
 def test_original_sources_unchanged_and_private_output(tmp_path: Path) -> None:
     stock, bench, macro, news = _setup(tmp_path)
     originals = [p.read_bytes() for p in (stock, bench, macro, news)]
-    report = _build(tmp_path)
+    report = build_news_price_outcome_cohort(
+        stock_csv=stock, benchmark_csv=bench, news_cohort=news,
+        macro_csv=macro, ticker="NVDA", benchmark="SPY",
+    )
     assert [p.read_bytes() for p in (stock, bench, macro, news)] == originals
     target = tmp_path / "outcomes.json"
     _private_write(target, report)
