@@ -100,6 +100,7 @@ class GemmaNewsPressureProvider:
         client: httpx.Client | None = None,
         timeout_seconds: int = 300,
         runtime: LLMProvider | None = None,
+        runtime_json_schema: bool = True,
     ) -> None:
         if not model.strip() or not 1 <= timeout_seconds <= 900:
             raise ValueError("Valid model and timeout required")
@@ -107,6 +108,7 @@ class GemmaNewsPressureProvider:
         self.client = client
         self.timeout_seconds = timeout_seconds
         self.runtime = runtime
+        self.runtime_json_schema = runtime_json_schema
 
     def analyze(
         self, event: EventInput, impact: Impact, *,
@@ -174,7 +176,7 @@ class GemmaNewsPressureProvider:
                     raw = self.runtime.generate_json(
                         system=SYSTEM,
                         user=payload["messages"][1]["content"],
-                        schema=payload["format"],
+                        schema=payload["format"] if self.runtime_json_schema else None,
                     )
                 else:
                     assert client is not None
