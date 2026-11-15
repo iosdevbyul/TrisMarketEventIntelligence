@@ -37,6 +37,8 @@ usage() {
   echo "  bash scripts/news-learning-review.sh [--update] learning-readiness --cohort FILE --holdout FILE --review FILE [--manifest FILE --journal SQLITE --usage-ledger SQLITE]"
   echo "  bash scripts/news-learning-review.sh [--update] mac-inventory [--data-dir PRIVATE_DIR]"
   echo "  bash scripts/news-learning-review.sh [--update] review-sample --cohort FILE --max-selected 48 --output PRIVATE_JSON"
+  echo "  bash scripts/news-learning-review.sh [--update] review-bridge --audit --cohort FILE --sample HUMAN_EDITED --importance-template FILE --materiality-template FILE"
+  echo "  bash scripts/news-learning-review.sh review-bridge --apply --cohort FILE --sample HUMAN_EDITED --importance-template FILE --materiality-template FILE --importance-output NEW_JSON --materiality-output NEW_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] materiality --prepare --cohort FILE --output HUMAN_TEMPLATE_JSON"
   echo "  bash scripts/news-learning-review.sh materiality --evaluate --cohort FILE --holdout FILE --review HUMAN_JSON --predictions MODEL_JSON --output EVALUATION_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] candidate-lock --lock --cohort FILE --holdout FILE --review FILE --journal SQLITE --manifest PRIVATE_JSON"
@@ -136,6 +138,9 @@ case "$action" in
     ;;
   materiality)
     module="tris_market_event_intelligence.news_materiality_review_cli"
+    ;;
+  review-bridge)
+    module="tris_market_event_intelligence.news_review_sample_bridge_cli"
     ;;
   review-sample)
     module="tris_market_event_intelligence.news_review_sample_cli"
