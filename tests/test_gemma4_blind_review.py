@@ -120,6 +120,9 @@ def test_assignment_can_be_reversed_without_rewriting_model_response(
 def test_review_requires_real_human_input_not_inferred_gold(monkeypatch, tmp_path: Path):
     packet, _, _, _ = generate(monkeypatch, tmp_path)
     empty = prepare_blind_judgments(packet)
+    with pytest.raises(ValueError, match="completion"):
+        audit_blind_judgments(packet, empty, reviewer="reviewer-1")
+    empty["humanReviewCompleted"] = True
     with pytest.raises(ValueError, match="grade"):
         audit_blind_judgments(packet, empty, reviewer="reviewer-1")
     reviewed = complete(packet)
