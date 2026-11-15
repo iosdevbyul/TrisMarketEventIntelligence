@@ -76,7 +76,7 @@ def tiingo_eod(
         try:
             raw_date = row["date"]
             if not isinstance(raw_date, str):
-                raise ValueError("invalid date")
+                raise TypeError("invalid date")
             day = date.fromisoformat(raw_date[:10])
             price = float(row["adjClose"])
             volume = row["volume"]
@@ -152,7 +152,7 @@ def fred_revision_archive(
             last_known_date = date.fromisoformat(row["realtime_end"])
             value_text = row["value"]
             if not isinstance(value_text, str):
-                raise ValueError("invalid value")
+                raise TypeError("invalid value")
             if value_text == ".":
                 continue
             value = float(value_text)
