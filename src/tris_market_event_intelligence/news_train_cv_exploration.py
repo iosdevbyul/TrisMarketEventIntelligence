@@ -10,10 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import sqlite3
-from collections import Counter
 from contextlib import closing
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 
 from tris_market_event_intelligence.news_importance_evaluation import _metrics
@@ -57,7 +56,7 @@ def _features(words: list[str], *, mode: str, token_limit: int) -> list[str]:
     if mode == "UNIGRAM":
         return tokens
     return tokens + [
-        f"{a}~{b}" for a, b in zip(tokens, tokens[1:], strict=False)
+        f"{a}~{b}" for a, b in pairwise(tokens)
     ]
 
 
