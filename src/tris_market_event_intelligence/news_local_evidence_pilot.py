@@ -13,11 +13,11 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
+from tris_market_event_intelligence.news_importance_review import _cohort
 from tris_market_event_intelligence.news_materiality_local import (
     _analyze_one,
     _local_model_ready,
 )
-from tris_market_event_intelligence.news_importance_review import _cohort
 from tris_market_event_intelligence.news_offline_review_page import (
     _verify_pinned_sample,
 )
