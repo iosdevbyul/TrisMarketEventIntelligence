@@ -9,7 +9,7 @@ import csv
 import hashlib
 import json
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from math import isfinite
 from pathlib import Path
