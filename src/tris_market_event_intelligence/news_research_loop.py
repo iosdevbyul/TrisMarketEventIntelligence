@@ -11,9 +11,9 @@ import math
 import os
 import sqlite3
 import time
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event
-from collections.abc import Callable
 
 from tris_market_event_intelligence.news_research_worker import research_news_once
 
