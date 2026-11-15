@@ -37,6 +37,8 @@ def inspect_news_learning_readiness(
         raise ValueError("Candidate lock and journal must be provided together")
     if usage_ledger_path is not None and lock_path is None:
         raise ValueError("TEST ledger audit requires a pinned candidate lock")
+    if journal_path is not None and (journal_path.is_symlink() or not journal_path.is_file()):
+        raise ValueError("Existing ordinary research journal required for read-only readiness")
     train, _protected_validation, hashes = _validate_inputs(
         cohort_path, plan_path, review_path,
     )
