@@ -59,9 +59,6 @@ def build_candidate_artifact(
     ):
         raise ValueError("Completed research record and immutable inputs do not match")
     alpha = record[4]
-    fingerprint = _canonical({
-        **hashes, "algorithm": "multinomial_naive_bayes_v1", "alpha": alpha,
-    })
     # Existing research journal IDs were generated from json.dumps(sort_keys=True)
     # using default spacing, not our artifact serialization.
     existing_fingerprint = json.dumps({
