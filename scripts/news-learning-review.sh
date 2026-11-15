@@ -23,6 +23,7 @@ usage() {
   echo "  bash scripts/news-learning-review.sh supervise --status --status-file FILE"
   echo "  bash scripts/news-learning-review.sh [--update] guard-research --run --cohort FILE --holdout FILE --review FILE --journal SQLITE --status-file FILE --lock-file FILE"
   echo "  bash scripts/news-learning-review.sh guard-research --status --status-file FILE"
+  echo "  bash scripts/news-learning-review.sh [--update] gemma-compare --preview|--preflight|--run [--gemma4 gemma4:e4b] [--limit 2] [--output FILE]"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
@@ -84,6 +85,9 @@ case "$action" in
     ;;
   guard-research)
     module="tris_market_event_intelligence.news_research_process_guard_cli"
+    ;;
+  gemma-compare)
+    module="tris_market_event_intelligence.gemma4_news_comparison_cli"
     ;;
   *)
     usage >&2
