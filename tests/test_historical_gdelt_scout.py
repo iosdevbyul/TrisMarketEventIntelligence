@@ -21,7 +21,7 @@ def _study(tmp_path: Path) -> Path:
     report = build_historical_shock_research(
         symbol="NVDA", benchmark_symbol="SPY", stock_path=stock,
         benchmark_path=benchmark, news_cohort_path=news,
-        top=100 if False else 2, controls=2,
+        top=2, controls=2,
     )
     # Keep production research contract (exact 100 shock rows) for scout.
     # Unit-fixture has 44 candidate sessions; pad only fixture with unique
