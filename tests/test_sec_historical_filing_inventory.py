@@ -252,7 +252,7 @@ def test_wrong_company_or_malformed_sec_cik_fails_closed() -> None:
 def test_missing_filings_schema_has_distinct_safe_code() -> None:
     source = _main()
     source["filings"] = None
-    with pytest.raises(ValueError, match="SEC_FILINGS_SCHEMA_INVALID"):
+    with pytest.raises(TypeError, match="SEC_FILINGS_SCHEMA_INVALID"):
         build_sec_filing_inventory(
             main=source, main_sha="a" * 64, histories=[],
             start=date(2017, 1, 1), end=date(2026, 11, 16),
