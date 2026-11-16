@@ -241,10 +241,36 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         article_id: group.eventId
         for group in groups for article_id in group.articleIds
     }
-    if {x.articleId for x in answer.eventStages} != set(articles):
-        raise ValueError("NEWS_TEST_STAGE_COVERAGE_INVALID")
-    if len(answer.eventStages) != len(articles):
-        raise ValueError("NEWS_TEST_DUPLICATE_STAGE_INVALID")
+    # A model can assign two contradictory stages to the same article.
+    # Never choose a winner, invent a missing stage, or label this chain
+    # fully validated. Isolate all ambiguous/unknown stage proposals and
+    # continue independently validating the article links and stock impacts.
+    proposals: dict[str, list[EventStage]] = {}
+    rejected_stages: list[dict] = []
+    for proposal in answer.eventStages:
+        if proposal.articleId not in articles:
+            rejected_stages.append({
+                "articleId": proposal.articleId,
+                "stage": proposal.stage,
+                "reason": "UNKNOWN_ARTICLE",
+            })
+        else:
+            proposals.setdefault(proposal.articleId, []).append(proposal)
+    valid_stages: list[dict] = []
+    unresolved_ids: list[str] = []
+    for article in case.articles:
+        offered = proposals.get(article.articleId, [])
+        if len(offered) == 1:
+            valid_stages.append(offered[0].model_dump())
+        else:
+            unresolved_ids.append(article.articleId)
+            for proposal in offered:
+                rejected_stages.append({
+                    "articleId": article.articleId,
+                    "stage": proposal.stage,
+                    "reason": "DUPLICATE_OR_AMBIGUOUS_STAGE",
+                })
+    stages_complete = not unresolved_ids and not rejected_stages
     # Article clustering is the model's substantive result; never discard a
     # complete impact answer because a small model reversed a link or
     # included an unverified cross-group edge. Quarantine invalid edges.
@@ -335,7 +361,10 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         result_impacts.append(entry)
     return {
         "eventGroups": [g.model_dump() for g in groups],
-        "eventStages": [s.model_dump() for s in answer.eventStages],
+        "eventStages": valid_stages,
+        "rejectedEventStages": rejected_stages,
+        "unresolvedStageArticleIds": unresolved_ids,
+        "eventStageCoverageComplete": stages_complete,
         "eventLinks": valid_links,
         "rejectedEventLinks": rejected_links,
         "impacts": result_impacts,
@@ -477,16 +506,19 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         "revisedSourceArticleIds": revised_source_ids,
         "historicalBenchmarkEligible": False if (
             revised_source_ids or case.skippedSources
+            or not reviewed["eventStageCoverageComplete"]
         ) else None,
         "status": (
-            "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
+            "NEWS_EVENT_STAGES_INCOMPLETE_REQUIRES_REVIEW"
+            if not reviewed["eventStageCoverageComplete"]
+            else "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
             if reviewed["impacts"] else "BLIND_NEWS_ABSTAINED"
         ),
         "modelId": provider.model_id,
         "modelCalls": call_count,
         "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
-        "promptVersion": "historical-news-impact-v3-contract-retry",
+        "promptVersion": "historical-news-impact-v4-stage-quarantine",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -616,6 +648,9 @@ def main() -> None:
             "skippedSources": report["skippedSources"],
             "historicalBenchmarkEligible": report["historicalBenchmarkEligible"],
             "eventResults": report["eventGroups"],
+            "eventStageCoverageComplete": report["eventStageCoverageComplete"],
+            "unresolvedStageArticleIds": report["unresolvedStageArticleIds"],
+            "rejectedEventStages": report["rejectedEventStages"],
             "impactResults": [
                 {
                     "targetType": row["targetType"],

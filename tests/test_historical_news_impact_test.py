@@ -467,40 +467,74 @@ def test_valid_range_retains_single_model_call() -> None:
     assert report["modelCalls"] == 1
 
 
-def test_duplicate_event_stage_recovers_only_through_model_regeneration() -> None:
-    case = cli.CaseInput.model_validate(sample_case())
-    duplicate = answer(case)
-    duplicate["eventStages"].append({
-        "articleId": "a2", "stage": "REACTION",
-    })
-    regenerated = answer(case)
-    provider = RangeRetryProvider([duplicate, regenerated])
-    result = cli.run_case(case, provider)
-    assert provider.calls == 2
-    assert result["modelContractRetryReason"] == "NEWS_TEST_DUPLICATE_STAGE_INVALID"
-    assert result["rangeSchemaRetryUsed"] is False
-    assert result["modelCalls"] == 2
-    assert result["eventStages"] == regenerated["eventStages"]
-    correction = provider.requests[1]["correctionContext"]
-    assert correction["validArticleIds"] == ["a1", "a2"]
-    assert correction["problem"] == {
-        "validationCode": "NEWS_TEST_DUPLICATE_STAGE_INVALID",
-    }
-    assert provider.requests[0]["articles"] == provider.requests[1]["articles"]
-    assert provider.requests[0]["sourceQuoteAnchors"] == provider.requests[1]["sourceQuoteAnchors"]
-    assert "futureStockReturn" not in json.dumps(provider.requests[1])
-
-
-def test_persistent_duplicate_stage_is_rejected_after_two_calls() -> None:
+def test_duplicate_event_stages_are_quarantined_without_second_model_call() -> None:
     case = cli.CaseInput.model_validate(sample_case())
     duplicate = answer(case)
     duplicate["eventStages"].append({
         "articleId": "a2", "stage": "REACTION",
     })
     provider = RangeRetryProvider([duplicate])
-    with pytest.raises(ValueError, match="NEWS_TEST_DUPLICATE_STAGE_INVALID"):
-        cli.run_case(case, provider)
-    assert provider.calls == 2
+    report = cli.run_case(case, provider)
+    assert provider.calls == 1
+    assert report["modelCalls"] == 1
+    assert report["eventStageCoverageComplete"] is False
+    assert report["status"] == "NEWS_EVENT_STAGES_INCOMPLETE_REQUIRES_REVIEW"
+    assert report["historicalBenchmarkEligible"] is False
+    assert report["unresolvedStageArticleIds"] == ["a2"]
+    assert report["eventStages"] == [
+        {"articleId": "a1", "stage": "INITIAL_REPORT"},
+    ]
+    assert report["rejectedEventStages"] == [
+        {"articleId": "a2", "stage": "NEW_FACT",
+         "reason": "DUPLICATE_OR_AMBIGUOUS_STAGE"},
+        {"articleId": "a2", "stage": "REACTION",
+         "reason": "DUPLICATE_OR_AMBIGUOUS_STAGE"},
+    ]
+    assert len(report["impacts"]) == 2
+    assert report["marketPricesRead"] is False
+    assert report["accuracyVerified"] is False
+    assert report["trainingReady"] is False
+    assert report["promotionAllowed"] is False
+
+
+def test_duplicate_event_stages_never_pick_a_winner_even_when_identical() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    duplicate = answer(case)
+    duplicate["eventStages"].append({
+        "articleId": "a2", "stage": "NEW_FACT",
+    })
+    report = cli.run_case(case, RangeRetryProvider([duplicate]))
+    assert report["unresolvedStageArticleIds"] == ["a2"]
+    assert not any(s["articleId"] == "a2" for s in report["eventStages"])
+    assert len(report["rejectedEventStages"]) == 2
+    assert report["eventStageCoverageComplete"] is False
+
+
+def test_unknown_stage_article_is_rejected_without_false_complete_status() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    malformed = answer(case)
+    malformed["eventStages"].append({
+        "articleId": "unseen", "stage": "OFFICIAL_ACTION",
+    })
+    report = cli.run_case(case, RangeRetryProvider([malformed]))
+    assert report["eventStageCoverageComplete"] is False
+    assert report["rejectedEventStages"] == [{
+        "articleId": "unseen", "stage": "OFFICIAL_ACTION",
+        "reason": "UNKNOWN_ARTICLE",
+    }]
+    assert report["unresolvedStageArticleIds"] == []
+    assert report["historicalBenchmarkEligible"] is False
+    assert report["status"] == "NEWS_EVENT_STAGES_INCOMPLETE_REQUIRES_REVIEW"
+
+
+def test_complete_event_stages_are_unchanged_and_eligible_for_regular_review() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    report = cli.run_case(case, RangeRetryProvider([answer(case)]))
+    assert report["eventStageCoverageComplete"] is True
+    assert report["rejectedEventStages"] == []
+    assert report["unresolvedStageArticleIds"] == []
+    assert report["eventStages"] == answer(case)["eventStages"]
+    assert report["status"] == "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
 
 
 def test_invalid_quote_relations_regenerate_not_auto_rewritten() -> None:
