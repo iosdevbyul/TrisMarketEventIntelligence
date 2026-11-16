@@ -5,6 +5,7 @@ import copy
 from pathlib import Path
 
 import pytest
+from test_sec_primary_semantic_review import _packet, _Provider
 
 from tris_market_event_intelligence.sec_claim_evidence_review_cli import (
     build_claim_review,
@@ -13,7 +14,6 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     prepare_primary_cases,
     run_semantic_research,
 )
-from test_sec_primary_semantic_review import _packet, _Provider
 
 
 def _inputs(tmp_path: Path) -> tuple[dict, list[tuple[dict, str]]]:
