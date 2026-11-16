@@ -186,10 +186,6 @@ def test_invalid_timing_and_identity_rejected(mutation: object) -> None:
 
 @pytest.mark.parametrize("mutate", [
     lambda result: result["eventGroups"][0].update({"articleIds": ["a1"]}),
-    lambda result: result["eventLinks"][0].update(
-        {"earlierArticleId": "a2", "laterArticleId": "a1"}
-    ),
-    lambda result: result["eventLinks"][0].update({"laterArticleId": "made-up"}),
     lambda result: result["impacts"][0].update({"evidenceQuoteIds": ["bad:q0"]}),
     lambda result: result["impacts"][0].update({"ticker": "FAKE"}),
     lambda result: result["impacts"][0].update({"companyName": "Other Company"}),
@@ -300,3 +296,18 @@ def test_source_ticker_proposal_marked_unverified_if_absent() -> None:
     report = cli.run_case(case, FakeProvider(answer(case)))
     stock = report["impacts"][0]
     assert stock["tickerProvenance"] == "UNVERIFIED_MODEL_PROPOSAL"
+
+def test_reversed_or_fabricated_event_links_are_quarantined_not_fatal() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    for change, expected in (
+        ({"earlierArticleId": "a2", "laterArticleId": "a1"}, "REVERSED_CHRONOLOGY"),
+        ({"laterArticleId": "made-up"}, "UNKNOWN_ARTICLE"),
+    ):
+        result = answer(case)
+        result["eventLinks"][0].update(change)
+        report = cli.run_case(case, FakeProvider(result))
+        assert report["status"] == "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
+        assert len(report["eventGroups"]) == 1
+        assert report["eventLinks"] == []
+        assert report["rejectedEventLinks"][0]["reason"] == expected
+        assert len(report["impacts"]) == 2

@@ -1,0 +1,130 @@
+"""Source-page fetch contract: no summaries, invented dates or price leakage."""
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+
+import httpx
+import pytest
+
+from tris_market_event_intelligence import historical_news_impact_test_cli as cli
+from tris_market_event_intelligence import historical_news_url_collector as fetcher
+
+URLS = [
+    "https://techcrunch.com/2026/11/08/nvidia-says-its-investigating-ceo-jensen-huangs-relationship-with-possible-chinese-spy/",
+    "https://www.axios.com/2026/11/08/nvidia-ceo-jensen-huang-admits-affair-board-to-launch-investigation",
+]
+AS_OF = "2026-11-09T03:00:00Z"
+
+
+def html(*, published: str = "2026-11-08T21:00:00Z",
+         modified: str = "2026-11-08T21:00:00Z") -> str:
+    paragraph = (
+        "Nvidia announced its own independent board investigation into "
+        "media reports and allegations concerning its chief executive "
+        "and a possible intelligence operation involving a business partner."
+    )
+    return (
+        '<html><head><meta property="article:published_time" content="' + published + '"/>'
+        '<meta property="article:modified_time" content="' + modified + '"/>'
+        '<meta property="og:title" content="Nvidia board opens independent investigation"/>'
+        '</head><body><article>'
+        '<p>' + paragraph + '</p>'
+        '<p>Company leadership acknowledged questions surrounding the allegations. '
+        'The board said it was examining its obligations under the circumstances.</p>'
+        '<p>The inquiry will review reports, seek independent advice, and '
+        'determine whether further action is necessary.</p>'
+        '</article></body></html>'
+    )
+
+
+def _mock_session(*, published: str = "2026-11-08T21:00:00Z",
+                  modified: str = "2026-11-08T21:00:00Z") -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text=html(published=published, modified=modified),
+        )
+    return httpx.Client(transport=httpx.MockTransport(handler), trust_env=False)
+
+
+def test_original_url_fetch_builds_model_input_without_hand_authored_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+    with _mock_session() as session:
+        packet = fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="nvda-event-2026-11-08",
+            horizon=1, client=session,
+        )
+    assert len(packet["articles"]) == 2
+    assert all("independent board investigation" in item["body"] for item in packet["articles"])
+    assert all(item["publishedAt"] == datetime(2026, 11, 8, 21, tzinfo=UTC).isoformat()
+               for item in packet["articles"])
+    assert packet["knownTickers"] == []
+    case = cli.CaseInput.model_validate(packet)
+    assert cli.prepare_case(case)["articleCount"] == 2
+    assert cli.prepare_case(case)["quoteAnchorCount"] >= 4
+
+
+@pytest.mark.parametrize(("pub", "mod", "error"), [
+    ("2026-11-09T04:00:00Z", "2026-11-09T04:00:00Z",
+     "NEWS_URL_ARTICLE_AFTER_CUTOFF"),
+    ("2026-11-08T21:00:00Z", "2026-11-10T10:00:00Z",
+     "NEWS_URL_REVISED_AFTER_CUTOFF"),
+])
+def test_future_publication_and_post_cutoff_revisions_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, pub: str, mod: str, error: str,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+    with (
+        _mock_session(published=pub, modified=mod) as session,
+        pytest.raises(ValueError, match=error),
+    ):
+        fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="nvda-test", horizon=1,
+            client=session,
+        )
+
+
+def test_missing_publication_clock_is_not_fabricated() -> None:
+    html_text = html().replace('property="article:published_time"', 'property="misc"')
+    with pytest.raises(ValueError, match="NEWS_URL_PUBLICATION_TIME_MISSING"):
+        fetcher.parse_article(html_text.encode(), URLS[0], AS_OF, "a1")
+
+
+def test_paywall_or_navigation_is_not_substituted_with_summary() -> None:
+    html_text = (
+        '<html><head><meta property="article:published_time" '
+        'content="2026-11-08T21:00:00Z"/></head>'
+        '<body><h1>Subscribe to read</h1><p>Register now.</p></body></html>'
+    )
+    with pytest.raises(ValueError, match="NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE"):
+        fetcher.parse_article(html_text.encode(), URLS[0], AS_OF, "a1")
+
+
+def test_url_policy_blocks_unknown_and_local_network() -> None:
+    for url in (
+        "http://techcrunch.com/2026/11/08/article",
+        "https://127.0.0.1/admin",
+        "https://evil.example/article",
+        "https://techcrunch.com:444/article",
+    ):
+        with pytest.raises(ValueError, match="NEWS_URL_NOT_ALLOWED"):
+            fetcher._url(url)
+
+
+def test_article_metadata_jsonld_supported() -> None:
+    html_text = html()
+    html_text = html_text.replace('property="article:published_time"', 'property="unused"')
+    payload = {
+        "@context": "https://schema.org", "@type": "NewsArticle",
+        "datePublished": "2026-11-08T21:00:00Z",
+    }
+    html_text = html_text.replace(
+        "</head>",
+        '<script type="application/ld+json">' + json.dumps(payload) + '</script></head>',
+    )
+    result = fetcher.parse_article(html_text.encode(), URLS[0], AS_OF, "a1")
+    assert "independent board investigation" in result["body"]
