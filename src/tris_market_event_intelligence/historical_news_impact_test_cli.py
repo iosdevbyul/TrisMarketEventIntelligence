@@ -21,6 +21,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
+from tris_market_event_intelligence.historical_news_url_collector import collect_urls
 from tris_market_event_intelligence.llm_runtime import (
     LLMCapabilities,
     LLMExecutionError,
@@ -28,7 +29,6 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
-from tris_market_event_intelligence.historical_news_url_collector import collect_urls
 
 VERSION = "historical_news_impact_test_v1"
 MAX_INPUT_BYTES = 40000
