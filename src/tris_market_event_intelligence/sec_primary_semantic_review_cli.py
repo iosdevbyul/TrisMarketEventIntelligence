@@ -18,6 +18,12 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     prepare_primary_cases,
 )
 from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
+from tris_market_event_intelligence.sec_semantic_evidence_gate import (
+    ABSTENTION_SUMMARY,
+    INSUFFICIENT,
+    SUBSTANTIVE,
+    source_evidence_status,
+)
 
 MAX_REPORT_BYTES = 900_000
 SHA = re.compile(r"[a-f0-9]{64}\Z")
@@ -56,6 +62,7 @@ def build_review_packet(
                 or not report["modelId"]):
             raise ValueError("SEC_SEMANTIC_REVIEW_REPORT_PROVENANCE_INVALID")
         corrections = 0
+        abstained = 0
         for item in report["cases"]:
             if not isinstance(item, dict):
                 raise TypeError("SEC_SEMANTIC_REVIEW_CASE_INVALID")
@@ -69,13 +76,33 @@ def build_review_packet(
                     or not isinstance(item.get("hypothesesCorrectionAttempted"), bool)
                     or ("caseIndex" in item and item["caseIndex"] != index)):
                 raise ValueError("SEC_SEMANTIC_REVIEW_CASE_PROVENANCE_INVALID")
-            validated = _validate_response(
-                case, json.dumps(item.get("interpretation"), ensure_ascii=False),
-            )
+            analysis_status = item.get("analysisStatus")
+            gated = report.get("evidenceGateVersion") == "sec_substantive_evidence_v1"
+            if analysis_status == INSUFFICIENT and gated:
+                if (source_evidence_status(case["evidence"][0]["text"]) != INSUFFICIENT
+                        or item.get("quoteAnchorSelectionApplied") is not False
+                        or item["hypothesesCorrectionAttempted"] is not False
+                        or item.get("interpretation") != {
+                            "observations": [], "hypotheses": [],
+                            "summary": ABSTENTION_SUMMARY,
+                        }):
+                    raise ValueError("SEC_SEMANTIC_ABSTENTION_PROVENANCE_INVALID")
+                validated = item["interpretation"]
+                abstained += 1
+            else:
+                if analysis_status is not None and (
+                    not gated or analysis_status != SUBSTANTIVE
+                    or source_evidence_status(case["evidence"][0]["text"]) != SUBSTANTIVE
+                ):
+                    raise ValueError("SEC_SEMANTIC_ANALYSIS_STATUS_INVALID")
+                validated = _validate_response(
+                    case, json.dumps(item.get("interpretation"), ensure_ascii=False),
+                )
             seen.add(acc)
             corrections += int(item["hypothesesCorrectionAttempted"])
             entries.append({
                 "caseIndex": index,
+                **({"analysisStatus": analysis_status} if gated else {}),
                 "accession": acc,
                 "form": case["form"],
                 "filingDate": case["filingDate"],
@@ -108,7 +135,11 @@ def build_review_packet(
             })
         if report.get("hypothesesCorrectionCount") != corrections:
             raise ValueError("SEC_SEMANTIC_REVIEW_CORRECTION_COUNT_INVALID")
-        if report.get("modelCalls") != len(report["cases"]) + corrections:
+        if gated and report.get("casesAbstained") != abstained:
+            raise ValueError("SEC_SEMANTIC_ABSTENTION_COUNT_INVALID")
+        if (not gated and ("casesAbstained" in report or "evidenceGateVersion" in report)):
+            raise ValueError("SEC_SEMANTIC_REVIEW_GATE_VERSION_INVALID")
+        if report.get("modelCalls") != len(report["cases"]) - abstained + corrections:
             raise ValueError("SEC_SEMANTIC_REVIEW_MODEL_CALL_COUNT_INVALID")
         model_calls += report["modelCalls"]
     entries.sort(key=lambda row: row["caseIndex"])
