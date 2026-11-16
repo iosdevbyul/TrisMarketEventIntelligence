@@ -132,7 +132,7 @@ def _valid_company_cik(value: object) -> bool:
     if type(value) is int:
         return value == int(CIK)
     if isinstance(value, str):
-        return bool(re.fullmatch(r"\\d{1,10}", value)) and int(value) == int(CIK)
+        return bool(re.fullmatch(r"\d{1,10}", value)) and int(value) == int(CIK)
     return False
 
 
