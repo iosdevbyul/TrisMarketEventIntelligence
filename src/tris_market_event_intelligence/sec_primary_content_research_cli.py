@@ -20,10 +20,13 @@ import httpx
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.sec_publication_evidence_capture_cli import (
-    _read_cohort, _validate_cohort, _verify_index,
+    _read_cohort,
+    _validate_cohort,
+    _verify_index,
 )
 from tris_market_event_intelligence.sec_source_lineage_audit_cli import (
-    MAX_REPORT_BYTES, _read_json,
+    MAX_REPORT_BYTES,
+    _read_json,
 )
 
 MAX_PRIMARY_BYTES = 8_000_000
@@ -33,7 +36,7 @@ MAX_EXCERPT = 1100
 ACC = re.compile(r"\d{10}-\d{2}-\d{6}\Z")
 SHA = re.compile(r"[a-f0-9]{64}\Z")
 SAFE_FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,110}\Z")
-ITEM = re.compile(r"\bItem\s+(?:1\.01|1\.02|2\.02|5\.02|7\.01|8\.01|9\.01)\b", re.I)
+ITEM = re.compile(r"\bItem\s+(?:1\.01|1\.02|2\.02|5\.02|7\.01|8\.01|9\.01)\b", re.IGNORECASE)
 DOCTYPE = frozenset({"8-K", "10-Q", "10-K"})
 
 
