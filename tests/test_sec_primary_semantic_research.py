@@ -65,7 +65,6 @@ def _original_packet(directory: Path) -> dict:
 
 
 def _response(case: dict) -> dict:
-    excerpt = case["evidence"][0]["text"]
     return {
         "accession": ACC,
         "source_sha256": SHA,
