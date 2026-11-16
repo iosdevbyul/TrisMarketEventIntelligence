@@ -159,3 +159,7 @@ For a valid blind historical market-impact backtest, obtain immutable original
 versions verifiably published by the chosen cutoff (e.g. archived snapshots).
 Never raise the as-of cutoff just to suppress a revision error and then claim
 the response was a prediction made before the market response.
+
+## Publisher HTML body extraction
+
+Original publisher HTML can place the story in an article tag, a Wordpress post-content div, a story-body/content div, or main; the collector now scans those content containers while filtering navigation, recommendation, paywall, advertisement and sidebar blocks. A populated NewsArticle.articleBody embedded by the publisher in JSON-LD is also accepted as a source-body fallback. Summaries or structured-data descriptions are NOT substituted for the article. If the substantive body cannot be recovered, the operation still fails with NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE and the failing article index and publisher domain. Live publisher access is validated by the user's real URL test, not mocked CI HTML alone.

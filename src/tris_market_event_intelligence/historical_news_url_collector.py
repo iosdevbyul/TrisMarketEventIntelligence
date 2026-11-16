@@ -85,20 +85,70 @@ def _public_dns(url: str) -> None:
         raise ValueError("NEWS_URL_PRIVATE_NETWORK_BLOCKED")
 
 
+CONTENT_MARKERS = (
+    "article-body", "article__body", "article-content", "article__content",
+    "articlebody", "story-body", "story__body", "story-content",
+    "entry-content", "post-content", "wp-block-post-content",
+    "rich-text", "richtext", "body-content", "content-body",
+)
+EXCLUDED_MARKERS = (
+    "related", "recommend", "newsletter", "sidebar", "advert", "promo",
+    "subscribe", "paywall", "footer", "comments", "social-share",
+    "share-tools", "most-popular", "trending", "disclaimer",
+)
+VOID_TAGS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
+
+
 class ArticleHTML(HTMLParser):
+    """Collect source paragraphs within publisher-defined content containers.
+
+    Live publishers use div/main blocks as well as semantic article tags.
+    Explicitly exclude sidebars, recommendations and site-navigation text.
+    """
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.meta: dict[str, str] = {}
         self.title: list[str] = []
         self.in_title = False
-        self.article_depth = 0
-        self.depth = 0
-        self.p_depth = 0
+        self.stack: list[tuple[str, dict[str, str | None]]] = []
+        self.active_p_depth: int | None = None
+        self.active_p_scope = ""
         self.pieces: list[str] = []
-        self.paragraphs: list[str] = []
+        self.paragraphs_by_scope: dict[str, list[str]] = {
+            "article": [], "content": [], "main": [],
+        }
         self.ld_mode = False
         self.ld_scripts: list[str] = []
         self.ld_current: list[str] = []
+
+    @staticmethod
+    def _descriptor(attrs: dict[str, str | None]) -> str:
+        return " ".join(
+            str(attrs.get(key) or "").lower()
+            for key in ("class", "id", "itemprop", "data-testid", "data-component")
+        )
+
+    def _scope(self) -> str:
+        for tag, attrs in self.stack:
+            hint = self._descriptor(attrs)
+            if tag in {"nav", "aside", "footer", "form"} or any(
+                marker in hint for marker in EXCLUDED_MARKERS
+            ):
+                return ""
+        if any(
+            any(marker in self._descriptor(attrs) for marker in CONTENT_MARKERS)
+            for _, attrs in self.stack
+        ):
+            return "content"
+        if any(tag == "article" for tag, _ in self.stack):
+            return "article"
+        if any(tag == "main" for tag, _ in self.stack):
+            return "main"
+        return ""
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = dict(attrs)
@@ -112,13 +162,17 @@ class ArticleHTML(HTMLParser):
         if tag == "script" and a.get("type") == "application/ld+json":
             self.ld_mode = True
             self.ld_current = []
-        if tag == "article" and not self.article_depth:
-            self.article_depth = self.depth + 1
-        if tag == "p" and self.article_depth and not self.p_depth:
-            self.p_depth = self.depth + 1
-            self.pieces = []
-        if tag not in {"meta", "link", "img", "br", "hr", "input", "source", "wbr"}:
-            self.depth += 1
+        if tag == "br" and self.active_p_depth is not None:
+            self.pieces.append(" ")
+        if tag in VOID_TAGS:
+            return
+        if tag == "p" and self.active_p_depth is None:
+            scope = self._scope()
+            if scope:
+                self.active_p_depth = len(self.stack) + 1
+                self.active_p_scope = scope
+                self.pieces = []
+        self.stack.append((tag, a))
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
@@ -126,25 +180,40 @@ class ArticleHTML(HTMLParser):
         if tag == "script" and self.ld_mode:
             self.ld_scripts.append("".join(self.ld_current))
             self.ld_mode = False
-        if tag == "p" and self.p_depth:
+        if not self.stack:
+            return
+        matching = next(
+            (i for i in range(len(self.stack) - 1, -1, -1)
+             if self.stack[i][0] == tag),
+            None,
+        )
+        if matching is None:
+            return
+        if self.active_p_depth is not None and matching < self.active_p_depth:
             value = " ".join("".join(self.pieces).split())
             if len(value) >= 35:
-                self.paragraphs.append(value)
-            self.p_depth = 0
+                self.paragraphs_by_scope[self.active_p_scope].append(value)
+            self.active_p_depth = None
+            self.active_p_scope = ""
             self.pieces = []
-        if tag == "article" and self.article_depth:
-            self.article_depth = 0
-        if tag not in {"meta", "link", "img", "br", "hr", "input", "source", "wbr"}:
-            self.depth = max(0, self.depth - 1)
+        del self.stack[matching:]
 
     def handle_data(self, data: str) -> None:
         if self.in_title:
             self.title.append(data)
         if self.ld_mode:
             self.ld_current.append(data)
-        if self.p_depth:
+        if self.active_p_depth is not None and not any(
+            tag in {"script", "style", "noscript"} for tag, _ in self.stack
+        ):
             self.pieces.append(data)
 
+    def article_paragraphs(self) -> list[str]:
+        for scope in ("content", "article", "main"):
+            paragraphs = self.paragraphs_by_scope[scope]
+            if len(paragraphs) >= 3 and len("\n".join(paragraphs)) >= 250:
+                return paragraphs
+        return []
 
 def _jsonld_dates(doc: ArticleHTML) -> tuple[list[str], list[str]]:
     published: list[str] = []
@@ -175,6 +244,37 @@ def _jsonld_dates(doc: ArticleHTML) -> tuple[list[str], list[str]]:
         except (json.JSONDecodeError, ValueError, TypeError):
             continue
     return published, modified
+
+
+def _jsonld_article_body(doc: ArticleHTML) -> str:
+    """Embedded primary NewsArticle.articleBody is permitted, not previews."""
+    found: list[str] = []
+
+    def visit(item: object) -> None:
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+        elif isinstance(item, dict):
+            category = item.get("@type", "")
+            types = category if isinstance(category, list) else [category]
+            if any(
+                isinstance(value, str) and (
+                    "Article" in value or "News" in value
+                ) for value in types
+            ):
+                body = item.get("articleBody")
+                if isinstance(body, str) and len(body.strip()) >= 250:
+                    found.append(" ".join(body.split()))
+            for child in item.values():
+                if isinstance(child, (list, dict)):
+                    visit(child)
+
+    for raw in doc.ld_scripts[:20]:
+        try:
+            visit(json.loads(raw))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+    return max(found, key=len, default="")
 
 
 def parse_article(
@@ -208,8 +308,11 @@ def parse_article(
     if revised and not allow_revised:
         raise ValueError("NEWS_URL_REVISED_AFTER_CUTOFF")
     title = doc.meta.get("og:title") or " ".join("".join(doc.title).split())
-    body = "\n".join(doc.paragraphs)
-    if not 8 <= len(title) <= 240 or len(body) < 250 or len(doc.paragraphs) < 3:
+    paragraphs = doc.article_paragraphs()
+    body = "\n".join(paragraphs)
+    if len(body) < 250:
+        body = _jsonld_article_body(doc)
+    if not 8 <= len(title) <= 240 or len(body) < 250:
         raise ValueError("NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE")
     if len(body) > MAX_ARTICLE:
         # Never silently truncate a primary article and call it original text.
