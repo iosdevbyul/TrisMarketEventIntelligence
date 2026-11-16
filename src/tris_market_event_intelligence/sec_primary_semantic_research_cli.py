@@ -348,6 +348,7 @@ def _repair_failure_code(case: dict, hypotheses: object) -> str:
 
 def run_semantic_research(
     prepared: dict, provider: LLMProvider, *, limit: int = 3,
+    start_index: int = 0,
 ) -> dict:
     if (prepared.get("schemaVersion") != "sec_primary_semantic_input_v1"
             or prepared.get("status") !=
@@ -357,10 +358,14 @@ def run_semantic_research(
             or prepared.get("historicalPublicTimesIndependentlyVerified") != 0
             or not isinstance(prepared.get("cases"), list)
             or not isinstance(limit, int) or isinstance(limit, bool)
-            or not 1 <= limit <= MAX_MODEL_CASES):
+            or not 1 <= limit <= MAX_MODEL_CASES
+            or not isinstance(start_index, int) or isinstance(start_index, bool)
+            or not 0 <= start_index < len(prepared["cases"])):
         raise ValueError("SEC_SEMANTIC_MODEL_INPUT_INVALID")
     results = []
-    for case in prepared["cases"][:limit]:
+    for case_index, case in enumerate(
+        prepared["cases"][start_index:start_index + limit], start=start_index,
+    ):
         request = {
             "accession": case["accession"],
             "source_sha256": case["sourceSha256"],
@@ -405,6 +410,7 @@ def run_semantic_research(
             repair_used = True
         results.append({
             "accession": case["accession"], "sourceSha256": case["sourceSha256"],
+            "caseIndex": case_index,
             "interpretation": validated,
             "hypothesesCorrectionAttempted": repair_used,
             "sourceInterpretationIsHumanUnverified": True,
@@ -416,6 +422,8 @@ def run_semantic_research(
         "primaryReportSha256": prepared["primaryReportSha256"],
         "modelId": provider.model_id,
         "casesAnalyzed": len(results),
+        "startIndex": start_index,
+        "originalCasesAvailable": len(prepared["cases"]),
         "cases": results,
         "modelCalls": len(results) + sum(row["hypothesesCorrectionAttempted"] for row in results),
         "hypothesesCorrectionCount": sum(row["hypothesesCorrectionAttempted"] for row in results),
@@ -436,6 +444,7 @@ def main() -> None:
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), default=2)
+    parser.add_argument("--start-index", type=int, default=0)
     parser.add_argument("--model", default="gemma4:e2b")
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--prepare", action="store_true")
@@ -462,6 +471,7 @@ def main() -> None:
             stage = "GENERATE_AND_VALIDATE_MODEL"
             report = run_semantic_research(
                 prepared, provider=provider, limit=args.limit,
+                start_index=args.start_index,
             )
         stage = "WRITE_NEW_OUTPUT"
         _write(args.output, report)
