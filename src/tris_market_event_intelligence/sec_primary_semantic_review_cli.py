@@ -160,7 +160,10 @@ def build_review_packet(
             else:
                 if analysis_status is not None and (
                     not gated or analysis_status != SUBSTANTIVE
-                    or source_evidence_status(case["evidence"][0]["text"]) != SUBSTANTIVE
+                    or source_evidence_status(
+                        case["evidence"][0].get("focusText",
+                                               case["evidence"][0]["text"])
+                    ) != SUBSTANTIVE
                 ):
                     raise ValueError("SEC_SEMANTIC_ANALYSIS_STATUS_INVALID")
                 validated = (
