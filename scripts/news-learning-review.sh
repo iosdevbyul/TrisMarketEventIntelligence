@@ -6,6 +6,7 @@ usage() {
   echo "Usage:"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-semantic --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --prepare|--run [--model gemma4:e2b --limit 3 --start-index 1] --output NEW_PRIVATE_JSON"\n  echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_REVIEW_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-claim-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_CLAIMS_JSON"
+  echo "  bash scripts/news-learning-review.sh [--update] sec-candidate-replay --primary ORIGINAL_JSON --source-dir PRIVATE_DIR --baseline-report ORIGINAL_SEMANTIC_JSON --start-index 0 --limit 1 --prepare|--run [--model gemma4:e2b --output NEW_PRIVATE_JSON]"
   echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-compare --primary SAVED_PRIMARY --source-dir PRIVATE_DIR --baseline-report ORIGINAL_JSON --candidate-report NEW_JSON --output NEW_PRIVATE_COMPARISON_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-quality --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --review PRIVATE_REVIEW_JSON --output NEW_PRIVATE_AUDIT_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-content --cohort PIT_JSON --batch INDEX_BATCH_JSON --source-dir PRIVATE_DIR --limit 12 --preview|--run --output NEW_JSON"
@@ -112,6 +113,9 @@ case "$action" in
     ;;
   sec-claim-review)
     module="tris_market_event_intelligence.sec_claim_evidence_review_cli"
+    ;;
+  sec-candidate-replay)
+    module="tris_market_event_intelligence.sec_semantic_candidate_replay_cli"
     ;;
   sec-semantic-compare)
     module="tris_market_event_intelligence.sec_semantic_paired_comparison_cli"
