@@ -1011,3 +1011,26 @@ fi
 ```
 
 The result stdout contains `studyOriginalCases`, `batchOriginalIndexes`, `batchOverlap`, `batchNewDistinctCases`, `totalUniqueIndexes` and `historicalFirstPublicTimesVerified=0`. Do not invent the exact overlap before real Mac run. No-news controls and 09:30 trade returns remain unverified. Additional historical contemporaneous observation evidence requires authentic source proof, not post-hoc date parsing.
+
+## PR #190 — SEC primary filing document content research for the fixed first-12 cohort
+
+The prior SEC 136-filing candidate inventory, ex-ante 69 research task queue, first 12 audited SHA-pinned SEC original index HTMLs, and exact 20 unique index overlap report are already preserved on the user's Mac. **Indexes are only document manifests**, not the actual issuer filing body. This feature resolves the official form-specific primary 8-K/10-Q/10-K HTML or text document from each already-cached index Document Format Files table. No source URL can escape the official NVIDIA SEC accession archive directory. It excludes EX-99.1 and unrelated exhibits from the primary document role. Ambiguous/missing primary links are quarantined, never replaced by arbitrary external pages.
+
+Opt-in `sec-primary-content --run` retrieves ONLY missing primary source document originals, reuses existing SHA-stable `.source` cache, stores new originals create-only/0600, and produces separate create-only/0600 research JSON. The report pins full raw primary SHA-256; extracts bounded, verbatim official-source text excerpts and observed SEC Item headings (`1.01`, `1.02`, `2.02`, `5.02`, `7.01`, `8.01`, `9.01`) as **content evidence only**. It does not summarize imagined facts, connect market outcomes, call Gemma, build a price direction model, or claim the primary document was available at the historical decision cutoff. Every record has false market-time eligibility / independent public time proof and the report `trainingReady=false`.
+
+Only when user asks for next Mac source step after PR CI and merge, one new file can be made. The first run uses existing SEC raw index cache, with bounded N=12 original primary documents:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-sec-primary-content-batch01-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+else
+  bash scripts/news-learning-review.sh --update sec-primary-content \
+    --cohort "$DATA/nvda-sec-pit-availability-cohort-2017-2026-v1.json" \
+    --batch "$DATA/nvda-sec-publication-original-index-batch01-v1.json" \
+    --source-dir "$DATA" --limit 12 --run --output "$OUT"
+fi
+```
+
+Possible unresolved document links in 8-K/10-K/10-Q indices are reported accurately, not treated as model data. The report is produced on real Mac only when actual runtime succeeds; CI synthetic checks cannot establish that the first 12 official documents are already available or that independent historical news publication times exist. All existing official SEC indexes/exhibits, 10-year NVDA/SPY CSV, original 10 study, PIT cohort, 12-index batch and 20-unique-index audit remain untouched.
