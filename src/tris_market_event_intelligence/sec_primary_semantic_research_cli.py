@@ -364,6 +364,7 @@ def run_semantic_research(
             except ValueError as repair_exc:
                 if str(repair_exc) in {
                     "SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED",
+                    "SEC_SEMANTIC_HYPOTHESIS_FIELDS_INVALID",
                     "SEC_SEMANTIC_HYPOTHESIS_CATEGORIES_INCOMPLETE",
                     "SEC_SEMANTIC_RESPONSE_CARDINALITY_INVALID",
                 }:
