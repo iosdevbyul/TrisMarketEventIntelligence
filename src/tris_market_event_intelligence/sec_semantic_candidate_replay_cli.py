@@ -30,11 +30,11 @@ from tris_market_event_intelligence.sec_primary_semantic_review_cli import (
     MAX_REPORT_BYTES,
     build_review_packet,
 )
-from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     INSUFFICIENT,
     source_evidence_status,
 )
+from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 
 
 def prepare_candidate_replay(
