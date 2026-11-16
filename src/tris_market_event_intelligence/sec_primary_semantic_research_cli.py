@@ -29,6 +29,8 @@ from tris_market_event_intelligence.sec_primary_content_research_cli import (
 )
 from tris_market_event_intelligence.sec_ranked_multi_passages import (
     VERSION as MULTI_VERSION,
+)
+from tris_market_event_intelligence.sec_ranked_multi_passages import (
     apply_ranked_passages,
 )
 from tris_market_event_intelligence.sec_revenue_context_guard import (
