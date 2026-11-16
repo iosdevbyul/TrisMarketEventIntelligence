@@ -52,7 +52,15 @@ CHANGE = re.compile(
     r"depend(?:s|ent|ency)?|driven|caus(?:ed|es)|"
     r"trigger(?:ed|s)?|necessitat(?:e|ed|es))\b"
 )
-UNCERTAIN = re.compile(r"(?i)\b(?:could|might|may|possible|hypothetical|unverified|unknown)\b")
+MATERIAL_EVENT = re.compile(
+    r"(?i)\b(?:product launch|lawsuit settlement|major acquisition|"
+    r"merger|internal restructuring|accounting practice changes?|"
+    r"executive oversight changes?|semiconductor supply.chain shifts?)\b"
+)
+FILING_MOTIVE = re.compile(
+    r"(?i)\b(?:decision to file|filing (?:was|is) (?:driven|influenced|caused)|"
+    r"(?:pressure|dynamics) (?:necessitat|require)\w* (?:the )?filing)\b"
+)
 
 
 def source_evidence_status(excerpt: str) -> str:
@@ -62,7 +70,7 @@ def source_evidence_status(excerpt: str) -> str:
     model research and never imply automatic source entailment.
     """
     if not isinstance(excerpt, str):
-        raise ValueError("SEC_SUBSTANTIVE_SOURCE_INVALID")
+        raise TypeError("SEC_SUBSTANTIVE_SOURCE_INVALID")
     # Split physical lines first: a cover contains years and legal headings
     # that must not be combined with unrelated financial keywords.
     pieces = re.split(r"(?<=[.!?])\s+|[\r\n]+", excerpt)
