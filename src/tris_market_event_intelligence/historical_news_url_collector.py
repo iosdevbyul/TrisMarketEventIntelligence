@@ -10,7 +10,7 @@ import ipaddress
 import json
 import re
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
@@ -176,7 +176,7 @@ def parse_article(raw: bytes, url: str, as_of: str, article_id: str) -> dict:
         raise ValueError("NEWS_URL_PUBLICATION_TIME_MISSING")
     dates = [_date(x) for x in published]
     # Conflicting article clocks cannot be silently resolved by guesswork.
-    if max(dates) - min(dates) > __import__("datetime").timedelta(hours=2):
+    if max(dates) - min(dates) > timedelta(hours=2):
         raise ValueError("NEWS_URL_PUBLICATION_TIME_CONFLICT")
     effective = min(dates)
     cutoff = _date(as_of)
