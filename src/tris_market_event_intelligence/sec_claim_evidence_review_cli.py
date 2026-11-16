@@ -59,10 +59,24 @@ def build_claim_review(
                 ))
         fields.append(("summary", case["summary"], "SUMMARY"))
         for location, statement, kind in fields:
-            # Candidate evidence is available for reviewer inspection, but is
-            # NEVER a machine-generated assertion of semantic entailment.
-            # No independent industry source is part of this input corpus.
-            candidates = anchors if kind in {"ISSUER_OBSERVATION", "ISSUER_FUNDAMENTALS", "SUMMARY"} else []
+            # Candidate evidence is exact-source and reviewer-visible only;
+            # this does NOT assert semantic entailment.
+            if "sourcePassages" in case:
+                if location.startswith("observations["):
+                    position = int(location.split("[", 1)[1].split("]", 1)[0])
+                    bound_ids = [case["observations"][position]["evidence_id"]]
+                elif location.startswith("hypotheses["):
+                    position = int(location.split("[", 1)[1].split("]", 1)[0])
+                    bound_ids = case["hypotheses"][position]["evidence_ids"]
+                else:
+                    bound_ids = [a["evidenceId"] for a in anchors]
+                candidates = [a for a in anchors if a["evidenceId"] in bound_ids]
+            else:
+                candidates = (
+                    anchors if kind in {
+                        "ISSUER_OBSERVATION", "ISSUER_FUNDAMENTALS", "SUMMARY",
+                    } else []
+                )
             claims.append({
                 "caseIndex": index,
                 "accession": case["accession"],
@@ -72,6 +86,9 @@ def build_claim_review(
                 "claimCategory": kind,
                 "modelStatement": statement,
                 "sourceExcerpt": case["sourceExcerpt"],
+                **({"sourceExcerpts": case["sourceExcerpts"],
+                    "sourcePassages": case["sourcePassages"]}
+                   if "sourcePassages" in case else {}),
                 "candidateEvidence": candidates,
                 "independentIndustryEvidenceAvailable": False,
                 "evidenceStatus": "NOT_ASSESSED",
