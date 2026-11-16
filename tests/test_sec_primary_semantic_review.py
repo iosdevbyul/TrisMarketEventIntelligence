@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from tris_market_event_intelligence.sec_primary_content_research_cli import _source_review
+from tris_market_event_intelligence.sec_primary_semantic_quality_cli import (
+    audit_semantic_quality,
+)
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     _quote_anchors,
     prepare_primary_cases,
@@ -16,9 +19,6 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
 )
 from tris_market_event_intelligence.sec_primary_semantic_review_cli import (
     build_review_packet,
-)
-from tris_market_event_intelligence.sec_primary_semantic_quality_cli import (
-    audit_semantic_quality,
 )
 
 BODY = (
