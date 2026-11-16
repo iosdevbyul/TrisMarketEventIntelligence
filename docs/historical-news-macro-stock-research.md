@@ -1074,3 +1074,7 @@ fi
 ```
 
 These commands use the existing central LLM settings/env and model factory. Outputs are for historical news semantics **research** and human review only, not PIT-eligible intraday features or verified trading performance.
+
+## PR #192 — SEC original semantic Gemma runtime diagnostic (no validation relaxation)
+
+Actual user Mac source grounded first-case `sec-primary-semantic --run --model gemma4:e2b --limit 1` exited `SOURCE_OR_MODEL_EVIDENCE_INVALID` after PR191 merged. That prior catch-all conceals whether original SHA validation, model inventory, JSON generation, strict quote matching, or private output creation failed. No model hypotheses were recorded, and the first-case output must not be assumed created. New CLI failure prints only `FAILED_STAGE=VALIDATE_INPUT|INITIALIZE_PROVIDER|GENERATE_AND_VALIDATE_MODEL|WRITE_NEW_OUTPUT` and stable internal `ERROR_CODE` (for example `SEC_SEMANTIC_SOURCE_SHA_MISMATCH`, `MODEL_GENERATION_TRUNCATED`, `SEC_SEMANTIC_QUOTE_NOT_IN_PINNED_SOURCE`). It NEVER prints original SEC source text, model JSON, local private filenames, credentials, or model responses. Underlying original 12 SEC primary HTML SHA pins, quote-and-citation validators, model-provider factory and training/first-publication gates stay unchanged. Read-only local triage need only rerun the original one-case command after merging PR192; do NOT re-download original SEC files or redo prior sources.
