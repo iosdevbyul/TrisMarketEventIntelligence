@@ -116,12 +116,12 @@ def test_no_undisclosed_sec_bot_identification() -> None:
 def test_bad_parallel_columns_and_nonhistorical_ranges_fail() -> None:
     bad = _main()
     bad["filings"]["recent"]["acceptanceDateTime"].pop()
-    with pytest.raises(ValueError, match="parallel columns"):
+    with pytest.raises(ValueError, match="SEC_SCHEMA_COLUMNS"):
         build_sec_filing_inventory(
             main=bad, main_sha="a" * 64, histories=[],
             start=date(2018, 1, 1), end=date(2018, 12, 31),
         )
-    with pytest.raises(ValueError, match="scope"):
+    with pytest.raises(ValueError, match="SEC_SCOPE_OR_CIK"):
         build_sec_filing_inventory(
             main=_main(), main_sha="a" * 64, histories=[],
             start=date(2000, 1, 1), end=date(2026, 11, 16),
@@ -131,14 +131,14 @@ def test_bad_parallel_columns_and_nonhistorical_ranges_fail() -> None:
 def test_prevent_traversal_and_bad_download_host() -> None:
     bad = _main()
     bad["filings"]["recent"]["primaryDocument"][0] = "../../secrets"
-    with pytest.raises(ValueError, match="traversal"):
+    with pytest.raises(ValueError, match="SEC_PRIMARY_DOCUMENT_PATH"):
         build_sec_filing_inventory(
             main=bad, main_sha="a" * 64, histories=[],
             start=date(2018, 1, 1), end=date(2018, 12, 31),
         )
     with httpx.Client(transport=httpx.MockTransport(
         lambda request: pytest.fail("Unexpected domain")
-    )) as client, pytest.raises(ValueError, match="Unapproved SEC"):
+    )) as client, pytest.raises(ValueError, match="SEC_UNAPPROVED_SOURCE_URL"):
         _get_json(client, "https://example.com/untrusted", "abc@example.com")
 
 
@@ -177,3 +177,49 @@ def test_sec_api_error_keeps_status_code_available_without_body() -> None:
             "TrisMarketEventIntelligence contact@example.com",
         )
     assert exc.value.response.status_code == 403
+
+
+def test_history_overlap_does_not_confuse_provenance_with_filing_data() -> None:
+    main = _main()
+    history = _columns()
+    # A recent/history pagination overlap is valid even with distinct
+    # original page SHA and page names.
+    doc = build_sec_filing_inventory(
+        main=main,
+        main_sha="a" * 64,
+        histories=[(f"CIK{CIK}-submissions-001.json", history, "b" * 64)],
+        start=date(2018, 1, 1),
+        end=date(2023, 12, 31),
+    )
+    assert doc["candidateFilings"] == 3
+    assert doc["sourcePages"] == 2
+    assert doc["filings"][0]["submissionSourcePageSha256"] == "a" * 64
+
+
+def test_real_filing_disagreement_still_fails_closed() -> None:
+    history = _columns()
+    history["form"][0] = "10-K"
+    with pytest.raises(ValueError, match="SEC_ACCESSION_CONFLICT"):
+        build_sec_filing_inventory(
+            main=_main(),
+            main_sha="a" * 64,
+            histories=[(f"CIK{CIK}-submissions-001.json", history, "b" * 64)],
+            start=date(2018, 1, 1),
+            end=date(2023, 12, 31),
+        )
+
+
+def test_safe_nested_sec_primary_document_path() -> None:
+    main = _main()
+    main["filings"]["recent"]["primaryDocument"][0] = "reports/earnings.htm"
+    result = build_sec_filing_inventory(
+        main=main, main_sha="a" * 64, histories=[],
+        start=date(2018, 1, 1), end=date(2023, 12, 31),
+    )
+    assert result["filings"][0]["secPrimaryDocument"] == "reports/earnings.htm"
+    main["filings"]["recent"]["primaryDocument"][0] = "reports/../secret"
+    with pytest.raises(ValueError, match="SEC_PRIMARY_DOCUMENT_PATH"):
+        build_sec_filing_inventory(
+            main=main, main_sha="a" * 64, histories=[],
+            start=date(2018, 1, 1), end=date(2023, 12, 31),
+        )
