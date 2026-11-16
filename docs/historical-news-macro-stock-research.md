@@ -1314,3 +1314,14 @@ bash scripts/news-learning-review.sh --update sec-candidate-replay \
 ```
 
 The preview reports only counts and identifiers. Generated report and human-review files stay private and create-only. Original 12 pinned sources, historical first-publication uncertainty, PIT boundaries, no-training/no-prediction/no-promotion and human-decision count zero are unchanged.
+
+
+### SEC contextual revenue-referent guard (Issue #207, 2026-11-17)
+
+Actual local Case 00 selected visible-text offsets 29750–29811: "accounted for 12% of our total revenue for fiscal year 2017 ." This alone did not identify what contributed the 12%; Gemma4 speculated about a segment, a high-margin strategy, management prioritization and macroeconomic causes. These statements were **not** justified by the quote.
+
+New runs with --body-spans use the SHA-pinned contextual extraction version sec_contextual_body_span_v2. The original substantive focus is kept as a separate exact-source start/end and SHA witness. A bounded preceding window is included in the model evidence; context start/end and SHA are pinned separately. Both witnesses and original raw SHA are rechecked from private SEC source bytes before human review or paired comparison. The window may contain incomplete context and does **not** prove a grammatical referent exists. Old sec_visible_body_span_v1 reports remain verifiable via the old selector.
+
+For a historical revenue-share focus, require the subject to be explicit in the same sentence, never inferred from a neighboring unrelated noun. No direct subject produces REFERENT_UNRESOLVED; a directly named customer or similar referent produces DESCRIPTIVE_REVENUE_SHARE_ONLY. Both statuses intentionally avoid calling Gemma4, emit zero model hypotheses, and retain the exact source witness for human examination. Quantitative ratios alone never establish management decisions, resource allocation, margins or sector causality. Additional conservative negative controls reject unsupported corporate-strategy and macroeconomic narratives. Lexical/source-context checks are not complete semantic entailment; human review and independent sector evidence remain required.
+
+For local Case 00, use the previously documented sec-candidate-replay --body-spans command with a fresh output filename ending in -context-case00-v1.json. First use --prepare to inspect referentsUnresolved and descriptiveOnly; use explicit --run only when needed. Archived original SEC bytes, original primary evidence packets, old candidate/baseline files and source PIN remain immutable. Historical publication time remains unverified, and no market outcomes, training, prediction, investment execution or automatic promotion are permitted.
