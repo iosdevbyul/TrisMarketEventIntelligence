@@ -506,7 +506,7 @@ def main() -> None:
         code = (
             exc.args[0] if type(exc) in {ValueError, TypeError}
             and exc.args and isinstance(exc.args[0], str)
-            and re.fullmatch(r"NEWS_TEST_[A-Z0-9_]{6,90}", exc.args[0])
+            and re.fullmatch(r"NEWS_(?:TEST|URL)_[A-Z0-9_]{5,90}", exc.args[0])
             else exc.code if isinstance(exc, LLMExecutionError)
             else "NEWS_TEST_INVALID_INPUT_OR_MODEL_RESULT"
         )
