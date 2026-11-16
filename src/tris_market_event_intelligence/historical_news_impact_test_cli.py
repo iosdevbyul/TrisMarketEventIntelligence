@@ -432,7 +432,6 @@ def main() -> None:
             "marketPricesRead": False,
             "accuracyVerified": False,
             "eventResults": report["eventGroups"],
-            "eventLinks": report["eventLinks"],
             "impactResults": [
                 {
                     "targetType": row["targetType"],
