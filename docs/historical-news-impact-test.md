@@ -187,3 +187,39 @@ A real Gemma4 answer may repeatedly emit two or more eventStages for the same so
 ## Impact proposal validation as an auditable partial result
 
 A valid JSON response from Gemma4 can use an unsupported sector taxonomy (for example INFORMATION_TECH rather than the project’s strict enum), an unverified ticker, missing source evidence or inconsistent sign/range. Such an impact is **not silently reclassified, clipped, or reported as a valid result**. The validator now checks *every* proposed impact independently: valid proposals retain the previous strict guards; invalid ones retain their original model-authored fields in `rejectedImpacts` along with `impactIndex` and a precise `NEWS_TEST_*` reason. A rejected proposal forces `impactValidationComplete=false`, `status=NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW`, `historicalBenchmarkEligible=false`, and the existing false accuracy/training/promotion gates. Even if all impacts are rejected, the report is partial and does not misrepresent that as informed abstention. Stage uncertainty remains independently quarantined. Event-group coverage and structural output schema remain strict; this change does not introduce a new category mapping, fabricated entity/evidence, or additional model invocations. Users must assess the actual raw proposal and source before deciding whether any taxonomy extension is warranted.
+
+## Issue #222: source-anchored news understanding (v6)
+
+The regular `--run` command now invokes a bounded **two-stage** model flow:
+(1) `historical_article_understanding.extract_claims` identifies source-anchored
+FACT / ALLEGATION / DENIAL / OPINION / FORECAST items and their individual
+INITIAL_REPORT / NEW_FACT / OFFICIAL_ACTION / REACTION / CORRECTION /
+INDEPENDENT phases; (2) the existing event/impact reviewer consumes those
+model-generated claims **alongside the original articles and exact quote
+anchors**. The LLM provider interface is unchanged, and the first output is
+validated against the original per-article quote membership. It is a model
+interpretation, **not independent confirmation of the claim's truth**.
+
+Event stages can now reference `quoteId`. Different quotes from the same
+article may have distinct stages; duplicate quote IDs, cross-article quote
+references, and unknown article IDs are quarantined instead of being silently
+accepted. Legacy article-only stages are retained for compatibility but
+multiple unanchored stages for one article remain ambiguous and incomplete.
+
+Qualitative POSITIVE/NEGATIVE impact hypotheses may explicitly omit numeric
+`conditionalMovePctRange` (null). If the model cannot justify a ticker, a
+source-named STOCK proposal without a ticker is retained in
+`unverifiedCompanyCandidates`, **not** in validated `impacts`. An unknown
+sector label is not silently mapped into the taxonomy. Revised-source inputs
+remain ineligible for strict point-in-time backtesting, and no market prices,
+realized returns, model training, or trade execution enter this path.
+
+A successful response in this version is NOT evidence that Gemma4 resolved
+the actual historical case: inspect `eventGroups`, source-backed
+`eventStages`, `rejectedEventStages`, `rejectedImpacts`,
+`unverifiedCompanyCandidates`, and `articleUnderstanding` against
+the privately pinned original documents. `modelCalls` includes the
+additional extraction pass. The compatibility switch
+`--legacy-single-pass` skips extraction for comparing previous runs;
+it is not the default pipeline. If using the two revised publisher pages
+from the exploratory NVDA cohort, do not score them as a blind benchmark.

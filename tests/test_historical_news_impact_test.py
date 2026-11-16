@@ -315,7 +315,7 @@ def test_cli_run_writes_private_create_only_sealed_result(
     monkeypatch.setattr(cli, "build_runtime", lambda *a, **k: model)
     monkeypatch.setattr(sys, "argv", [
         "historical-news-impact", "--input", str(input_path),
-        "--run", "--output", str(target),
+        "--run", "--legacy-single-pass", "--output", str(target),
     ])
     cli.main()
     stdout = json.loads(capsys.readouterr().out)
@@ -328,7 +328,7 @@ def test_cli_run_writes_private_create_only_sealed_result(
     assert model.calls == 1
     monkeypatch.setattr(sys, "argv", [
         "historical-news-impact", "--input", str(input_path),
-        "--run", "--output", str(target),
+        "--run", "--legacy-single-pass", "--output", str(target),
     ])
     with pytest.raises(SystemExit) as err:
         cli.main()
@@ -434,7 +434,7 @@ def test_cli_reports_model_schema_failure_and_persists_source_first(
         "historical-news-impact", "--url", "https://techcrunch.com/a",
         "--url", "https://www.axios.com/b",
         "--case-id", "test", "--as-of", "2018-07-12T15:00:00Z",
-        "--run", "--source-output", str(source), "--output", str(output),
+        "--run", "--legacy-single-pass", "--source-output", str(source), "--output", str(output),
     ])
     with pytest.raises(SystemExit) as err:
         cli.main()
@@ -600,3 +600,109 @@ def test_invalid_quote_and_wrong_ticker_are_both_audited_in_single_call() -> Non
     ]
     assert result["status"] == "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
     assert result["historicalBenchmarkEligible"] is False
+
+
+def test_source_anchored_multiple_stages_per_article_are_valid() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    anchors, _ = cli._quote_anchors(case)
+    a1 = [a["quoteId"] for a in anchors if a["articleId"] == "a1"]
+    a2 = [a["quoteId"] for a in anchors if a["articleId"] == "a2"]
+    result = answer(case)
+    result["eventStages"] = [
+        {"articleId": "a1", "quoteId": a1[0], "stage": "INITIAL_REPORT"},
+        {"articleId": "a1", "quoteId": a1[1], "stage": "REACTION"},
+        {"articleId": "a2", "quoteId": a2[0], "stage": "NEW_FACT"},
+    ]
+    report = cli.run_case(case, RangeRetryProvider([result]))
+    assert report["eventStageCoverageComplete"] is True
+    assert len(report["eventStages"]) == 3
+    assert report["unresolvedStageArticleIds"] == []
+
+
+def test_source_anchored_stages_reject_wrong_article_and_duplicate_quote() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    anchors, _ = cli._quote_anchors(case)
+    a1 = next(a["quoteId"] for a in anchors if a["articleId"] == "a1")
+    result = answer(case)
+    result["eventStages"] = [
+        {"articleId": "a1", "quoteId": a1, "stage": "INITIAL_REPORT"},
+        {"articleId": "a1", "quoteId": a1, "stage": "REACTION"},
+        {"articleId": "a2", "quoteId": a1, "stage": "NEW_FACT"},
+    ]
+    report = cli.run_case(case, RangeRetryProvider([result]))
+    assert not report["eventStageCoverageComplete"]
+    assert report["unresolvedStageArticleIds"] == ["a1", "a2"]
+    assert {x["reason"] for x in report["rejectedEventStages"]} == {
+        "DUPLICATE_OR_AMBIGUOUS_STAGE", "QUOTE_NOT_IN_ARTICLE",
+    }
+
+
+def test_qualitative_stock_impact_does_not_require_fabricated_return_range() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    result = answer(case)
+    result["impacts"][0]["conditionalMovePctRange"] = None
+    report = cli.run_case(case, RangeRetryProvider([result]))
+    assert report["impactValidationComplete"]
+    assert report["impacts"][0]["conditionalMovePctRange"] is None
+
+
+def test_unknown_ticker_is_a_candidate_not_a_verified_stock_impact() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    result = answer(case)
+    result["impacts"][0]["ticker"] = None
+    report = cli.run_case(case, RangeRetryProvider([result]))
+    assert len(report["impacts"]) == 1
+    assert report["unverifiedCompanyCandidates"][0]["status"] == (
+        "UNVERIFIED_COMPANY_CANDIDATE"
+    )
+    assert report["historicalBenchmarkEligible"] is False
+    assert report["impactValidationComplete"] is False
+    assert report["status"] == "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
+
+
+def test_two_step_article_understanding_precedes_event_impact_reasoning() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    anchors, _ = cli._quote_anchors(case)
+    class TwoStepProvider:
+        model_id = "offline-two-step"
+        def __init__(self) -> None:
+            self.calls = 0
+        def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+            self.calls += 1
+            request = json.loads(user)
+            assert "knownOutcomes" not in request
+            assert "futurePriceResult" not in request
+            if self.calls == 1:
+                assert "claims" in schema["properties"]
+                assert "articleUnderstanding" not in request
+                return json.dumps({"claims": [
+                    {"articleId": aid, "quoteId": q["quoteId"],
+                     "kind": "FACT", "stage": "INITIAL_REPORT"}
+                    for aid in ("a1", "a2")
+                    for q in anchors if q["articleId"] == aid
+                    and q["quoteId"].endswith(":q0")
+                ]})
+            assert "impacts" in schema["properties"]
+            assert len(request["articleUnderstanding"]) == 2
+            return json.dumps(answer(case))
+    provider = TwoStepProvider()
+    report = cli.run_case(case, provider, use_claim_extraction=True)
+    assert provider.calls == 2
+    assert report["modelCalls"] == 2
+    assert len(report["articleUnderstanding"]) == 2
+    assert report["marketPricesRead"] is False
+
+
+def test_article_understanding_rejects_forged_quote_ids() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    class ForgedProvider:
+        model_id = "forged-claims"
+        def generate_json(self, **kwargs: object) -> str:
+            return json.dumps({"claims": [
+                {"articleId": "a1", "quoteId": "invented:q0",
+                 "kind": "FACT", "stage": "INITIAL_REPORT"},
+                {"articleId": "a2", "quoteId": "invented:q1",
+                 "kind": "FACT", "stage": "NEW_FACT"},
+            ]})
+    with pytest.raises(ValueError, match="NEWS_TEST_CLAIM_EVIDENCE_INVALID"):
+        cli.run_case(case, ForgedProvider(), use_claim_extraction=True)
