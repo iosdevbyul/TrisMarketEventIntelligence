@@ -35,7 +35,7 @@ CANONICAL_DATE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d")
 
 def _date(raw: str) -> datetime:
     try:
-        result = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        result = datetime.fromisoformat(raw.strip())
     except ValueError as exc:
         raise ValueError("NEWS_URL_PUBLICATION_TIME_INVALID") from exc
     if result.utcoffset() is None or not CANONICAL_DATE.search(raw):
