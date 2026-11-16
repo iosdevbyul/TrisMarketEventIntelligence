@@ -29,7 +29,11 @@ def build_claim_review(
     """Revalidate original SEC bytes and each LLM quote before claim extraction."""
     verified = build_review_packet(primary, primary_sha, source_dir, reports)
     claims: list[dict] = []
+    abstained_cases: list[int] = []
     for case in verified["cases"]:
+        if case.get("analysisStatus") == "INSUFFICIENT_SUBSTANTIVE_EVIDENCE":
+            abstained_cases.append(case["caseIndex"])
+            continue
         index = case["caseIndex"]
         anchors = [
             {"evidenceId": ob["evidence_id"], "exactSourceQuote": ob["verbatim_quote"]}
@@ -72,7 +76,7 @@ def build_claim_review(
                 "humanUnsupportedConcreteFacts": None,
                 "humanNotes": "",
             })
-    if not claims or len(claims) > MAX_OUTPUT_CLAIMS:
+    if len(claims) > MAX_OUTPUT_CLAIMS:
         raise ValueError("SEC_CLAIM_REVIEW_CARDINALITY_INVALID")
     return {
         "schemaVersion": "sec_primary_claim_evidence_review_v1",
@@ -84,6 +88,7 @@ def build_claim_review(
             item["caseIndex"] for item in verified["pendingCaseIndexes"]
         ],
         "claimCount": len(claims),
+        "abstainedCaseIndexes": abstained_cases,
         "claims": claims,
         "humanDecisionsRecorded": 0,
         "automatedSemanticEntailmentVerified": False,
