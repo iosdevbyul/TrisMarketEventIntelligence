@@ -375,12 +375,47 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         "sourceQuoteAnchors": quotes,
         "historicalOutcomesAvailable": False,
     }
-    # A small local model may emit inverted/overwide numeric intervals even
-    # under JSON schema. Allow one entirely model-authored correction attempt;
-    # do not mutate numeric predictions in Python or loosen validation.
+    # Regenerate at most once after a recoverable model-authored contract
+    # violation. The news, quote anchors and historical cutoff never change.
+    # Never fix stages, sources, tickers or price estimates in Python.
+    source_ids = [article.articleId for article in case.articles]
+    correction_rules = (
+        "Regenerate the COMPLETE structured answer using only these SAME "
+        "source articles. Never use future market prices or outcomes. "
+        "Return exactly one eventStages item PER source articleId, with no "
+        "missing, duplicate or invented IDs. EventGroups must cover each "
+        "source article exactly once, without duplicates or unknown IDs. "
+        "Every evidenceQuoteId must occur in sourceQuoteAnchors. "
+        "Mention directly affected companies only when actually named in "
+        "the source; if an issuer ticker is uncertain, abstain from a "
+        "STOCK impact rather than fabricate identity. For numeric return "
+        "intervals: -15 <= minPct <= maxPct <= 15, width <= 10; "
+        "POSITIVE requires 0 <= minPct < maxPct, NEGATIVE requires "
+        "minPct < maxPct <= 0. MIXED or UNCERTAIN requires null range "
+        "and UNASSESSED intensity. Preserve honest uncertainty. "
+        "Do not fabricate missing evidence, inferred official actions or "
+        "new article relationships merely to satisfy the schema."
+    )
+    recoverable_contract_codes = frozenset({
+        "NEWS_TEST_EVENT_GROUP_COVERAGE_INVALID",
+        "NEWS_TEST_STAGE_COVERAGE_INVALID",
+        "NEWS_TEST_DUPLICATE_STAGE_INVALID",
+        "NEWS_TEST_SECTOR_UNKNOWN",
+        "NEWS_TEST_QUOTE_NOT_IN_SOURCE",
+        "NEWS_TEST_STOCK_TARGET_INCOMPLETE",
+        "NEWS_TEST_TICKER_MAPPING_CONFLICT",
+        "NEWS_TEST_DIRECT_ENTITY_NOT_IN_NEWS",
+        "NEWS_TEST_INDIRECT_ENTITY_NOT_IN_UNIVERSE",
+        "NEWS_TEST_SECTOR_HAS_TICKER",
+        "NEWS_TEST_DIRECTION_WITHOUT_MAGNITUDE",
+        "NEWS_TEST_POSITIVE_RANGE_INVALID",
+        "NEWS_TEST_NEGATIVE_RANGE_INVALID",
+        "NEWS_TEST_UNCERTAIN_DIRECTION_WITH_RANGE",
+        "NEWS_TEST_DUPLICATE_IMPACT",
+    })
     request = json.dumps(data, ensure_ascii=False)
     call_count = 0
-    retried_range = False
+    retry_reason: str | None = None
     for attempt in range(2):
         call_count += 1
         raw = provider.generate_json(
@@ -391,39 +426,38 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
             raise ValueError("NEWS_TEST_RESPONSE_SIZE_INVALID")
         try:
             model_answer = ModelAnswer.model_validate_json(raw)
+            reviewed = _validate_answer(case, model_answer, lookup)
+            break
         except ValidationError as exc:
-            # Only an otherwise schema-valid response with exclusively
-            # numeric range field errors qualifies for bounded regeneration.
-            invalid = exc.errors()
-            range_only = bool(invalid) and all(
-                len(e["loc"]) == 3 and e["loc"][0] == "impacts"
-                and isinstance(e["loc"][1], int)
-                and e["loc"][2] == "conditionalMovePctRange"
-                for e in invalid
-            )
-            if attempt or not range_only:
+            if attempt:
                 raise
-            retried_range = True
-            request = json.dumps({
-                **data,
-                "formatCorrection": (
-                    "Regenerate the whole analysis strictly from these same "
-                    "source articles without using actual market outcomes. "
-                    "The previous response had invalid conditionalMovePctRange "
-                    "fields. Each minPct and maxPct must be within [-15,15], "
-                    "minPct <= maxPct and maxPct-minPct <= 10. For POSITIVE "
-                    "direction use 0 <= minPct < maxPct; for NEGATIVE use "
-                    "minPct < maxPct <= 0. For MIXED or UNCERTAIN, set "
-                    "conditionalMovePctRange to null and intensity to "
-                    "UNASSESSED. Do not invent a range just to comply. "
-                    "Keep source quote IDs authentic and preserve uncertainty."
-                ),
-            }, ensure_ascii=False)
-            continue
-        reviewed = _validate_answer(case, model_answer, lookup)
-        break
+            # Never echo article bodies or model strings back into the
+            # correction request; Pydantic errors may include them.
+            issues = [
+                {
+                    "field": ".".join(map(str, item["loc"])),
+                    "type": item["type"],
+                }
+                for item in exc.errors()[:8]
+            ]
+            retry_reason = "NEWS_TEST_MODEL_SCHEMA_INVALID"
+            issue = {"validationErrors": issues}
+        except ValueError as exc:
+            code = str(exc)
+            if attempt or code not in recoverable_contract_codes:
+                raise
+            retry_reason = code
+            issue = {"validationCode": code}
+        request = json.dumps({
+            **data,
+            "correctionContext": {
+                "validArticleIds": source_ids,
+                "problem": issue,
+                "instructions": correction_rules,
+            },
+        }, ensure_ascii=False)
     else:
-        raise ValueError("NEWS_TEST_RANGE_RETRY_EXHAUSTED")
+        raise ValueError("NEWS_TEST_MODEL_REGENERATION_EXHAUSTED")
     revised_source_ids = [
         a.articleId for a in case.articles
         if a.sourceIntegrity == "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
@@ -444,8 +478,9 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         ),
         "modelId": provider.model_id,
         "modelCalls": call_count,
-        "rangeSchemaRetryUsed": retried_range,
-        "promptVersion": "historical-news-impact-v2-range-retry",
+        "rangeSchemaRetryUsed": bool(retry_reason),
+        "modelContractRetryReason": retry_reason,
+        "promptVersion": "historical-news-impact-v3-contract-retry",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -567,6 +602,7 @@ def main() -> None:
             "sectorImpacts": sum(i["targetType"] == "SECTOR" for i in report["impacts"]),
             "modelCalls": report["modelCalls"],
             "rangeSchemaRetryUsed": report["rangeSchemaRetryUsed"],
+            "modelContractRetryReason": report["modelContractRetryReason"],
             "marketPricesRead": False,
             "accuracyVerified": False,
             "sourceIntegrityStatus": report["sourceIntegrityStatus"],
