@@ -145,7 +145,7 @@ def build_sec_filing_inventory(
     if not isinstance(main, dict) or not _valid_company_cik(main.get("cik")):
         raise ValueError("SEC_CIK_MISMATCH")
     if not isinstance(main.get("filings"), dict):
-        raise ValueError("SEC_FILINGS_SCHEMA_INVALID")
+        raise TypeError("SEC_FILINGS_SCHEMA_INVALID")
     recent = main["filings"].get("recent")
     rows = _rows(recent, page_id=f"CIK{CIK}.json", page_sha=main_sha)
     seen_history = set()
