@@ -327,3 +327,19 @@ def test_current_revised_originals_are_explicitly_ineligible_for_historical_accu
     assert report["causalityProven"] is False
     assert "sourceModifiedAt" not in provider.request["articles"][0]
     assert "sourceIntegrity" not in provider.request["articles"][0]
+
+
+def test_skipped_sources_are_audited_and_ineligible_for_market_benchmark() -> None:
+    supplied = sample_case()
+    supplied["skippedSources"] = [{
+        "articleIndex": 3,
+        "host": "www.axios.com",
+        "reason": "NEWS_URL_FETCH_HTTP_FAILURE",
+    }]
+    case = cli.CaseInput.model_validate(supplied)
+    provider = FakeProvider(answer(case))
+    result = cli.run_case(case, provider)
+    assert result["skippedSources"] == supplied["skippedSources"]
+    assert result["historicalBenchmarkEligible"] is False
+    assert "skippedSources" not in provider.request
+    assert result["marketPricesRead"] is False

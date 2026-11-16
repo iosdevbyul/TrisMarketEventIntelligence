@@ -88,6 +88,12 @@ class KnownTicker(Strict):
     sector: str = Field(min_length=2, max_length=60)
 
 
+class SourceSkipped(Strict):
+    articleIndex: int = Field(ge=1, le=6)
+    host: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=100)
+
+
 class CaseInput(Strict):
     schemaVersion: Literal["historical_news_impact_test_v1"]
     caseId: str = Field(min_length=1, max_length=80)
@@ -95,6 +101,7 @@ class CaseInput(Strict):
     horizonTradingDays: Literal[1, 3, 5]
     articles: list[NewsArticle] = Field(min_length=2, max_length=MAX_ARTICLES)
     knownTickers: list[KnownTicker] = Field(default_factory=list, max_length=40)
+    skippedSources: list[SourceSkipped] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def check_input(self) -> CaseInput:
@@ -347,6 +354,7 @@ def prepare_case(case: CaseInput) -> dict:
         "articleCount": len(case.articles),
         "quoteAnchorCount": len(quotes),
         "knownTickerCount": len(case.knownTickers),
+        "skippedSources": [x.model_dump() for x in case.skippedSources],
         "newsInputSha256": _sha(case.model_dump()),
         "marketPricesRead": False,
         "outcomesRead": False,
@@ -386,7 +394,9 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
             if revised_source_ids else "PUBLISHER_METADATA_UNARCHIVED"
         ),
         "revisedSourceArticleIds": revised_source_ids,
-        "historicalBenchmarkEligible": False if revised_source_ids else None,
+        "historicalBenchmarkEligible": False if (
+            revised_source_ids or case.skippedSources
+        ) else None,
         "status": (
             "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
             if reviewed["impacts"] else "BLIND_NEWS_ABSTAINED"
@@ -474,8 +484,6 @@ def main() -> None:
                 horizon=args.horizon,
                 allow_revised=args.exploratory_current_pages,
             )
-            for article, url in zip(source_data["articles"], args.urls, strict=True):
-                article["sourceUrl"] = url
             case = CaseInput.model_validate(source_data)
         else:
             if args.case_id or args.as_of or args.source_output:
@@ -512,6 +520,7 @@ def main() -> None:
             "accuracyVerified": False,
             "sourceIntegrityStatus": report["sourceIntegrityStatus"],
             "revisedSourceArticleIds": report["revisedSourceArticleIds"],
+            "skippedSources": report["skippedSources"],
             "historicalBenchmarkEligible": report["historicalBenchmarkEligible"],
             "eventResults": report["eventGroups"],
             "impactResults": [

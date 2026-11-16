@@ -267,3 +267,76 @@ def test_jsonld_short_description_is_not_substituted_for_full_article() -> None:
     )
     with pytest.raises(ValueError, match="NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE"):
         fetcher.parse_article(source.encode(), URLS[0], AS_OF, "a1")
+
+
+
+def test_exploratory_skips_http_block_and_keeps_real_articles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+    urls = [URLS[0], URLS[1], "https://www.theguardian.com/us-news/2026/nov/08/nvidia-jensen-huang-investigation"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.axios.com":
+            return httpx.Response(403, text="Forbidden")
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text=html(),
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler), trust_env=False) as client:
+        result = fetcher.collect_urls(
+            urls, as_of=AS_OF, case_id="nvda-access-partial", horizon=1,
+            client=client, allow_revised=True,
+        )
+    assert len(result["articles"]) == 2
+    assert [item["articleId"] for item in result["articles"]] == ["a1", "a3"]
+    assert result["articles"][1]["sourceUrl"] == urls[2]
+    assert result["skippedSources"] == [{
+        "articleIndex": 2,
+        "host": "www.axios.com",
+        "reason": "NEWS_URL_FETCH_HTTP_FAILURE",
+    }]
+    packet = cli.CaseInput.model_validate(result)
+    assert len(packet.skippedSources) == 1
+    assert len(packet.articles) == 2
+
+
+def test_strict_still_rejects_blocked_publisher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler), trust_env=False) as client,
+        pytest.raises(ValueError, match="NEWS_URL_FETCH_HTTP_FAILURE"),
+    ):
+        fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="strict", horizon=1, client=client,
+        )
+
+
+def test_exploratory_refuses_one_readable_article(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.axios.com":
+            return httpx.Response(403)
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, text=html(),
+        )
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler), trust_env=False) as client,
+        pytest.raises(ValueError, match="NEWS_URL_INSUFFICIENT_READABLE_ARTICLES"),
+    ):
+        fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="too-few", horizon=1,
+            client=client, allow_revised=True,
+        )
