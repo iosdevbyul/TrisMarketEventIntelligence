@@ -60,10 +60,9 @@ def answer(case: cli.CaseInput, *, surprise: bool = False) -> dict:
             "eventId": "event-1", "articleIds": ["a1", "a2"],
             "summary": "Two reports concern the same processor production disruption.",
         }],
-        "eventStages": [
-            {"articleId": "a1", "stage": "INITIAL_REPORT"},
-            {"articleId": "a2", "stage": "NEW_FACT"},
-        ],
+        "eventStagesByArticleId": {
+            "a1": "INITIAL_REPORT", "a2": "NEW_FACT",
+        },
         "eventLinks": [{
             "earlierArticleId": "a1", "laterArticleId": "a2",
             "relation": "FOLLOW_UP",
@@ -407,9 +406,11 @@ class RangeRetryProvider:
         self.responses = responses
         self.calls = 0
         self.requests: list[dict] = []
+        self.schemas: list[dict] = []
 
     def generate_json(self, *, system: str, user: str, schema: dict) -> str:
         self.requests.append(json.loads(user))
+        self.schemas.append(schema)
         response = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
         return json.dumps(response)
@@ -467,38 +468,37 @@ def test_valid_range_retains_single_model_call() -> None:
     assert report["modelCalls"] == 1
 
 
-def test_duplicate_event_stage_recovers_only_through_model_regeneration() -> None:
+def test_unknown_article_stage_recovers_only_through_model_regeneration() -> None:
     case = cli.CaseInput.model_validate(sample_case())
     duplicate = answer(case)
-    duplicate["eventStages"].append({
-        "articleId": "a2", "stage": "REACTION",
-    })
+    duplicate["eventStagesByArticleId"]["made-up"] = "REACTION"
     regenerated = answer(case)
     provider = RangeRetryProvider([duplicate, regenerated])
     result = cli.run_case(case, provider)
     assert provider.calls == 2
-    assert result["modelContractRetryReason"] == "NEWS_TEST_DUPLICATE_STAGE_INVALID"
+    assert result["modelContractRetryReason"] == "NEWS_TEST_STAGE_COVERAGE_INVALID"
     assert result["rangeSchemaRetryUsed"] is False
     assert result["modelCalls"] == 2
-    assert result["eventStages"] == regenerated["eventStages"]
+    assert result["eventStages"] == [
+        {"articleId": "a1", "stage": "INITIAL_REPORT"},
+        {"articleId": "a2", "stage": "NEW_FACT"},
+    ]
     correction = provider.requests[1]["correctionContext"]
     assert correction["validArticleIds"] == ["a1", "a2"]
     assert correction["problem"] == {
-        "validationCode": "NEWS_TEST_DUPLICATE_STAGE_INVALID",
+        "validationCode": "NEWS_TEST_STAGE_COVERAGE_INVALID",
     }
     assert provider.requests[0]["articles"] == provider.requests[1]["articles"]
     assert provider.requests[0]["sourceQuoteAnchors"] == provider.requests[1]["sourceQuoteAnchors"]
     assert "futureStockReturn" not in json.dumps(provider.requests[1])
 
 
-def test_persistent_duplicate_stage_is_rejected_after_two_calls() -> None:
+def test_persistent_unknown_stage_is_rejected_after_two_calls() -> None:
     case = cli.CaseInput.model_validate(sample_case())
     duplicate = answer(case)
-    duplicate["eventStages"].append({
-        "articleId": "a2", "stage": "REACTION",
-    })
+    duplicate["eventStagesByArticleId"]["made-up"] = "REACTION"
     provider = RangeRetryProvider([duplicate])
-    with pytest.raises(ValueError, match="NEWS_TEST_DUPLICATE_STAGE_INVALID"):
+    with pytest.raises(ValueError, match="NEWS_TEST_STAGE_COVERAGE_INVALID"):
         cli.run_case(case, provider)
     assert provider.calls == 2
 
@@ -521,5 +521,26 @@ def test_news_with_unsupported_impact_targets_cannot_be_silently_relabelled() ->
     malformed["impacts"][0]["ticker"] = "HALLUC"
     provider = RangeRetryProvider([malformed])
     with pytest.raises(ValueError, match="NEWS_TEST_TICKER_MAPPING_CONFLICT"):
+        cli.run_case(case, provider)
+    assert provider.calls == 2
+
+
+def test_stage_schema_requires_exact_source_article_ids() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    provider = RangeRetryProvider([answer(case)])
+    cli.run_case(case, provider)
+    schema = provider.schemas[0]["properties"]["eventStagesByArticleId"]
+    assert schema["type"] == "object"
+    assert schema["required"] == ["a1", "a2"]
+    assert set(schema["properties"]) == {"a1", "a2"}
+    assert schema["additionalProperties"] is False
+
+
+def test_missing_stage_not_filled_or_invented_by_python() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    missing = answer(case)
+    del missing["eventStagesByArticleId"]["a2"]
+    provider = RangeRetryProvider([missing])
+    with pytest.raises(ValueError, match="NEWS_TEST_STAGE_COVERAGE_INVALID"):
         cli.run_case(case, provider)
     assert provider.calls == 2
