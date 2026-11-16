@@ -1239,3 +1239,34 @@ bash scripts/news-learning-review.sh --update sec-semantic-compare \
 ```
 
 The candidate paths above are placeholders, not created artifacts. Future evidence-based human scoring should read the separate private claim review packets, assess source entailment and unsupported detail per matched field, and compare adjudicated labels. No model self-approval, historical PIT upgrade, price training, or live deployment.
+
+
+### 2026-11-17: Controlled Gemma4 candidate replay on immutable SEC cases
+
+A new `sec-candidate-replay` command prepares the **next real experiment** using the exact existing SHA-pinned original SEC primary documents and the baseline semantic reports. It refuses missing baseline case indices, tampered original bytes, forged quotes, invalid offset windows and already-existing candidate output targets before calling the model. `--prepare` is offline, never calls Ollama, and prints only a safe summary of validated indices and status; `--run` is an explicit model opt-in, bounded to 1–3 cases and a new private create-only file.
+
+The original baseline reports must remain untouched. Do not re-fetch the SEC originals, use stock price/outcome data, or equate generated differences with improvement. Current human claim review completions remain zero. The existing validator, unsupported-specific narrative gate, and original first-publication uncertainty remain in effect. All candidate reports are retrospective, human-unverified and excluded from prediction, training and promotion.
+
+First example replays previously analyzed **index 0 only**, so the real Mac needs just one model invocation (plus an optional bounded hypothesis correction). Then repeat the same procedure for indices 1–3 with a distinct create-only output path.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update sec-candidate-replay \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --start-index 0 --limit 1 --prepare
+```
+
+After safe prepare succeeds, the corresponding run is:
+
+```bash
+bash scripts/news-learning-review.sh --update sec-candidate-replay \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --start-index 0 --limit 1 --run --model gemma4:e2b \
+  --output "$DATA/nvda-sec-primary-semantic-gemma4-candidate-case00-v1.json"
+```
+
+Only after a successful new candidate output should the existing `sec-semantic-compare` compare baseline against that candidate. Then separately use `sec-claim-review` for human evaluation; field differences and reviewer candidates are not evidence of better quality. Do not publish the private SEC content, provider output or reviewer text.
