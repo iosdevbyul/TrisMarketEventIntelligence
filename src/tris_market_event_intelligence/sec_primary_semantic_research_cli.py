@@ -14,8 +14,8 @@ from pathlib import Path
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.llm_runtime import (
-    LLMExecutionError,
     LLMCapabilities,
+    LLMExecutionError,
     LLMProvider,
     LLMSettings,
 )
