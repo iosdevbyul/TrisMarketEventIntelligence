@@ -251,26 +251,23 @@ def _quote_anchors(case: CaseInput) -> tuple[list[dict], dict[str, dict]]:
 
 
 _OBSERVED_MARKET_OUTCOME = re.compile(
-    r"\\b(?:shares?|stocks?|equities|index|indices|nasdaq|s&p\\s*500|"
-    r"market|tech\\s+stocks?)\\b.{0,95}\\b(?:fell|dropped|declined|"
-    r"slumped|plunged|tumbled|sold\\s+off|sell-?off|rose|rallied|"
-    r"rebounded|downward\\s+pressure|lost\\s+\\d|gained\\s+\\d)\\b|"
-    r"\\b(?:sell-?off|decline|drop|fall|rally|rise)\\b.{0,70}"
-    r"\\b(?:shares?|stocks?|equities|market|index|indices)\\b",
+    r"\b(?:shares?|stocks?|equities|index|indices|nasdaq|s&p\s*500|"
+    r"market|tech\s+stocks?)\b.{0,95}\b(?:fell|dropped|declined|"
+    r"slumped|plunged|tumbled|sold\s+off|sell-?off|rose|rallied|"
+    r"rebounded|downward\s+pressure|lost\s+\d|gained\s+\d)\b|"
+    r"\b(?:sell-?off|decline|drop|fall|rally|rise)\b.{0,70}"
+    r"\b(?:shares?|stocks?|equities|market|index|indices)\b",
     re.IGNORECASE,
 )
 
 
 def _observed_outcome_claim(text: str) -> bool:
-    # Defensive *claim* screening, not a truth classifier. Conditional
-    # scenarios are allowed; already-realized market moves are quarantined.
+    # Conservative detection of already-observed price outcomes.
+    # Hypothetical or conditional phrasing is allowed, never treated as fact.
     for match in _OBSERVED_MARKET_OUTCOME.finditer(text):
-        # Inspect the matched assertion, plus its immediately preceding
-        # conditional cue, rather than letting "might" anywhere in a
-        # paragraph immunize an unrelated observed-outcome assertion.
         prefix = text[max(0, match.start() - 32):match.start()]
         if not re.search(
-            r"\\b(?:if|could|might|may|would|potential|hypothetical)\\b",
+            r"\b(?:if|could|might|may|would|potential|hypothetical)\b",
             prefix + match.group(), re.IGNORECASE,
         ):
             return True
