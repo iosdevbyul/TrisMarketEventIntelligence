@@ -11,6 +11,9 @@ import re
 from pathlib import Path
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
+from tris_market_event_intelligence.sec_multi_grounded_analysis import (
+    validate_ranked_interpretation,
+)
 from tris_market_event_intelligence.sec_pinned_body_spans import (
     CONTEXT_VERSION,
     VERSION,
@@ -25,6 +28,8 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
 )
 from tris_market_event_intelligence.sec_ranked_multi_passages import (
     VERSION as MULTI_VERSION,
+)
+from tris_market_event_intelligence.sec_ranked_multi_passages import (
     reverify_ranked_passages,
     select_ranked_passages,
 )
