@@ -145,3 +145,39 @@ def test_rich_text_copy_mismatched_markdown_targets_rejected() -> None:
         fetcher._url(
             "[https://www.axios.com](https://techcrunch.com)/2026/11/08/story"
         )
+
+
+def test_exploratory_mode_marks_late_revised_original_not_historical(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+    revised = "2026-11-11T12:00:00Z"
+    with _mock_session(modified=revised) as session:
+        packet = fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="nvda-exploratory",
+            horizon=1, client=session, allow_revised=True,
+        )
+    assert len(packet["articles"]) == 2
+    assert all(
+        item["sourceIntegrity"] == "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
+        for item in packet["articles"]
+    )
+    assert all(item["sourceModifiedAt"] == "2026-11-11T12:00:00+00:00"
+               for item in packet["articles"])
+    case = cli.CaseInput.model_validate(packet)
+    assert case.articles[0].sourceIntegrity == "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
+
+
+def test_standard_mode_reports_offending_article_ordinal_and_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
+    with _mock_session(modified="2026-11-12T12:00:00Z") as session:
+        with pytest.raises(
+            ValueError,
+            match=r"NEWS_URL_REVISED_AFTER_CUTOFF\\|article=1\\|host=techcrunch.com",
+        ):
+            fetcher.collect_urls(
+                URLS, as_of=AS_OF, case_id="nvda-strict",
+                horizon=1, client=session,
+            )
