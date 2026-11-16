@@ -10,6 +10,7 @@ import pytest
 
 from tris_market_event_intelligence.sec_primary_content_research_cli import _source_review
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
+    _quote_anchors,
     prepare_primary_cases,
     run_semantic_research,
 )
@@ -109,7 +110,13 @@ class _Provider:
                       schema: dict | None) -> str:
         acc = json.loads(user)["accession"]
         self.calls.append(acc)
-        return json.dumps(_model(self.by_acc[acc]))
+        anchored = _model(self.by_acc[acc])
+        quote_id = next(iter(_quote_anchors(self.by_acc[acc])))
+        anchored["observations"] = [{
+            "quote_id": quote_id,
+            "interpretation": anchored["observations"][0]["interpretation"],
+        }]
+        return json.dumps(anchored)
 
 
 def test_offset_batch_preserves_original_case_indices(tmp_path: Path) -> None:
