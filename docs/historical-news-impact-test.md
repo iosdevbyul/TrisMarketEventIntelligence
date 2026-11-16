@@ -223,3 +223,36 @@ additional extraction pass. The compatibility switch
 `--legacy-single-pass` skips extraction for comparing previous runs;
 it is not the default pipeline. If using the two revised publisher pages
 from the exploratory NVDA cohort, do not score them as a blind benchmark.
+
+## v10 review remediation: evidence-grounded target identification (v7)
+
+In response to the real privately pinned NVDA exploratory v10 run,
+`--run` now has **three distinct Gemma4 calls** by default:
+
+1. Article quote extraction and FACT / ALLEGATION / DENIAL distinction.
+2. Bounded company / sector target identification with source-quote checks.
+3. Event reconstruction, evidence-linked stage chronology and conditional
+   company/sector effects using the validated target-selection allowlist.
+
+Only explicitly supplied `knownTickers` mappings verify company-to-ticker
+identity. A company with a source-backed name but no verified ticker remains
+an unverified candidate in `targetSelection.companies`; it must **not** be
+promoted into a validated STOCK effect. Independently selected sectors may
+still receive qualitative SECTOR impacts when source evidence justifies them.
+Neither a TECH nor a SEMICONDUCTORS sector label can impersonate a STOCK.
+
+A deterministic text-claim screen quarantines proposals and narrative fields
+that assert observed stock declines, sell-offs or index moves without a
+cutoff-valid independent market-outcome verification path. The check is
+deliberately conservative, is NOT general semantic understanding, and is
+not sufficient by itself to establish truth. Rejected source targets,
+market assertions and raw impact proposals remain reviewable. No price feed
+is accessed. If evidence is too weak, an explicit abstention is preferable to
+invented identity or percentage returns. The compatibility option
+`--legacy-single-pass` continues to skip both preliminary calls.
+
+Use a new create-only output filename for each live test. The two revised
+publisher pages in the current NVDA exploratory case are still NOT eligible
+for strict historical replay or stock-prediction-accuracy evaluation. CI
+validates code contracts; only a real local `gemma4:e2b` execution can
+demonstrate whether the revised prompts improve reasoning performance.
