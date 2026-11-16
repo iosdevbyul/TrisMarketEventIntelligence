@@ -23,13 +23,13 @@ from tris_market_event_intelligence.news_llm_factory import build_runtime
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
-from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     ABSTENTION_SUMMARY,
     INSUFFICIENT,
     source_evidence_status,
     validate_concrete_claims,
 )
+from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 
 MAX_INPUT = 2_500_000
 MAX_CASES = 12
