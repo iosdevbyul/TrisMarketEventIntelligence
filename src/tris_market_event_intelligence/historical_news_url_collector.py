@@ -373,6 +373,15 @@ def collect_urls(
     session = client or httpx.Client(
         timeout=httpx.Timeout(15), trust_env=False, follow_redirects=False,
     )
+    skipped: list[dict[str, str | int]] = []
+    # These are extraction / HTTP accessibility problems, NOT evidence that
+    # an article was available at the cutoff. All clock/safety errors stay fatal.
+    recoverable = frozenset({
+        "NEWS_URL_FETCH_HTTP_FAILURE", "NEWS_URL_FETCH_FAILED",
+        "NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE",
+        "NEWS_URL_PUBLICATION_TIME_MISSING", "NEWS_URL_HTML_REQUIRED",
+        "NEWS_URL_ARTICLE_EXCEEDS_CONTEXT_BUDGET",
+    })
     try:
         articles = []
         for i, url in enumerate(urls):
@@ -382,13 +391,23 @@ def collect_urls(
                     allow_revised=allow_revised,
                 )
             except ValueError as exc:
-                # Include only bounded publisher host and ordinal, not raw HTML.
                 code = str(exc).split("|", 1)[0]
                 host = urlsplit(_url(url)).hostname or "unknown"
+                if allow_revised and code in recoverable:
+                    skipped.append({
+                        "articleIndex": i + 1, "host": host, "reason": code,
+                    })
+                    continue
                 raise ValueError(
                     f"{code}|article={i+1}|host={host}"
                 ) from exc
+            article["sourceUrl"] = _url(url)
             articles.append(article)
+        if len(articles) < 2:
+            raise ValueError(
+                "NEWS_URL_INSUFFICIENT_READABLE_ARTICLES"
+                f"|extracted={len(articles)}|skipped={len(skipped)}"
+            )
     finally:
         if owned:
             session.close()
@@ -399,4 +418,5 @@ def collect_urls(
         "horizonTradingDays": horizon,
         "articles": articles,
         "knownTickers": [],
+        "skippedSources": skipped,
     }
