@@ -161,7 +161,7 @@ def test_diagnose_reports_only_safe_failure_code(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     packet, _, stock, spy = _inputs(tmp_path)
-    packet["eventId"] = "MISMATCH"
+    packet["eventId"] = "PRIVATE-UNRELATED-EVENT-ID"
     corroboration = tmp_path / "corroboration.json"
     corroboration.write_text(json.dumps(packet))
     output = tmp_path / "should-not-exist.json"
@@ -177,5 +177,5 @@ def test_diagnose_reports_only_safe_failure_code(
     err = json.loads(capsys.readouterr().err)
     assert err["failureCode"] == "SEC_EVIDENCE_CONTRACT_MISMATCH"
     assert err["phase"] == "BUILD_EVENT"
-    assert "MISMATCH" not in json.dumps(err)
+    assert "PRIVATE-UNRELATED-EVENT-ID" not in json.dumps(err)
     assert not output.exists()
