@@ -104,7 +104,7 @@ def _quote_anchors(case: dict) -> dict[str, str]:
     """
     source = case["evidence"][0]["text"]
     spans = []
-    for hit in re.finditer(r"\\S+(?:\\s+\\S+){5,17}", source):
+    for hit in re.finditer(r"\S+(?:\s+\S+){5,17}", source):
         quote = hit.group()
         if 12 <= len(quote) <= 200 and quote not in spans:
             spans.append(quote)
