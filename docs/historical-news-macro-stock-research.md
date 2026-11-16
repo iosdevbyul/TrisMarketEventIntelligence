@@ -524,3 +524,74 @@ across additional eras and low-move controls with independently verified
 news, sector and macro availability, tradable horizons and time-split
 sealed forecasts. GDELT URL candidates and 2026 RSS observations cannot
 be backdated into this event universe.
+
+## SEC company-history inventory for actual multi-event source discovery
+
+Actual Mac PR #176 `historical-sec-universe --preview` confirmed
+`sessions=2512`, `pinnedEvents=1`,
+`unknownEvidenceSessions=2511`,
+`trueNoNewsControlDays=0`, `trainingReady=false`. The all-session
+price/evidence join works, but **only one historical issuer source
+is verified so far**. Do not interpret the other 2,511 dates as
+actual no-news controls.
+
+New `sec-history-inventory` fetches NVIDIA's SEC CIK 0001045810
+company submissions metadata from the SEC's official
+[data API](https://www.sec.gov/search-filings/edgar-application-programming-interfaces).
+The manifest's older pagination files are fetched only when they
+overlap the requested range, at **less than two requests per second**.
+Only HTTPS allowlisted `data.sec.gov/submissions/CIK0001045810*.json`
+files are accessed. It supports 8-K/10-Q/10-K candidate metadata with
+accession, filing calendar day, **RAW** acceptance-date-time text,
+SEC index link, original SEC page hash and document path. All downloaded
+sources are hashed; the resulting output is private 0600 and new-only.
+No press release/Exhibit text is retrieved or mass-copied.
+
+**Required operator step:** The SEC requires every programmatic
+request to identify the app and an actual contact in the User-Agent.
+Set `TRIS_SEC_USER_AGENT` locally with a real contact address; this
+is NOT an API token and must not be checked into Git, printed into
+reports, or invented by ChatGPT. No user-agent => fail before network.
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+export TRIS_SEC_USER_AGENT="Your Application RealContact@example.com"
+bash scripts/news-learning-review.sh --update sec-history-inventory \
+  --start 2016-11-15 --end 2026-11-13 \
+  --output "$DATA/nvda-sec-history-candidates-2016-2026-v1.json"
+```
+
+Use the actual user identity in the User-Agent; the value above is only
+an example. Source: [SEC developer fair access](https://www.sec.gov/about/developer-resources).
+
+**Safeguards:**
+- The SEC submissions JSON is a **candidate listing**, not a
+  historical as-of article corpus. A submission acceptance timestamp is
+  not necessarily the first press release or first public feed time.
+  Neither source availability nor PIT eligibility is inferred from the
+  formatted timestamp.
+- All candidate items have
+  `secAcceptanceTimeIndependentlyVerified=false`,
+  `filingExhibitFactsVerified=false`,
+  `eligibleAsNewsModelFeature=false`; the entire inventory has
+  `trainingReady=false`. A later research phase must verify exact
+  issuer disclosure, 8-K item relevance, official exhibit, actual SEC
+  accepted-at time and target trading session before selecting
+  defensible features.
+- This deliberately does **not** request NVDA/SPY prices (already
+  obtained), create future-looking labels, validate price causality,
+  claim a positive/negative market reaction, or activate a daemon.
+  It does not treat every 8-K as earnings news.
+- 10-year range uses a bounded SEC manifest, no more than 8 historical
+  pagination pages plus the base, fail closed if this would exceed the
+  cap. If SEC denies automated access, report the error and respect SEC
+  fair-access policy rather than evading it.
+
+**Next after actual Mac inventory:** Select a meaningfully sized
+historical set of relevant earnings/disclosure 8-Ks and low-move
+non-earnings comparison windows; pin individual first-party SEC
+acceptance/index/exhibit evidence and dedup per issuer event; then
+import **verified** source-positive cases into PR #176 SEC universe
+without treating every other date as a true no-news control. Genuine
+ML forecasting requires more evidence-backed cases, a tradable horizon
+aligned with the decision cutoff, and sealed time-forward tests.
