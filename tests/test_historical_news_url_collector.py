@@ -78,12 +78,14 @@ def test_future_publication_and_post_cutoff_revisions_fail_closed(
     monkeypatch: pytest.MonkeyPatch, pub: str, mod: str, error: str,
 ) -> None:
     monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
-    with _mock_session(published=pub, modified=mod) as session:
-        with pytest.raises(ValueError, match=error):
-            fetcher.collect_urls(
-                URLS, as_of=AS_OF, case_id="nvda-test", horizon=1,
-                client=session,
-            )
+    with (
+        _mock_session(published=pub, modified=mod) as session,
+        pytest.raises(ValueError, match=error),
+    ):
+        fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="nvda-test", horizon=1,
+            client=session,
+        )
 
 
 def test_missing_publication_clock_is_not_fabricated() -> None:
