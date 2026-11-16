@@ -1197,3 +1197,22 @@ New opt-in semantic generations now instruct the model not to turn SEC form sect
 **Scope and limitation:** This is a bounded lexical *veto*, not an entailment engine or a meaning-based verification result. Other unsupported claims can evade it, and even a phrase present in the original excerpt does not prove the generated causal interpretation. Keep `HUMAN_SEMANTIC_REVIEW_REQUIRED`, `humanDecisionsRecorded=0`, and all training/prediction/promotion gates unchanged. Do not portray heuristic warnings as true hallucinations or their absence as verified quality.
 
 After merge and CI, generate a new create-only comparison batch from existing privately SHA-pinned originals with a different filename. Do not overwrite baseline reports. A later separately reviewed evaluation should align each new model claim with exact primary-source spans, distinguish observation from hypothesis and independently sourced sector context, and compare baseline versus new output only after verified same-case pairing. No independent external sector evidence is supplied in this phase.
+
+
+### 2026-11-17: Private claim-to-source review packet (unreviewed)
+
+The offline `sec-claim-review` action consumes only existing SHA-pinned original SEC packet(s) and existing saved semantic reports. It calls the full original source and model-output validation used by `sec-semantic-review`, then extracts every observation interpretation, hypothesis mechanism, hypothesis limitation, and summary into stable per-case JSON field locations. Each private row contains the source excerpt, original exact source quote candidates (issuer-related fields only), the model statement, and explicit human-review placeholders, with `evidenceStatus=NOT_ASSESSED`. **A matching quote is merely a reviewer candidate and is NOT proof that the commentary is supported.** Sector and missing-context hypotheses receive no independent industry citations.
+
+Example local invocation (new path, no overwrite):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update sec-claim-review \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --report "$DATA/nvda-sec-primary-semantic-gemma4-cases01-03-v1.json" \
+  --output "$DATA/nvda-sec-claim-review-cases00-03-v1.json"
+```
+
+The resulting JSON contains PRIVATE SEC source text and model commentary: never commit, paste into logs, or expose over an API. The review packet itself does not record decisions or perform a semantic entailment verdict. `humanDecisionsRecorded=0`, first-public time verification 0, and all training/prediction/promotion gates remain false. Later human reviewers may use the stable field paths to compare supported claims, unsupported specifics, and legitimately uncertain scenarios; no automated success claim is allowed.
