@@ -101,12 +101,19 @@ def validate_concrete_claims(case: dict, interpretation: dict) -> None:
         for field in ("mechanism", "limitation"):
             text = hypothesis[field]
             # Concrete sector acts cannot be grounded by an issuer-only filing.
-            if category == "SECTOR_ALTERNATIVE" and STRUCTURE.search(text) and CHANGE.search(text):
+            if category == "SECTOR_ALTERNATIVE" and (
+                (STRUCTURE.search(text) and CHANGE.search(text))
+                or FILING_MOTIVE.search(text)
+            ):
                 raise ValueError("SEC_SEMANTIC_UNVERIFIED_SECTOR_CAUSE")
             statements.append(text)
     for statement in statements:
         # Ordinary mention of a filing or company is not an event assertion.
-        if not (STRUCTURE.search(statement) and CHANGE.search(statement)):
+        if not (
+            (STRUCTURE.search(statement) and CHANGE.search(statement))
+            or MATERIAL_EVENT.search(statement)
+            or FILING_MOTIVE.search(statement)
+        ):
             continue
         # Require matching fact+change terms in a single issuer-sourced passage,
         # rather than accepting the presence of a keyword in the full excerpt.
@@ -116,7 +123,8 @@ def validate_concrete_claims(case: dict, interpretation: dict) -> None:
             "about", "which", "should", "underlying", "possible",
         }
         grounded = any(
-            CHANGE.search(fact) and STRUCTURE.search(fact)
+            (CHANGE.search(fact) or MATERIAL_EVENT.search(fact))
+            and STRUCTURE.search(fact)
             and len(subject & set(re.findall(r"[a-z]{5,}", fact.lower()))) >= 2
             for fact in facts
         )
