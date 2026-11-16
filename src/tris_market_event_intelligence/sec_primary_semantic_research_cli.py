@@ -20,9 +20,16 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
+from tris_market_event_intelligence.sec_multi_grounded_analysis import (
+    generate_ranked_interpretation,
+)
 from tris_market_event_intelligence.sec_pinned_body_spans import apply_body_spans
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
+)
+from tris_market_event_intelligence.sec_ranked_multi_passages import (
+    VERSION as MULTI_VERSION,
+    apply_ranked_passages,
 )
 from tris_market_event_intelligence.sec_revenue_context_guard import (
     STOP_STATUSES,
@@ -526,10 +533,25 @@ def run_semantic_research(
             or not isinstance(start_index, int) or isinstance(start_index, bool)
             or not 0 <= start_index < len(prepared["cases"])):
         raise ValueError("SEC_SEMANTIC_MODEL_INPUT_INVALID")
+    multi_mode = prepared.get("multiPassageVersion") == MULTI_VERSION
     results = []
     for case_index, case in enumerate(
         prepared["cases"][start_index:start_index + limit], start=start_index,
     ):
+        if multi_mode and "sourcePassages" in case:
+            interpretation = generate_ranked_interpretation(case, provider)
+            results.append({
+                "sourcePassages": case["sourcePassages"],
+                "accession": case["accession"], "sourceSha256": case["sourceSha256"],
+                "caseIndex": case_index,
+                "analysisStatus": "SUBSTANTIVE_ISSUER_EVIDENCE_PRESENT",
+                "quoteAnchorSelectionApplied": True,
+                "interpretation": interpretation,
+                "hypothesesCorrectionAttempted": False,
+                "sourceInterpretationIsHumanUnverified": True,
+                "historicalTimeEligibility": False,
+            })
+            continue
         if evidence_gated:
             context_status = case.get("sourceSpan", {}).get("contextStatus")
             if context_status is not None and (
@@ -539,6 +561,7 @@ def run_semantic_research(
             ):
                 raise ValueError("SEC_CONTEXT_STATUS_NOT_PROVENANCED")
             status = (
+                INSUFFICIENT if multi_mode else
                 context_status
                 or (INSUFFICIENT if source_evidence_status(
                     case["evidence"][0]["text"]
@@ -645,6 +668,7 @@ def run_semantic_research(
         "casesAnalyzed": len(results),
         **({"bodySpanSelectionVersion": prepared["bodySpanSelectionVersion"]}
            if "bodySpanSelectionVersion" in prepared else {}),
+        **({"multiPassageVersion": MULTI_VERSION} if multi_mode else {}),
         **({"evidenceGateVersion": "sec_substantive_evidence_v1",
             "casesAbstained": sum(
                 row.get("analysisStatus") in STOP_STATUSES for row in results
@@ -675,7 +699,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), default=2)
     parser.add_argument("--start-index", type=int, default=0)
     parser.add_argument("--model", default="gemma4:e2b")
-    parser.add_argument("--body-spans", action="store_true")
+    selections = parser.add_mutually_exclusive_group()
+    selections.add_argument("--body-spans", action="store_true")
+    selections.add_argument("--multi-passages", action="store_true")
     # New CLI execution uses the evidence gate by default. The legacy Python
     # API remains readable for existing archived fixture generation.
     modes = parser.add_mutually_exclusive_group(required=True)
@@ -690,6 +716,8 @@ def main() -> None:
         prepared = prepare_primary_cases(packet, digest, args.source_dir)
         if args.body_spans:
             prepared = apply_body_spans(prepared, args.source_dir)
+        elif args.multi_passages:
+            prepared = apply_ranked_passages(prepared, args.source_dir)
         if args.prepare:
             report = prepared
         else:
