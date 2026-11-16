@@ -24,6 +24,11 @@ from tris_market_event_intelligence.sec_pinned_body_spans import apply_body_span
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
+from tris_market_event_intelligence.sec_revenue_context_guard import (
+    STOP_STATUSES,
+    reject_unsupported_revenue_causes,
+    validated_stopped_interpretation,
+)
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     ABSTENTION_SUMMARY,
     INSUFFICIENT,
@@ -525,23 +530,41 @@ def run_semantic_research(
     for case_index, case in enumerate(
         prepared["cases"][start_index:start_index + limit], start=start_index,
     ):
-        if evidence_gated and source_evidence_status(case["evidence"][0]["text"]) == INSUFFICIENT:
-            # Deterministic abstention BEFORE invoking the provider.
-            results.append({
-                "accession": case["accession"],
-                "sourceSha256": case["sourceSha256"],
-                "caseIndex": case_index,
-                "analysisStatus": INSUFFICIENT,
-                "quoteAnchorSelectionApplied": False,
-                "interpretation": {
-                    "observations": [], "hypotheses": [],
-                    "summary": ABSTENTION_SUMMARY,
-                },
-                "hypothesesCorrectionAttempted": False,
-                "sourceInterpretationIsHumanUnverified": True,
-                "historicalTimeEligibility": False,
-            })
-            continue
+        if evidence_gated:
+            context_status = case.get("sourceSpan", {}).get("contextStatus")
+            if context_status is not None and (
+                prepared.get("bodySpanSelectionVersion") !=
+                "sec_contextual_body_span_v2"
+                or context_status not in STOP_STATUSES
+            ):
+                raise ValueError("SEC_CONTEXT_STATUS_NOT_PROVENANCED")
+            status = (
+                context_status
+                or (INSUFFICIENT if source_evidence_status(
+                    case["evidence"][0]["text"]
+                ) == INSUFFICIENT else None)
+            )
+            if status is not None:
+                interpretation = (
+                    {"observations": [], "hypotheses": [],
+                     "summary": ABSTENTION_SUMMARY}
+                    if status == INSUFFICIENT
+                    else validated_stopped_interpretation(status)
+                )
+                results.append({
+                    **({"sourceSpan": case["sourceSpan"]}
+                       if "sourceSpan" in case else {}),
+                    "accession": case["accession"],
+                    "sourceSha256": case["sourceSha256"],
+                    "caseIndex": case_index,
+                    "analysisStatus": status,
+                    "quoteAnchorSelectionApplied": False,
+                    "interpretation": interpretation,
+                    "hypothesesCorrectionAttempted": False,
+                    "sourceInterpretationIsHumanUnverified": True,
+                    "historicalTimeEligibility": False,
+                })
+                continue
         request = {
             "accession": case["accession"],
             "source_sha256": case["sourceSha256"],
@@ -571,6 +594,7 @@ def run_semantic_research(
             _check_ungrounded_specifics(case, validated)
             if evidence_gated:
                 validate_concrete_claims(case, validated)
+                reject_unsupported_revenue_causes(case["evidence"][0]["text"], validated)
         except ValueError as exc:
             if str(exc) not in {
                 "SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED",
@@ -586,6 +610,9 @@ def run_semantic_research(
                 _check_ungrounded_specifics(case, validated)
                 if evidence_gated:
                     validate_concrete_claims(case, validated)
+                    reject_unsupported_revenue_causes(
+                        case["evidence"][0]["text"], validated,
+                    )
             except ValueError as repair_exc:
                 if str(repair_exc) in {
                     "SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED",
@@ -620,13 +647,13 @@ def run_semantic_research(
            if "bodySpanSelectionVersion" in prepared else {}),
         **({"evidenceGateVersion": "sec_substantive_evidence_v1",
             "casesAbstained": sum(
-                row.get("analysisStatus") == INSUFFICIENT for row in results
+                row.get("analysisStatus") in STOP_STATUSES for row in results
             )} if evidence_gated else {}),
         "startIndex": start_index,
         "originalCasesAvailable": len(prepared["cases"]),
         "cases": results,
         "modelCalls": sum(
-            row.get("analysisStatus") != INSUFFICIENT for row in results
+            row.get("analysisStatus") not in STOP_STATUSES for row in results
         ) + sum(row["hypothesesCorrectionAttempted"] for row in results),
         "hypothesesCorrectionCount": sum(row["hypothesesCorrectionAttempted"] for row in results),
         "allQuoteSpansVerifiedAgainstOriginalSHA": True,

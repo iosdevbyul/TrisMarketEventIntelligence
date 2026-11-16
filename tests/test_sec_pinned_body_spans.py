@@ -12,7 +12,7 @@ from tris_market_event_intelligence.sec_claim_evidence_review_cli import (
     build_claim_review,
 )
 from tris_market_event_intelligence.sec_pinned_body_spans import (
-    VERSION,
+    CONTEXT_VERSION,
     apply_body_spans,
 )
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
@@ -75,7 +75,7 @@ def _candidate(tmp_path: Path) -> tuple[dict, dict, dict]:
 def test_full_original_body_selected_after_1100_char_cover(tmp_path: Path) -> None:
     primary, old, candidate = _candidate(tmp_path)
     case = candidate["cases"][0]
-    assert candidate["bodySpanSelectionVersion"] == VERSION
+    assert candidate["bodySpanSelectionVersion"] == CONTEXT_VERSION
     assert candidate["casesAbstained"] == 0
     assert case["analysisStatus"] == SUBSTANTIVE
     span = case["sourceSpan"]

@@ -12,15 +12,20 @@ from pathlib import Path
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.sec_pinned_body_spans import (
+    CONTEXT_VERSION,
     VERSION,
     reverify_body_span,
-    select_body_span,
+    select_versioned_body_span,
 )
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     MAX_CASES,
     MAX_INPUT,
     _validate_response,
     prepare_primary_cases,
+)
+from tris_market_event_intelligence.sec_revenue_context_guard import (
+    STOP_STATUSES,
+    validated_stopped_interpretation,
 )
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     ABSTENTION_SUMMARY,
@@ -67,7 +72,7 @@ def build_review_packet(
                 or not report["modelId"]):
             raise ValueError("SEC_SEMANTIC_REVIEW_REPORT_PROVENANCE_INVALID")
         body_mode = report.get("bodySpanSelectionVersion")
-        if body_mode is not None and body_mode != VERSION:
+        if body_mode is not None and body_mode not in {VERSION, CONTEXT_VERSION}:
             raise ValueError("SEC_BODY_SPAN_SELECTION_VERSION_INVALID")
         corrections = 0
         abstained = 0
@@ -78,16 +83,18 @@ def build_review_packet(
             if not isinstance(acc, str) or acc not in by_accession or acc in seen:
                 raise ValueError("SEC_SEMANTIC_REVIEW_DUPLICATE_OR_UNKNOWN_CASE")
             index, case = by_accession[acc]
-            if body_mode == VERSION:
+            if body_mode in {VERSION, CONTEXT_VERSION}:
                 raw_path = source_dir / f"sec-{acc}-primary.source"
                 if raw_path.is_symlink() or not raw_path.is_file():
                     raise ValueError("SEC_BODY_ORIGINAL_SOURCE_REQUIRED")
                 raw = raw_path.read_bytes()
-                expected = select_body_span(case, raw)
+                expected = select_versioned_body_span(case, raw, body_mode)
                 if ("sourceSpan" in item) != (expected is not None):
                     raise ValueError("SEC_BODY_SPAN_SELECTION_MISMATCH")
                 if expected is not None:
-                    case = reverify_body_span(case, raw, item["sourceSpan"])
+                    case = reverify_body_span(
+                        case, raw, item["sourceSpan"], version=body_mode,
+                    )
             elif "sourceSpan" in item:
                 raise ValueError("SEC_BODY_SPAN_MODE_REQUIRED")
             if (item.get("sourceSha256") != case["sourceSha256"]
@@ -98,16 +105,29 @@ def build_review_packet(
                 raise ValueError("SEC_SEMANTIC_REVIEW_CASE_PROVENANCE_INVALID")
             analysis_status = item.get("analysisStatus")
             gated = report.get("evidenceGateVersion") == "sec_substantive_evidence_v1"
-            if gated and analysis_status not in {INSUFFICIENT, SUBSTANTIVE}:
+            if gated and analysis_status not in STOP_STATUSES | {SUBSTANTIVE}:
                 raise ValueError("SEC_SEMANTIC_ANALYSIS_STATUS_INVALID")
-            if analysis_status == INSUFFICIENT and gated:
-                if (source_evidence_status(case["evidence"][0]["text"]) != INSUFFICIENT
+            if analysis_status in STOP_STATUSES and gated:
+                expected_context = (
+                    case.get("sourceSpan", {}).get("contextStatus")
+                    if body_mode == CONTEXT_VERSION else None
+                )
+                expected_status = (
+                    expected_context
+                    or (INSUFFICIENT if source_evidence_status(
+                        case["evidence"][0]["text"]
+                    ) == INSUFFICIENT else None)
+                )
+                expected_interpretation = (
+                    {"observations": [], "hypotheses": [],
+                     "summary": ABSTENTION_SUMMARY}
+                    if analysis_status == INSUFFICIENT
+                    else validated_stopped_interpretation(analysis_status)
+                )
+                if (analysis_status != expected_status
                         or item.get("quoteAnchorSelectionApplied") is not False
                         or item["hypothesesCorrectionAttempted"] is not False
-                        or item.get("interpretation") != {
-                            "observations": [], "hypotheses": [],
-                            "summary": ABSTENTION_SUMMARY,
-                        }):
+                        or item.get("interpretation") != expected_interpretation):
                     raise ValueError("SEC_SEMANTIC_ABSTENTION_PROVENANCE_INVALID")
                 validated = item["interpretation"]
                 abstained += 1

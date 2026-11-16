@@ -31,6 +31,7 @@ from tris_market_event_intelligence.sec_primary_semantic_review_cli import (
     MAX_REPORT_BYTES,
     build_review_packet,
 )
+from tris_market_event_intelligence.sec_revenue_context_guard import STOP_STATUSES
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     INSUFFICIENT,
     source_evidence_status,
@@ -69,6 +70,14 @@ def prepare_candidate_replay(
         "bodySpansEnabled": body_spans,
         "requestedBodySpansSelected": sum(
             "sourceSpan" in prepared["cases"][index] for index in sorted(wanted)
+        ),
+        "referentsUnresolved": sum(
+            prepared["cases"][index].get("sourceSpan", {}).get("contextStatus")
+            == "REFERENT_UNRESOLVED" for index in sorted(wanted)
+        ),
+        "descriptiveOnly": sum(
+            prepared["cases"][index].get("sourceSpan", {}).get("contextStatus")
+            == "DESCRIPTIVE_REVENUE_SHARE_ONLY" for index in sorted(wanted)
         ),
         "historicalPublicTimesIndependentlyVerified": 0,
         "humanDecisionsRecorded": 0,
@@ -133,7 +142,12 @@ def main() -> None:
             plan["startIndex"]:plan["startIndex"] + len(plan["caseIndexes"])
         ]
         if all(
-            source_evidence_status(case["evidence"][0]["text"]) == INSUFFICIENT
+            (
+                case.get("sourceSpan", {}).get("contextStatus")
+                or (INSUFFICIENT if source_evidence_status(
+                    case["evidence"][0]["text"]
+                ) == INSUFFICIENT else None)
+            ) in STOP_STATUSES
             for case in requested
         ):
             # No Ollama probing or provider network when every case abstains.
@@ -162,6 +176,8 @@ def main() -> None:
             "casesAnalyzed": candidate["casesAnalyzed"],
             "casesAbstained": candidate["casesAbstained"],
             "bodySpansSelected": plan["requestedBodySpansSelected"],
+            "referentsUnresolved": plan["referentsUnresolved"],
+            "descriptiveOnly": plan["descriptiveOnly"],
             "caseIndexes": plan["caseIndexes"],
             "modelCalls": candidate["modelCalls"],
             "baselineModified": False,

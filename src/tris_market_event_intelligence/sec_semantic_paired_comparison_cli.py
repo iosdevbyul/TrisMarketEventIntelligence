@@ -21,7 +21,11 @@ from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_js
 
 def _fields(case: dict) -> dict[str, str]:
     fields: dict[str, str] = {}
-    if case.get("analysisStatus") == "INSUFFICIENT_SUBSTANTIVE_EVIDENCE":
+    if case.get("analysisStatus") in {
+        "INSUFFICIENT_SUBSTANTIVE_EVIDENCE",
+        "REFERENT_UNRESOLVED",
+        "DESCRIPTIVE_REVENUE_SHARE_ONLY",
+    }:
         return {"analysisStatus": case["analysisStatus"], "summary": case["summary"]}
     for i, observation in enumerate(case["observations"]):
         fields[f"observations[{i}].interpretation"] = observation["interpretation"]

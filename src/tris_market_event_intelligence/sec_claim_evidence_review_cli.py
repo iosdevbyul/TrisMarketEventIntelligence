@@ -31,7 +31,11 @@ def build_claim_review(
     claims: list[dict] = []
     abstained_cases: list[int] = []
     for case in verified["cases"]:
-        if case.get("analysisStatus") == "INSUFFICIENT_SUBSTANTIVE_EVIDENCE":
+        if case.get("analysisStatus") in {
+            "INSUFFICIENT_SUBSTANTIVE_EVIDENCE",
+            "REFERENT_UNRESOLVED",
+            "DESCRIPTIVE_REVENUE_SHARE_ONLY",
+        }:
             abstained_cases.append(case["caseIndex"])
             continue
         index = case["caseIndex"]
