@@ -4,10 +4,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
+from tris_market_event_intelligence import sec_primary_semantic_research_cli as semantic_cli
+from tris_market_event_intelligence.llm_runtime import LLMExecutionError, LLMSettings
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
@@ -196,3 +199,66 @@ def test_source_pit_promotion_is_rejected(tmp_path: Path) -> None:
     changed["trainingReady"] = True
     with pytest.raises(ValueError, match="SEC_SEMANTIC_PRIMARY_PROVENANCE_INVALID"):
         prepare_primary_cases(changed, "a" * 64, tmp_path)
+
+def test_cli_reports_redacted_model_stage_and_error_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    packet = _original_packet(tmp_path)
+    monkeypatch.setattr(
+        semantic_cli, "_read_json", lambda path, max_size: (packet, "a" * 64),
+    )
+    monkeypatch.setattr(
+        semantic_cli.LLMSettings, "from_environment",
+        lambda **kwargs: LLMSettings(
+            kind="ollama", model_id="gemma4:e2b",
+            endpoint="http://127.0.0.1:11434",
+        ),
+    )
+    monkeypatch.setattr(
+        semantic_cli, "build_runtime", lambda *args, **kwargs: object(),
+    )
+
+    def fail_model(prepared: dict, provider: object, *, limit: int) -> dict:
+        raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
+
+    monkeypatch.setattr(semantic_cli, "run_semantic_research", fail_model)
+    monkeypatch.setattr(sys, "argv", [
+        "sec-primary-semantic", "--primary", str(tmp_path / "private.json"),
+        "--source-dir", str(tmp_path), "--run",
+        "--output", str(tmp_path / "new.json"),
+    ])
+    with pytest.raises(SystemExit) as exc:
+        semantic_cli.main()
+    assert exc.value.code == 2
+    stderr = capsys.readouterr().err
+    assert "FAILED_STAGE=GENERATE_AND_VALIDATE_MODEL" in stderr
+    assert "ERROR_CODE=MODEL_GENERATION_TRUNCATED" in stderr
+    assert str(tmp_path) not in stderr
+    assert "NVIDIA CORPORATION" not in stderr
+    assert not (tmp_path / "new.json").exists()
+
+
+def test_cli_reports_source_sha_mismatch_without_disclosing_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    packet = _original_packet(tmp_path)
+    source = tmp_path / f"sec-{ACC}-primary.source"
+    source.write_bytes(BODY.replace(b"CORPORATION", b"INCORPORATED"))
+    monkeypatch.setattr(
+        semantic_cli, "_read_json", lambda path, max_size: (packet, "a" * 64),
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "sec-primary-semantic", "--primary", str(tmp_path / "private.json"),
+        "--source-dir", str(tmp_path), "--prepare",
+        "--output", str(tmp_path / "new.json"),
+    ])
+    with pytest.raises(SystemExit) as exc:
+        semantic_cli.main()
+    assert exc.value.code == 2
+    stderr = capsys.readouterr().err
+    assert "FAILED_STAGE=VALIDATE_INPUT" in stderr
+    assert "ERROR_CODE=SEC_SEMANTIC_SOURCE_SHA_MISMATCH" in stderr
+    assert str(tmp_path) not in stderr
+    assert not (tmp_path / "new.json").exists()

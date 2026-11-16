@@ -15,6 +15,7 @@ from pathlib import Path
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.llm_runtime import (
     LLMCapabilities,
+    LLMExecutionError,
     LLMProvider,
     LLMSettings,
 )
@@ -298,6 +299,7 @@ def main() -> None:
     modes.add_argument("--prepare", action="store_true")
     modes.add_argument("--run", action="store_true")
     args = parser.parse_args()
+    stage = "VALIDATE_INPUT"
     try:
         if args.output is None:
             raise ValueError("SEC_SEMANTIC_NEW_OUTPUT_REQUIRED")
@@ -306,6 +308,7 @@ def main() -> None:
         if args.prepare:
             report = prepared
         else:
+            stage = "INITIALIZE_PROVIDER"
             settings = replace(
                 LLMSettings.from_environment(explicit=True), model_id=args.model,
                 capabilities=LLMCapabilities(
@@ -314,9 +317,11 @@ def main() -> None:
                 ),
             )
             provider = build_runtime(settings, confirm_model=True)
+            stage = "GENERATE_AND_VALIDATE_MODEL"
             report = run_semantic_research(
                 prepared, provider=provider, limit=args.limit,
             )
+        stage = "WRITE_NEW_OUTPUT"
         _write(args.output, report)
         print(json.dumps({
             "status": report["status"],
@@ -327,8 +332,23 @@ def main() -> None:
             "trainingReady": False, "outputCreated": True,
         }))
     except (OSError, ValueError, KeyError, TypeError, UnicodeError,
-            json.JSONDecodeError, AttributeError):
-        parser.exit(2, "sec-primary-semantic: SOURCE_OR_MODEL_EVIDENCE_INVALID\n")
+            json.JSONDecodeError, AttributeError) as exc:
+        # Only stable internal error categories are printed; never log source
+        # excerpts, generated model JSON, local private paths or credentials.
+        if isinstance(exc, LLMExecutionError):
+            code = exc.code
+        elif isinstance(exc, json.JSONDecodeError):
+            code = "MODEL_OR_INPUT_JSON_INVALID"
+        elif (type(exc) in {ValueError, TypeError}
+              and exc.args and isinstance(exc.args[0], str)
+              and exc.args[0].startswith("SEC_")
+              and re.fullmatch(r"[A-Z0-9_]{8,90}", exc.args[0])):
+            code = exc.args[0]
+        else:
+            code = "UNCLASSIFIED_" + type(exc).__name__.upper()
+        parser.exit(
+            2, f"sec-primary-semantic: FAILED_STAGE={stage} ERROR_CODE={code}\n"
+        )
 
 
 if __name__ == "__main__":
