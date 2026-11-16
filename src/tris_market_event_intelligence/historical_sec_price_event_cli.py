@@ -135,6 +135,36 @@ def build_sec_earnings_price_event(
     }
 
 
+def _safe_failure_code(exc: Exception, phase: str) -> str:
+    """Give an actionable error category without leaking private source contents."""
+    if phase == "READ_CORROBORATION":
+        return "CORROBORATION_FILE_INVALID"
+    if phase == "READ_SEC":
+        return "SEC_EVIDENCE_FILE_INVALID"
+    if phase == "WRITE_OUTPUT":
+        return "OUTPUT_PATH_NOT_NEW_OR_UNWRITABLE"
+    if isinstance(exc, ValueError):
+        codes = {
+            "Unverified historic corroboration contract required":
+                "CORROBORATION_CONTRACT_MISMATCH",
+            "SEC first-publication or issuer evidence mismatch":
+                "SEC_EVIDENCE_CONTRACT_MISMATCH",
+            "SEC acceptance clock must match original SEC index":
+                "SEC_ACCEPTANCE_TIME_MISMATCH",
+            "SEC filing cannot leak across the decision cutoff":
+                "SEC_CUTOFF_INVALID",
+            "Expected actual stock and market session with prior close":
+                "PRICE_EVENT_SESSION_MISSING",
+            "Incompatible historical trading calendars":
+                "PRICE_PREVIOUS_SESSION_MISMATCH",
+        }
+        if str(exc) in codes:
+            return codes[str(exc)]
+    if phase == "BUILD_EVENT":
+        return "PRICE_FILE_OR_EVENT_VALIDATION_FAILED"
+    return "INPUT_VALIDATION_FAILED"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="One SEC filing's witnessed time to EOD event outcome")
     parser.add_argument("--corroboration", type=Path, required=True)
@@ -142,16 +172,23 @@ def main() -> None:
     parser.add_argument("--stock-csv", type=Path, required=True)
     parser.add_argument("--benchmark-csv", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--diagnose", action="store_true",
+                        help="Validate existing inputs without creating a file")
     args = parser.parse_args()
+    phase = "READ_CORROBORATION"
     try:
         corroboration, corroboration_sha = _read(args.corroboration)
+        phase = "READ_SEC"
         sec, sec_sha = _read(args.sec)
+        phase = "BUILD_EVENT"
         result = build_sec_earnings_price_event(
             corroboration=corroboration, corroboration_sha=corroboration_sha,
             sec=sec, sec_sha=sec_sha, stock_csv=args.stock_csv,
             benchmark_csv=args.benchmark_csv,
         )
-        _write(args.output, result)
+        if not args.diagnose:
+            phase = "WRITE_OUTPUT"
+            _write(args.output, result)
         print(json.dumps({
             "status": result["status"],
             "decisionAt": result["decisionAt"],
@@ -163,10 +200,17 @@ def main() -> None:
             "gkgUrlsNotPromoted": result["features"]["gkgCandidateUrlsExcluded"],
             "trainingReady": False,
             "predictionReady": False,
-            "outputCreated": True,
+            "outputCreated": not args.diagnose,
+            "diagnosticOnly": args.diagnose,
         }))
-    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-        parser.exit(2, "historical-sec-event: INVALID_SOURCE_OR_PIT_EVIDENCE\n")
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        parser.exit(2, json.dumps({
+            "status": "INVALID_SOURCE_OR_PIT_EVIDENCE",
+            "failureCode": _safe_failure_code(exc, phase),
+            "phase": phase,
+            "errorType": type(exc).__name__,
+            "outputCreated": False,
+        }) + "\n")
 
 
 if __name__ == "__main__":
