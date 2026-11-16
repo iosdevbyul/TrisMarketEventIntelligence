@@ -136,12 +136,12 @@ def main() -> None:
             provider = NoModelProvider()
         else:
             settings = replace(
-            LLMSettings.from_environment(explicit=True), model_id=args.model,
-            capabilities=LLMCapabilities(
-                json_schema=True, thinking=False,
-                context_window=8192, max_output_tokens=3072,
-            ),
-        )
+                LLMSettings.from_environment(explicit=True), model_id=args.model,
+                capabilities=LLMCapabilities(
+                    json_schema=True, thinking=False,
+                    context_window=8192, max_output_tokens=3072,
+                ),
+            )
             provider = build_runtime(settings, confirm_model=True)
         stage = "GENERATE_AND_VALIDATE_CANDIDATE"
         candidate = replay_candidate(prepared, plan, provider)
