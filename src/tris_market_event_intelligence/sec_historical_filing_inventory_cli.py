@@ -63,7 +63,7 @@ def _get_json(client: httpx.Client, url: str, user_agent: str) -> tuple[dict, st
 def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
     fields = (
         "accessionNumber", "filingDate", "acceptanceDateTime", "form",
-        "primaryDocument", "items",
+        "primaryDocument",
     )
     if not isinstance(columns, dict):
         raise TypeError("SEC columns missing")
@@ -72,8 +72,14 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
             or len({len(v) for v in values}) != 1
             or len(values[0]) > MAX_ROWS):
         raise ValueError("Malformed SEC parallel columns")
+    # Historical SEC pages can omit the 8-K items column, or use null.
+    items_column = columns.get("items")
+    if items_column is None:
+        items_column = [""] * len(values[0])
+    if not isinstance(items_column, list) or len(items_column) != len(values[0]):
+        raise ValueError("Malformed SEC items column")
     out = []
-    for vals in zip(*values, strict=True):
+    for vals in zip(*values, items_column, strict=True):
         acc, filing_date, accepted, form, primary_doc, items = vals
         if not isinstance(form, str) or form not in FORM_ALLOWED:
             continue
@@ -81,7 +87,7 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
                 or not isinstance(filing_date, str)
                 or not isinstance(accepted, str)
                 or not isinstance(primary_doc, str)
-                or not isinstance(items, str)):
+                or (items is not None and not isinstance(items, str))):
             raise ValueError("Malformed historical filing metadata")
         day = date.fromisoformat(filing_date)
         # SEC submissions 'acceptanceDateTime' may be a timezone-less
@@ -101,7 +107,7 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
             "filingDate": day.isoformat(),
             "rawSecAcceptanceDateTime": accepted,
             "form": form,
-            "formItems": items,
+            "formItems": items or "",
             "secPrimaryDocument": primary_doc,
             "secIndexUrl": (
                 f"https://www.sec.gov/Archives/edgar/data/{int(CIK)}/"
@@ -237,8 +243,33 @@ def main() -> None:
             "trainingReady": False,
             "outputCreated": True,
         }))
-    except (httpx.HTTPError, OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
-        parser.exit(2, "sec-history-inventory: INVALID_SOURCE_OR_NETWORK\n")
+    except httpx.HTTPStatusError as exc:
+        parser.exit(
+            2, f"sec-history-inventory: SEC_HTTP_{exc.response.status_code}\\n",
+        )
+    except httpx.TimeoutException:
+        parser.exit(2, "sec-history-inventory: SEC_TIMEOUT\\n")
+    except httpx.ConnectError:
+        parser.exit(2, "sec-history-inventory: SEC_CONNECTION_FAILED\\n")
+    except httpx.HTTPError:
+        parser.exit(2, "sec-history-inventory: SEC_TRANSPORT_FAILED\\n")
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        # Never emit response bodies, the User-Agent, or local file paths.
+        # The diagnostic is a bounded category, not arbitrary exception text.
+        allowed = {
+            "Malformed SEC parallel columns": "SEC_SCHEMA_COLUMNS",
+            "Malformed SEC items column": "SEC_SCHEMA_ITEMS",
+            "SEC historical range requires too many pages": "SEC_HISTORY_PAGE_LIMIT",
+            "Unsafe SEC history page name": "SEC_HISTORY_MANIFEST",
+            "Invalid or duplicate SEC history page": "SEC_HISTORY_MANIFEST",
+            "Malformed historical filing metadata": "SEC_FILING_METADATA",
+            "Invalid unverified SEC acceptance clock text": "SEC_ACCEPTANCE_FORMAT",
+            "SEC requires identifying application and contact User-Agent":
+                "SEC_USER_AGENT_INVALID",
+        }
+        parser.exit(
+            2, f"sec-history-inventory: {allowed.get(str(exc), 'SEC_SOURCE_VALIDATION_FAILED')}\\n",
+        )
 
 
 if __name__ == "__main__":

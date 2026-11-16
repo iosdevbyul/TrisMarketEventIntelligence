@@ -140,3 +140,40 @@ def test_prevent_traversal_and_bad_download_host() -> None:
         lambda request: pytest.fail("Unexpected domain")
     )) as client, pytest.raises(ValueError, match="Unapproved SEC"):
         _get_json(client, "https://example.com/untrusted", "abc@example.com")
+
+
+def test_nullable_or_missing_items_are_quarantined_not_rejected() -> None:
+    columns = _columns()
+    columns["items"][0] = None
+    main = _main()
+    main["filings"]["recent"] = columns
+    report = build_sec_filing_inventory(
+        main=main, main_sha="a" * 64, histories=[],
+        start=date(2018, 1, 1), end=date(2023, 12, 31),
+    )
+    assert report["filings"][0]["formItems"] == ""
+    assert report["filings"][0]["eligibleAsNewsModelFeature"] is False
+    del columns["items"]
+    report = build_sec_filing_inventory(
+        main=main, main_sha="a" * 64, histories=[],
+        start=date(2018, 1, 1), end=date(2023, 12, 31),
+    )
+    assert report["candidateFilings"] == 3
+    assert all(row["formItems"] == "" for row in report["filings"])
+
+
+def test_sec_api_error_keeps_status_code_available_without_body() -> None:
+    def deny(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403, text="Access denied; private user agent or email was sent"
+        )
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(deny)) as client,
+        pytest.raises(httpx.HTTPStatusError) as exc,
+    ):
+        _get_json(
+            client, f"https://data.sec.gov/submissions/CIK{CIK}.json",
+            "TrisMarketEventIntelligence contact@example.com",
+        )
+    assert exc.value.response.status_code == 403
