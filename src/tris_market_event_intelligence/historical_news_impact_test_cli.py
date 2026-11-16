@@ -260,14 +260,14 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
     for proposal in answer.eventStages:
         if proposal.articleId not in articles:
             rejected_stages.append({
-                **proposal.model_dump(), "reason": "UNKNOWN_ARTICLE",
+                **proposal.model_dump(exclude_none=True), "reason": "UNKNOWN_ARTICLE",
             })
         elif proposal.quoteId is not None and (
             proposal.quoteId not in lookup
             or lookup[proposal.quoteId]["articleId"] != proposal.articleId
         ):
             rejected_stages.append({
-                **proposal.model_dump(), "reason": "QUOTE_NOT_IN_ARTICLE",
+                **proposal.model_dump(exclude_none=True), "reason": "QUOTE_NOT_IN_ARTICLE",
             })
         else:
             proposals.setdefault(proposal.articleId, []).append(proposal)
@@ -281,12 +281,12 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
             or anchored and len({x.quoteId for x in offered}) == len(offered)
         )
         if unambiguous:
-            valid_stages.extend(x.model_dump() for x in offered)
+            valid_stages.extend(x.model_dump(exclude_none=True) for x in offered)
         else:
             unresolved_ids.append(article.articleId)
             for proposal in offered:
                 rejected_stages.append({
-                    **proposal.model_dump(),
+                    **proposal.model_dump(exclude_none=True),
                     "reason": "DUPLICATE_OR_AMBIGUOUS_STAGE",
                 })
     stages_complete = not unresolved_ids and not rejected_stages
@@ -631,6 +631,8 @@ def main() -> None:
              "never call results a historical benchmark",
     )
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--legacy-single-pass", action="store_true",
+                        help="Compatibility mode; skip article claim understanding")
     parser.add_argument("--output", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prepare", action="store_true")
@@ -690,7 +692,8 @@ def main() -> None:
             # resume with the exact same article bytes without refetching.
             _write(args.source_output, case.model_dump())
         stage = "MODEL_AND_ANSWER_VALIDATION"
-        report = run_case(case, provider)
+        report = run_case(case, provider,
+                          use_claim_extraction=not args.legacy_single_pass)
         stage = "ANSWER_OUTPUT_WRITE"
         _write(args.output, report)
         print(json.dumps({
