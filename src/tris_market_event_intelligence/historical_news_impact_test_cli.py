@@ -108,7 +108,7 @@ class CaseInput(Strict):
         if not ARTICLE_ID.fullmatch(self.caseId.replace(".", "_")):
             raise ValueError("Invalid case identifier")
         if sum(len(a.body) for a in self.articles) > MAX_TOTAL_BODY:
-            raise ValueError("News body size budget exceeded")
+            raise ValueError("NEWS_TEST_TOTAL_BODY_BUDGET_EXCEEDED")
         if len({a.articleId for a in self.articles}) != len(self.articles):
             raise ValueError("Duplicate article ID")
         cutoff = _timestamp(self.asOf)
@@ -458,6 +458,7 @@ def main() -> None:
     mode.add_argument("--prepare", action="store_true")
     mode.add_argument("--run", action="store_true")
     args = parser.parse_args()
+    stage = "ARGUMENT_VALIDATION"
     try:
         if args.run and args.output is None:
             raise ValueError("NEWS_TEST_OUTPUT_REQUIRED")
@@ -479,19 +480,23 @@ def main() -> None:
                 or args.source_output.parent.is_symlink()
             ):
                 raise ValueError("NEWS_TEST_SOURCE_NOT_CREATE_ONLY")
+            stage = "ARTICLE_COLLECTION"
             source_data = collect_urls(
                 args.urls, as_of=args.as_of, case_id=args.case_id,
                 horizon=args.horizon,
                 allow_revised=args.exploratory_current_pages,
             )
+            stage = "SOURCE_INPUT_VALIDATION"
             case = CaseInput.model_validate(source_data)
         else:
             if args.case_id or args.as_of or args.source_output:
                 raise ValueError("NEWS_TEST_INPUT_MODE_CONFLICT")
+            stage = "SOURCE_INPUT_VALIDATION"
             case = _read_input(args.input)
         if args.prepare:
             print(json.dumps(prepare_case(case), ensure_ascii=False))
             return
+        stage = "MODEL_INITIALIZATION"
         settings = replace(
             LLMSettings.from_environment(explicit=True), model_id=args.model,
             capabilities=LLMCapabilities(
@@ -501,11 +506,14 @@ def main() -> None:
         )
         provider = build_runtime(settings, confirm_model=True)
         if args.urls is not None:
+            stage = "SOURCE_SNAPSHOT_WRITE"
             # Immutable source snapshot is persisted BEFORE the model call.
             # A failed model still leaves the source recoverable; --input can
             # resume with the exact same article bytes without refetching.
             _write(args.source_output, case.model_dump())
+        stage = "MODEL_AND_ANSWER_VALIDATION"
         report = run_case(case, provider)
+        stage = "ANSWER_OUTPUT_WRITE"
         _write(args.output, report)
         print(json.dumps({
             "status": report["status"],
@@ -543,18 +551,28 @@ def main() -> None:
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError,
             ValidationError, LLMExecutionError, httpx.HTTPError) as exc:
         raw = str(exc)
-        code = (
-            raw.split("|", 1)[0] if isinstance(exc, ValueError)
-            and re.fullmatch(r"NEWS_(?:TEST|URL)_[A-Z0-9_]{5,90}", raw.split("|", 1)[0])
-            else exc.code if isinstance(exc, LLMExecutionError)
-            else "NEWS_TEST_INVALID_INPUT_OR_MODEL_RESULT"
-        )
-        context = raw.split("|", 1)[1] if (
-            isinstance(exc, ValueError) and "|" in raw
-            and code != "NEWS_TEST_INVALID_INPUT_OR_MODEL_RESULT"
-        ) else ""
+        prefix = raw.split("|", 1)[0]
+        if isinstance(exc, ValidationError):
+            code = "NEWS_TEST_SCHEMA_VALIDATION_FAILED"
+            # Pydantic's raw errors can include copyrighted article text.
+            # Only emit field paths and error categories, never the values.
+            issues = [
+                {"field": ".".join(map(str, item["loc"])), "type": item["type"]}
+                for item in exc.errors()[:8]
+            ]
+            detail = json.dumps(issues, ensure_ascii=False, separators=(",", ":"))
+        elif isinstance(exc, LLMExecutionError):
+            code, detail = exc.code, ""
+        elif isinstance(exc, ValueError) and re.fullmatch(
+            r"NEWS_(?:TEST|URL)_[A-Z0-9_]{5,90}", prefix
+        ):
+            code = prefix
+            detail = raw.split("|", 1)[1][:200] if "|" in raw else ""
+        else:
+            code = "NEWS_TEST_INVALID_INPUT_OR_MODEL_RESULT"
+            detail = type(exc).__name__
         parser.exit(2, f"historical-news-impact: ERROR_CODE={code}"
-                    f" {context}\n")
+                    f" STAGE={stage} DETAIL={detail}\n")
 
 
 if __name__ == "__main__":

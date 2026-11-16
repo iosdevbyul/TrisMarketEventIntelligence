@@ -343,3 +343,58 @@ def test_skipped_sources_are_audited_and_ineligible_for_market_benchmark() -> No
     assert result["historicalBenchmarkEligible"] is False
     assert "skippedSources" not in provider.request
     assert result["marketPricesRead"] is False
+
+
+def test_cli_reports_pydantic_source_field_and_stage_not_article_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    supplied = sample_case()
+    supplied["articles"][0]["body"] = "SECRET_NEWS_SOURCE" * 700
+    monkeypatch.setattr(cli, "collect_urls", lambda *a, **kw: supplied)
+    monkeypatch.setattr(sys, "argv", [
+        "historical-news-impact", "--url", "https://techcrunch.com/a",
+        "--url", "https://www.axios.com/b",
+        "--case-id", "test", "--as-of", "2018-07-12T15:00:00Z",
+        "--prepare",
+    ])
+    with pytest.raises(SystemExit) as err:
+        cli.main()
+    assert err.value.code == 2
+    log = capsys.readouterr().err
+    assert "STAGE=SOURCE_INPUT_VALIDATION" in log
+    assert "NEWS_TEST_SCHEMA_VALIDATION_FAILED" in log
+    assert "articles.0.body" in log
+    assert "SECRET_NEWS_SOURCE" not in log
+
+
+def test_cli_reports_model_schema_failure_and_persists_source_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    class BrokenProvider:
+        model_id = "broken-provider"
+        def generate_json(self, **kwargs: object) -> str:
+            return '{"eventGroups": "invalid value"}'
+
+    monkeypatch.setattr(cli, "build_runtime", lambda *a, **kw: BrokenProvider())
+    source = tmp_path / "source.json"
+    output = tmp_path / "answer.json"
+    monkeypatch.setattr(cli, "collect_urls", lambda *a, **kw: case.model_dump())
+    monkeypatch.setattr(sys, "argv", [
+        "historical-news-impact", "--url", "https://techcrunch.com/a",
+        "--url", "https://www.axios.com/b",
+        "--case-id", "test", "--as-of", "2018-07-12T15:00:00Z",
+        "--run", "--source-output", str(source), "--output", str(output),
+    ])
+    with pytest.raises(SystemExit) as err:
+        cli.main()
+    assert err.value.code == 2
+    log = capsys.readouterr().err
+    assert "STAGE=MODEL_AND_ANSWER_VALIDATION" in log
+    assert "NEWS_TEST_SCHEMA_VALIDATION_FAILED" in log
+    assert "eventGroups" in log
+    assert source.is_file()
+    assert not output.exists()
+    assert json.loads(source.read_text())["schemaVersion"] == case.schemaVersion
