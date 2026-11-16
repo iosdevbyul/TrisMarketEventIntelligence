@@ -20,6 +20,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.historical_article_understanding import extract_claims
+from tris_market_event_intelligence.historical_impact_targets import select_targets
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.historical_news_url_collector import collect_urls
 from tris_market_event_intelligence.llm_runtime import (
@@ -63,6 +64,16 @@ CONSUMER, TRANSPORT, HEALTHCARE, BROAD_MARKET, FX, OTHER.
 The percent intervals, IF supplied, are uncalibrated scenarios, not realized results; express
 uncertainty and possible priced-in effects. Do not invent ticker identities;
 use source company names, propose tickers only if you know them, and allow null.
+TargetSelection is a source-anchored ALLOWLIST. For STOCK proposals, select
+only a companyName from targetSelection.companies with its matching ticker
+when verified. If company ticker is null, do NOT produce a STOCK impact;
+instead provide a SECTOR impact only if supported by
+targetSelection.sectors, or abstain. For SECTOR proposals, companyName and
+ticker MUST be null and sector MUST match targetSelection.sectors. Never
+list TECH, SEMICONDUCTORS, or BROAD_MARKET as a STOCK.
+Do NOT state any observed sell-off, drop, decline, rise, rebound, or
+actual index movement in impacts, even if this sounds plausible. Only
+describe IF/COULD conditional scenarios, not historical market outcomes.
 Use quote IDs from the exact sourceQuoteAnchors, never invent citation text,
 articles, numeric source claims, official actions, or unexpected outcomes.
 Every assessed stock/sector MUST cite source quote IDs and an economic pricing
@@ -239,7 +250,31 @@ def _quote_anchors(case: CaseInput) -> tuple[list[dict], dict[str, dict]]:
     return anchors, lookup
 
 
-def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dict]) -> dict:
+_OBSERVED_MARKET_OUTCOME = re.compile(
+    r"\\b(?:shares?|stocks?|equities|index|indices|nasdaq|s&p\\s*500|"
+    r"market|tech\\s+stocks?)\\b.{0,95}\\b(?:fell|dropped|declined|"
+    r"slumped|plunged|tumbled|sold\\s+off|sell-?off|rose|rallied|"
+    r"rebounded|downward\\s+pressure|lost\\s+\\d|gained\\s+\\d)\\b|"
+    r"\\b(?:sell-?off|decline|drop|fall|rally|rise)\\b.{0,70}"
+    r"\\b(?:shares?|stocks?|equities|market|index|indices)\\b",
+    re.IGNORECASE,
+)
+
+
+def _observed_outcome_claim(text: str) -> bool:
+    # Defensive *claim* screening, not a truth classifier. Conditional
+    # scenarios are allowed; already-realized market moves are quarantined.
+    conditional = re.search(
+        r"\\b(?:if|could|might|may|would|potential|hypothetical)\\b",
+        text, re.IGNORECASE,
+    )
+    return bool(_OBSERVED_MARKET_OUTCOME.search(text)) and not conditional
+
+
+def _validate_answer(
+    case: CaseInput, answer: ModelAnswer, lookup: dict[str, dict],
+    target_selection: dict | None = None,
+) -> dict:
     articles = {article.articleId: article for article in case.articles}
     groups = answer.eventGroups
     coverage = [a for g in groups for a in g.articleIds]
@@ -324,9 +359,31 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
     processed: set[tuple[str, str, str]] = set()
     result_impacts: list[dict] = []
     rejected_impacts: list[dict] = []
+    rejected_market_outcome_claims: list[dict] = []
     unverified_company_candidates: list[dict] = []
     for impact_index, impact in enumerate(answer.impacts):
         try:
+            if target_selection is not None:
+                chosen_companies = {
+                    c["companyName"].casefold(): c for c in target_selection["companies"]
+                }
+                chosen_sectors = {
+                    x["sector"] for x in target_selection["sectors"]
+                }
+                if impact.targetType == "STOCK":
+                    selected = chosen_companies.get(
+                        (impact.companyName or "").casefold()
+                    )
+                    if selected is None:
+                        raise ValueError("NEWS_TEST_STOCK_NOT_IN_SOURCE_TARGETS")
+                    if selected["ticker"] is None or impact.ticker != selected["ticker"]:
+                        raise ValueError("NEWS_TEST_STOCK_TICKER_NOT_VERIFIED")
+                elif impact.sector not in chosen_sectors:
+                    raise ValueError("NEWS_TEST_SECTOR_NOT_IN_SOURCE_TARGETS")
+            if _observed_outcome_claim(impact.mechanism) or _observed_outcome_claim(
+                impact.uncertainty
+            ):
+                raise ValueError("NEWS_TEST_UNSUPPORTED_OBSERVED_MARKET_OUTCOME")
             if impact.sector not in SECTORS:
                 raise ValueError("NEWS_TEST_SECTOR_UNKNOWN")
             refs = impact.evidenceQuoteIds
@@ -402,6 +459,10 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
                 "reason": code,
                 "proposal": impact.model_dump(),
             })
+            if code == "NEWS_TEST_UNSUPPORTED_OBSERVED_MARKET_OUTCOME":
+                rejected_market_outcome_claims.append({
+                    "impactIndex": impact_index, "reason": code,
+                })
     return {
         "eventGroups": [g.model_dump() for g in groups],
         "eventStages": valid_stages,
@@ -413,6 +474,7 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         "impacts": result_impacts,
         "rejectedImpacts": rejected_impacts,
         "unverifiedCompanyCandidates": unverified_company_candidates,
+        "rejectedMarketOutcomeClaims": rejected_market_outcome_claims,
         "impactValidationComplete": not rejected_impacts and not unverified_company_candidates,
         "overallAssessment": answer.overallAssessment,
     }
@@ -440,6 +502,7 @@ def prepare_case(case: CaseInput) -> dict:
 def run_case(
     case: CaseInput, provider: LLMProvider, *,
     use_claim_extraction: bool = False,
+    use_target_selection: bool = False,
 ) -> dict:
     preflight = prepare_case(case)
     quotes, lookup = _quote_anchors(case)
@@ -450,7 +513,16 @@ def run_case(
             anchors=quotes, as_of=case.asOf,
         ) if use_claim_extraction else []
     )
+    targets = (
+        select_targets(
+            provider=provider,
+            articles=[a.model_dump() for a in case.articles],
+            anchors=quotes, claims=claims, as_of=case.asOf,
+            known_tickers=[k.model_dump() for k in case.knownTickers],
+        ) if use_target_selection else None
+    )
     data = {
+        "targetSelection": targets,
         "articleUnderstanding": claims,
         "asOf": case.asOf,
         "horizonTradingDays": case.horizonTradingDays,
@@ -501,7 +573,7 @@ def run_case(
         "NEWS_TEST_DUPLICATE_IMPACT",
     })
     request = json.dumps(data, ensure_ascii=False)
-    call_count = int(use_claim_extraction)
+    call_count = int(use_claim_extraction) + int(use_target_selection)
     retry_reason: str | None = None
     range_retry_used = False
     for attempt in range(2):
@@ -514,7 +586,7 @@ def run_case(
             raise ValueError("NEWS_TEST_RESPONSE_SIZE_INVALID")
         try:
             model_answer = ModelAnswer.model_validate_json(raw)
-            reviewed = _validate_answer(case, model_answer, lookup)
+            reviewed = _validate_answer(case, model_answer, lookup, targets)
             break
         except ValidationError as exc:
             if attempt:
@@ -578,10 +650,11 @@ def run_case(
         ),
         "modelId": provider.model_id,
         "articleUnderstanding": claims,
+        "targetSelection": targets,
         "modelCalls": call_count,
         "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
-        "promptVersion": "historical-news-impact-v6-claim-grounded",
+        "promptVersion": "historical-news-impact-v7-target-grounded",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -692,8 +765,11 @@ def main() -> None:
             # resume with the exact same article bytes without refetching.
             _write(args.source_output, case.model_dump())
         stage = "MODEL_AND_ANSWER_VALIDATION"
-        report = run_case(case, provider,
-                          use_claim_extraction=not args.legacy_single_pass)
+        report = run_case(
+            case, provider,
+            use_claim_extraction=not args.legacy_single_pass,
+            use_target_selection=not args.legacy_single_pass,
+        )
         stage = "ANSWER_OUTPUT_WRITE"
         _write(args.output, report)
         print(json.dumps({
@@ -719,6 +795,8 @@ def main() -> None:
             "rejectedEventStages": report["rejectedEventStages"],
             "impactValidationComplete": report["impactValidationComplete"],
             "rejectedImpacts": report["rejectedImpacts"],
+            "targetSelection": report["targetSelection"],
+            "rejectedMarketOutcomeClaims": report["rejectedMarketOutcomeClaims"],
             "impactResults": [
                 {
                     "targetType": row["targetType"],
