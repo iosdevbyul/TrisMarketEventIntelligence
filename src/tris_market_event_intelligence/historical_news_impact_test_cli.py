@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
