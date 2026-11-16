@@ -1325,3 +1325,57 @@ New runs with --body-spans use the SHA-pinned contextual extraction version sec_
 For a historical revenue-share focus, require the subject to be explicit in the same sentence, never inferred from a neighboring unrelated noun. No direct subject produces REFERENT_UNRESOLVED; a directly named customer or similar referent produces DESCRIPTIVE_REVENUE_SHARE_ONLY. Both statuses intentionally avoid calling Gemma4, emit zero model hypotheses, and retain the exact source witness for human examination. Quantitative ratios alone never establish management decisions, resource allocation, margins or sector causality. Additional conservative negative controls reject unsupported corporate-strategy and macroeconomic narratives. Lexical/source-context checks are not complete semantic entailment; human review and independent sector evidence remain required.
 
 For local Case 00, use the previously documented sec-candidate-replay --body-spans command with a fresh output filename ending in -context-case00-v1.json. First use --prepare to inspect referentsUnresolved and descriptiveOnly; use explicit --run only when needed. Archived original SEC bytes, original primary evidence packets, old candidate/baseline files and source PIN remain immutable. Historical publication time remains unverified, and no market outcomes, training, prediction, investment execution or automatic promotion are permitted.
+
+
+### Ranked multi-passage original SEC research (opt-in, November 2026)
+
+The original SHA-256-pinned SEC files and primary research packet remain immutable.
+The v1/v2 single-source paths are preserved. A new --multi-passages selector
+(choose this instead of --body-spans) searches the bounded full normalized
+visible text of the existing local SEC source, not a fresh download. It
+identifies material issuer actions, quantified issuer facts and issuer-specific
+disclosed risks. It discards isolated "accounted for 12%..." statements when
+the direct referent is missing. Candidates are ordered deterministically by
+source-event relevance and original visible-text offset; at most three spatially
+distinct focus sentences and source-exact contextual windows are retained.
+Each window has an original raw-file SHA, complete extracted-visible-text SHA,
+normalized-character start/end offsets, selected-window SHA, exact focus
+start/end and SHA, rank score/reason and stable evidence ID. Rankings are
+retrieval heuristics, never accuracy scores or human evidence labels.
+
+If fewer than two distinct eligible original facts remain, this opt-in
+analysis abstains without contacting Ollama, even if a weak first filing
+excerpt might otherwise trigger the legacy heuristic. When at least two
+passages remain, Gemma4 sees separate exact context windows but can cite only
+anchored quote IDs from each independently pinned focus statement. The
+new-generation validator requires observations from at least two distinct
+evidence IDs and rejects unsupported numbers and selected ungrounded
+management/sector narratives. Only an explicit issuer causal cue in original
+source may permit one tentative, source-ID-attached issuer hypothesis.
+No causal cue means zero hypotheses. No independent sector evidence means no
+SECTOR_ALTERNATIVE mechanism may be generated. These bounded checks do not
+prove semantic entailment; independent human assessment is still required.
+
+The same full-source deterministic ranking and all SHA/offset witnesses
+are recomputed during claim review, human review and baseline comparisons.
+Every selected quote is explicitly attributed to its own verified source ID.
+Paired comparisons mark different evidence scope and do not claim observed
+text differences represent model-quality improvement. v1/v2 output remains
+readable under the original review contracts, and existing old reports are
+never rewritten.
+
+Dry-run Case 00 (no model, no output file):
+
+    DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+    bash scripts/news-learning-review.sh --update sec-candidate-replay \
+      --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+      --source-dir "$DATA" \
+      --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+      --start-index 0 --limit 1 --multi-passages --prepare
+
+If selectedPassagesCount >= 2 and multiPassageCasesSelected=1, a
+create-only --run may be executed with --multi-passages and a new, unique
+private output filename. The original reports and raw files must never be
+overwritten. Historical SEC public availability/PIT eligibility remains
+unverified; there is no stock-price outcome input, automatic judgment,
+training, prediction, investment execution or promotion.
