@@ -97,3 +97,46 @@ sourceQuoteId, 실제 원문 인용과 검토 상태가 들어 있다.
 
 중요한 제한: 현재의 출처 인용·숫자 범위 검증은 모델 설명의 의미적 참을 보증하지 않는다.
 또한 knownTickers에 없는 모델 제안 티커는 확정된 종목 식별이 아니다.
+
+
+## URL-only original articles — preferred blind historical test
+
+Use only links to independent reporting on ONE incident within a narrow
+publication window. Never hand-author a summary or publication timestamp.
+The collector accepts multiple --url values, pulls the article paragraphs
+from the real publisher HTTPS page, reads its declared publication clock,
+and passes the extracted news directly to the model.
+
+    DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+    bash scripts/news-learning-review.sh --update historical-impact-test \
+      --url "https://techcrunch.com/2026/11/08/nvidia-says-its-investigating-ceo-jensen-huangs-relationship-with-possible-chinese-spy/" \
+      --url "https://www.axios.com/2026/11/08/nvidia-ceo-jensen-huang-admits-affair-board-to-launch-investigation" \
+      --url "https://www.washingtonpost.com/technology/2026/11/08/read-jensen-huangs-letter-nvidia-about-his-affair-with-suspected-chinese-spy/" \
+      --case-id "NVDA-SUNDAY-20261108" \
+      --as-of "2026-11-08T23:59:00-05:00" --horizon 1 \
+      --run --model gemma4:e2b \
+      --source-output "$DATA/nvda-sunday-source-original-v1.json" \
+      --output "$DATA/nvda-sunday-blind-answer-v1.json"
+
+Cutoff means November 8 evening in New York; it is not a claim that the
+sources were available at the exact cutoff. Every article needs machine-
+readable publisher publication metadata and substantive HTML article body.
+Paywalls, unreadable pages, missing times and post-cutoff revisions must FAIL;
+there is no manual backfill and no invented time. Sources may subsequently
+edit a webpage without publishing dateModified, so *independent historical
+page-version validity is not proven*. No market prices or outcomes are loaded.
+
+The collected source is saved first in a create-only private JSON; if model
+generation fails, use --input pointing to this exact snapshot for retry
+with a new result filename. This avoids a second network fetch.
+
+A malformed, reversed or cross-group Gemini event-link proposal is excluded
+from the verified eventLinks list and recorded in rejectedEventLinks with
+an explicit rejection reason; a source-grounded prediction need not fail
+solely because of an invalid nonessential connection. Event clustering
+remains an unverified model interpretation, not proof of causal relation.
+
+The article text is bounded to a per-article character budget; the system
+does not claim this snapshot preserves the entire raw HTML page. Any article
+not fully accessible in public HTML must be replaced with another genuinely
+independent publisher article, not a fabricated paraphrase.
