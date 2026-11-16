@@ -81,7 +81,10 @@ a number, industry news, a historical first-publication clock, a cause of stock
 returns or a prospective stock direction forecast.
 For observations, SELECT a quote_id from the numbered, exact-source
 quoteAnchors list. Explain the selected excerpt tentatively in interpretation.
-DO NOT output evidence_id or verbatim_quote; code attaches the original bytes.
+DO NOT output evidence_id, verbatim_quote or these safety-status keys:
+historical_public_time_verified, causal_impact_proven, stock_direction_predicted.
+Code attaches exact original quote bytes and sets unverified status from
+source/PIT policy; the model has no authority over those three fields.
 Never invent quote IDs or describe unsupported facts as established evidence.
 Hypotheses must include exactly one each: issuer fundamentals possibility,
 unverified sector/competitor alternative, and missing-context explanation.
@@ -122,6 +125,19 @@ def _quote_anchors(case: dict) -> dict[str, str]:
 def _anchored_model_schema(anchors: dict[str, str]) -> dict:
     """Provider-side constraints without weakening the final strict validator."""
     schema = json.loads(json.dumps(MODEL_SCHEMA))
+    # These are verified absence-of-evidence constraints, NOT LLM judgments.
+    # Keep them in the final stored schema but remove them from the provider's
+    # writable JSON contract entirely (no fabricated true/false declarations).
+    safety_fields = (
+        "historical_public_time_verified",
+        "causal_impact_proven",
+        "stock_direction_predicted",
+    )
+    schema["required"] = [
+        key for key in schema["required"] if key not in safety_fields
+    ]
+    for key in safety_fields:
+        del schema["properties"][key]
     schema["properties"]["observations"]["items"] = {
         "type": "object", "additionalProperties": False,
         "required": ["quote_id", "interpretation"],
@@ -142,7 +158,12 @@ def _expand_anchored_observations(
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_RESPONSE:
         raise ValueError("SEC_SEMANTIC_RESPONSE_SIZE_INVALID")
     result = json.loads(raw)
-    if not isinstance(result, dict) or set(result) != set(MODEL_SCHEMA["required"]):
+    expected_fields = set(MODEL_SCHEMA["required"]) - {
+        "historical_public_time_verified", "causal_impact_proven",
+        "stock_direction_predicted",
+    }
+    if not isinstance(result, dict) or set(result) != expected_fields:
+        # Do not silently erase unsupported model-authored safety claims.
         raise ValueError("SEC_SEMANTIC_RESPONSE_SCHEMA_INVALID")
     observations = result["observations"]
     if not isinstance(observations, list) or not 1 <= len(observations) <= 3:
@@ -165,6 +186,11 @@ def _expand_anchored_observations(
             "interpretation": item["interpretation"],
         })
     result["observations"] = expanded
+    # Inability to establish these facts is owned by source/PIT validation.
+    # This never means the model independently assessed them as false.
+    result["historical_public_time_verified"] = False
+    result["causal_impact_proven"] = False
+    result["stock_direction_predicted"] = False
     expanded_raw = json.dumps(result, ensure_ascii=False)
     if len(expanded_raw.encode("utf-8")) > MAX_RESPONSE:
         raise ValueError("SEC_SEMANTIC_RESPONSE_SIZE_INVALID")
