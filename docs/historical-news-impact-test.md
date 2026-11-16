@@ -163,3 +163,7 @@ the response was a prediction made before the market response.
 ## Publisher HTML body extraction
 
 Original publisher HTML can place the story in an article tag, a Wordpress post-content div, a story-body/content div, or main; the collector now scans those content containers while filtering navigation, recommendation, paywall, advertisement and sidebar blocks. A populated NewsArticle.articleBody embedded by the publisher in JSON-LD is also accepted as a source-body fallback. Summaries or structured-data descriptions are NOT substituted for the article. If the substantive body cannot be recovered, the operation still fails with NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE and the failing article index and publisher domain. Live publisher access is validated by the user's real URL test, not mocked CI HTML alone.
+
+## Publisher access failures in exploratory mode
+
+If one publisher returns HTTP 403, 404, 429, or blocks article-body extraction, URL-only exploratory mode now records its ordinal, host and reason in skippedSources and continues with other genuinely extracted articles. This works ONLY when at least two complete publisher articles remain; strict historical mode still fails closed at the first inaccessible source. A partial cohort is never claimed to be a statistically valid historical benchmark. No article text is fabricated or replaced with a human summary.
