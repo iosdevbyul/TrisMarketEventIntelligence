@@ -467,3 +467,60 @@ issuer/SEC available-at anchors to a **multi-event PIT-safe case
 dataset**. Never promote GDELT URL references to issuer stories
 automatically. Expand through events with real contemporaneous
 documents and control days before modelling directional forecasts.
+
+## General SEC event-universe foundation: all aligned NVDA/SPY sessions (PR #176)
+
+Actual Mac user run of PR #175 `historical-sec-event` succeeded:
+`SEC_FILING_PREOPEN_PRICE_OUTCOME_OBSERVED_RETROSPECTIVE`;
+NVIDIA `stockReturn=-0.18755867384873848`, SPY
+`benchmarkReturn=0.0026005420826571424`,
+`excessReturn=-0.19015921593139562` for 2018-11-15
+adjusted close to 2018-11-16 adjusted close. SEC acceptance was at
+2018-11-15 21:21:48 UTC and cutoff the following session 14:30 UTC.
+Original private receipt is
+`nvda-2018-sec-price-event-v1.json`. The actual price observation
+does NOT establish news causality or prospective forecast performance.
+
+`historical-sec-universe` generalizes the **data structure** from
+one historical event to all actually aligned priced sessions. It accepts
+one or more *already verified SEC accepted-at event packets* from PR #175,
+re-checks source SHA-256 against the actual existing price CSVs,
+pre-decision SEC timestamp, issuer/source evidence, and the realized
+event-day outcome arithmetic. Duplicate event dates/IDs and missing
+prices fail closed. Rows keep
+`features.pinnedSecEvents` distinct from
+`outcome.horizonsTradingSessions` with 1/3/5 end-of-day observed
+benchmark-excess returns.
+
+**IMPORTANT:** a non-event session is labeled
+`NO_PINNED_SEC_EVIDENCE` and
+`otherCompanyOrMacroNewsAbsenceVerified=false`.
+This is not a verified no-news day. It must **never** be automatically
+treated as a low-importance negative training example. The source
+universe has only one verified SEC event so far. The other sessions
+are a coverage calendar, not negative gold or a credible predictive
+training set. The output remains `trainingReady=false` and
+`forwardPredictionsSealed=false`; never automatically train a
+direction classifier on rows with no verified news coverage.
+
+Real-data preview (no source changes or network requests):
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update historical-sec-universe \
+  --stock-csv "$DATA/nvda-eod-2016-2026.csv" \
+  --benchmark-csv "$DATA/spy-eod-2016-2026.csv" \
+  --event "$DATA/nvda-2018-sec-price-event-v1.json" \
+  --preview
+```
+
+For a private 0600 observational packet, use the same arguments with
+`--output "$DATA/nvda-spy-sec-universe-v1.json"` instead of
+`--preview`. It refuses overwriting. To expand event coverage, pass
+additional *verified* SEC evidence packets as repeated `--event`
+arguments. The current specific 2018 PR #175 verifier remains available
+and should not be reimplemented. Future work: real public-company events
+across additional eras and low-move controls with independently verified
+news, sector and macro availability, tradable horizons and time-split
+sealed forecasts. GDELT URL candidates and 2026 RSS observations cannot
+be backdated into this event universe.
