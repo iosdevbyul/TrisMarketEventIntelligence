@@ -19,8 +19,8 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.historical_article_understanding import extract_claims
+from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.historical_news_url_collector import collect_urls
 from tris_market_event_intelligence.llm_runtime import (
     LLMCapabilities,
