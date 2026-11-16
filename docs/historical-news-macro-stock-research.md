@@ -887,3 +887,73 @@ four other categories and 16 original source HTML documents**
 (ten indexes and six EX-99.1 exhibits). These numbers are
 EXPECTED, not yet verified by a real Mac execution; no newly
 selected SEC HTML has been locally PINned as of this code PR.
+
+
+## SEC PIT publication evidence gaps and unbiased multi-form research cohort
+
+After PR #185 actual Mac success, 10 preselected first-8-K annual events
+(2017–2026) have original SEC index/exhibit SHA-256 pins and retrospective
+1/3/5-session outcomes. They do **not** have independently documented
+first publisher release / SEC public-dissemination / first investor
+availability timestamps. An SEC EDGAR *accepted-at* clock by itself is
+not a historical dissemination timestamp. No SEC receipt is promoted
+to a verified 09:30 market source.
+
+New **offline** `sec-pit-cohort` uses only the **already obtained**
+2017–2026 SEC submissions inventory (136 filings, 8-K/10-Q/10-K) and
+existing 10-event SHA-pinned research JSON. It creates a full
+accession-keyed evidence ledger:
+- raw SEC index SHA-256 and EX-99.1 SHA when already pinned, but no
+  fabricated source availability for the other metadata-only events;
+- regulator receipt time and receipt-clock market session (where
+  previously audited) separate from earliest *publicly disseminated*
+  / independently observed / investor available timestamps;
+- all currently unknown publication timestamps stay null and all
+  `usableAsPreopenModelFeature` remain **false**;
+- unobserved-company/market-news dates are never certified as
+  genuine news-free controls;
+- existing retrospective price outcomes are validated structurally
+  but **never copied into the review queue or source features**.
+
+The expansion queue is deterministic and **ex-ante**: by calendar
+year and SEC form choose each group's first, midpoint and last filing
+(as available), with optional 1/2/3 per group. Ranking **never** uses
+realized NVDA/SPY price returns or selects only previous shocks. This
+covers non-earnings and quarterly/annual disclosure types in
+addition to annual first-8-Ks. A candidate in this queue is a
+**research task**, not independently verified market-time news.
+
+For a no-file read-only preview, execute on Mac:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update sec-pit-cohort \
+  --inventory "$DATA/nvda-sec-history-inventory-2017-2026-v1.json" \
+  --study "$DATA/nvda-multiyear-sec-8k-study-2017-2026-v2.json" \
+  --preview
+```
+
+If the preview passes, persist once to a **NEW** private JSON:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-sec-pit-availability-cohort-2017-2026-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+else
+  bash scripts/news-learning-review.sh --update sec-pit-cohort \
+    --inventory "$DATA/nvda-sec-history-inventory-2017-2026-v1.json" \
+    --study "$DATA/nvda-multiyear-sec-8k-study-2017-2026-v2.json" \
+    --output "$OUT"
+fi
+```
+
+No network, SEC requests, price downloads, Ollama, model inference,
+training, model promotion, production changes or 24/7 behavior.
+The report is create-only 0600. The manifest is an auditable
+calendar/form research plan, not a permissible historical feature
+dataset or a valid predictive backtest. **No training is authorized
+until independently verified public availability with actual
+point-in-time provenance and a much broader event/control universe
+can be established and a genuinely chronological sealed evaluation
+is designed.**
