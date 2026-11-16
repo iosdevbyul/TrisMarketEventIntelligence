@@ -22,7 +22,7 @@ ALLOWED = frozenset({
     "www.washingtonpost.com", "washingtonpost.com", "apnews.com", "www.apnews.com",
 })
 MAX_HTML = 1_800_000
-MAX_ARTICLE = 2800
+MAX_ARTICLE = 9000
 PUBLISHED_META = frozenset({
     "article:published_time", "article:published", "datepublished",
     "date", "pubdate", "publishdate", "citation_publication_date",
@@ -212,8 +212,8 @@ def parse_article(
     if not 8 <= len(title) <= 240 or len(body) < 250 or len(doc.paragraphs) < 3:
         raise ValueError("NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE")
     if len(body) > MAX_ARTICLE:
-        # Bounded beginning of *extracted primary text*, no invented content.
-        body = body[:MAX_ARTICLE].rsplit(" ", 1)[0]
+        # Never silently truncate a primary article and call it original text.
+        raise ValueError("NEWS_URL_ARTICLE_EXCEEDS_CONTEXT_BUDGET")
     return {
         "articleId": article_id,
         "publishedAt": effective.isoformat(),
