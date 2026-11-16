@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import json
 
+from test_historical_news_impact_test import answer, sample_case
 from tris_market_event_intelligence import historical_news_impact_test_cli as cli
 from tris_market_event_intelligence.historical_impact_targets import select_targets
-from test_historical_news_impact_test import answer, sample_case
 
 
 class TargetProvider:
