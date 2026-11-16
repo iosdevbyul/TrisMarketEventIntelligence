@@ -375,14 +375,55 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         "sourceQuoteAnchors": quotes,
         "historicalOutcomesAvailable": False,
     }
-    raw = provider.generate_json(
-        system=SYSTEM, user=json.dumps(data, ensure_ascii=False),
-        schema=ModelAnswer.model_json_schema(),
-    )
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > 26000:
-        raise ValueError("NEWS_TEST_RESPONSE_SIZE_INVALID")
-    model_answer = ModelAnswer.model_validate_json(raw)
-    reviewed = _validate_answer(case, model_answer, lookup)
+    # A small local model may emit inverted/overwide numeric intervals even
+    # under JSON schema. Allow one entirely model-authored correction attempt;
+    # do not mutate numeric predictions in Python or loosen validation.
+    request = json.dumps(data, ensure_ascii=False)
+    call_count = 0
+    retried_range = False
+    for attempt in range(2):
+        call_count += 1
+        raw = provider.generate_json(
+            system=SYSTEM, user=request,
+            schema=ModelAnswer.model_json_schema(),
+        )
+        if not isinstance(raw, str) or len(raw.encode("utf-8")) > 26000:
+            raise ValueError("NEWS_TEST_RESPONSE_SIZE_INVALID")
+        try:
+            model_answer = ModelAnswer.model_validate_json(raw)
+        except ValidationError as exc:
+            # Only an otherwise schema-valid response with exclusively
+            # numeric range field errors qualifies for bounded regeneration.
+            invalid = exc.errors()
+            range_only = bool(invalid) and all(
+                len(e["loc"]) == 3 and e["loc"][0] == "impacts"
+                and isinstance(e["loc"][1], int)
+                and e["loc"][2] == "conditionalMovePctRange"
+                for e in invalid
+            )
+            if attempt or not range_only:
+                raise
+            retried_range = True
+            request = json.dumps({
+                **data,
+                "formatCorrection": (
+                    "Regenerate the whole analysis strictly from these same "
+                    "source articles without using actual market outcomes. "
+                    "The previous response had invalid conditionalMovePctRange "
+                    "fields. Each minPct and maxPct must be within [-15,15], "
+                    "minPct <= maxPct and maxPct-minPct <= 10. For POSITIVE "
+                    "direction use 0 <= minPct < maxPct; for NEGATIVE use "
+                    "minPct < maxPct <= 0. For MIXED or UNCERTAIN, set "
+                    "conditionalMovePctRange to null and intensity to "
+                    "UNASSESSED. Do not invent a range just to comply. "
+                    "Keep source quote IDs authentic and preserve uncertainty."
+                ),
+            }, ensure_ascii=False)
+            continue
+        reviewed = _validate_answer(case, model_answer, lookup)
+        break
+    else:
+        raise ValueError("NEWS_TEST_RANGE_RETRY_EXHAUSTED")
     revised_source_ids = [
         a.articleId for a in case.articles
         if a.sourceIntegrity == "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
@@ -402,8 +443,9 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
             if reviewed["impacts"] else "BLIND_NEWS_ABSTAINED"
         ),
         "modelId": provider.model_id,
-        "modelCalls": 1,
-        "promptVersion": "historical-news-impact-v1",
+        "modelCalls": call_count,
+        "rangeSchemaRetryUsed": retried_range,
+        "promptVersion": "historical-news-impact-v2-range-retry",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -523,7 +565,8 @@ def main() -> None:
             "eventLinks": len(report["eventLinks"]),
             "stockImpacts": sum(i["targetType"] == "STOCK" for i in report["impacts"]),
             "sectorImpacts": sum(i["targetType"] == "SECTOR" for i in report["impacts"]),
-            "modelCalls": 1,
+            "modelCalls": report["modelCalls"],
+            "rangeSchemaRetryUsed": report["rangeSchemaRetryUsed"],
             "marketPricesRead": False,
             "accuracyVerified": False,
             "sourceIntegrityStatus": report["sourceIntegrityStatus"],
