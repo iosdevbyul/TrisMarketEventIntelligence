@@ -985,3 +985,29 @@ fi
 ```
 
 Preview is deliberately offline cache verification, and fails if any selected HTML has not yet been captured. An actual `--run` may fail due to SEC HTTP/HTML content differences; preserve any validated partial raw cache and do not recreate existing SEC inventory, NVDA/SPY prices, v1/v2 research or 2018 independent SEC event.
+
+## PR #189 — SHA-original SEC 10-case versus batch01 12-case overlap and historical observation witnesses
+
+After PR #188 the user's actual Mac produced the immutable source-capture batch01: twelve verified SEC filing index HTMLs, two previously cached and ten newly downloaded. Two cache hits do not necessarily mean precisely two are in the original ten-event study; exact intersection must be calculated by accession with original 10-event SHA and raw index bytes.
+
+New offline `sec-source-lineage` accepts the already-created PIT cohort JSON (136 filings/69 predetermined review tasks), existing actual 10-case source/price JSON, already-created batch01 12-case raw index capture JSON, and the existing private SEC HTML directory. It verifies cross-report file SHA lineage, preserves exact fixed task order, validates issuer/form/day/SEC accepted-header facts, re-hashes EVERY locally cached batch index and requires equality with both prior original-index SHA pins when overlapping. Then it produces exact accession-based overlap, distinct batch cases, total unique SEC INDEX originals and a full per-case provenance ledger. No online SEC fetch, no price CSV access, no LLM and no training. This report does **not** alter 12 existing cached source files or any input data.
+
+Optional `--witnesses` uses an independently acquired (outside this tool) local JSON manifest `sec_historical_first_observation_witnesses_v1` of original historical third-party archive files. Each witness requires a bound accession in the captured batch, a safe relative original filename under the already-private source directory, SHA-256 of existing original bytes, an HTTPS source URL, explicit timezone-aware claimed `firstObservedAt`, optional publisher `publisherClaimedPublishedAt`, and unique witness ID. The tool can check original byte integrity and chronology but it CANNOT independently prove that a self-reported archive timestamp was first observed at that historical clock. Thus each witness is marked `SOURCE_BYTES_PINNED_HISTORICAL_CLOCK_NOT_AUTHENTICATED`, with `usableAsPredecisionFeature=false`; independently verified first public count remains 0, trainingReady=false.
+
+Run once on Mac after PR189 CI+merge. No network and no raw file rewriting:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-sec-original-overlap-and-witness-audit-2017-2026-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+else
+  bash scripts/news-learning-review.sh --update sec-source-lineage \
+    --cohort "$DATA/nvda-sec-pit-availability-cohort-2017-2026-v1.json" \
+    --study "$DATA/nvda-multiyear-sec-8k-study-2017-2026-v2.json" \
+    --batch "$DATA/nvda-sec-publication-original-index-batch01-v1.json" \
+    --source-dir "$DATA" --output "$OUT"
+fi
+```
+
+The result stdout contains `studyOriginalCases`, `batchOriginalIndexes`, `batchOverlap`, `batchNewDistinctCases`, `totalUniqueIndexes` and `historicalFirstPublicTimesVerified=0`. Do not invent the exact overlap before real Mac run. No-news controls and 09:30 trade returns remain unverified. Additional historical contemporaneous observation evidence requires authentic source proof, not post-hoc date parsing.
