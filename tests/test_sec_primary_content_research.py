@@ -9,7 +9,9 @@ import httpx
 import pytest
 
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
-    _primary_url, _source_review, build_primary_evidence,
+    _primary_url,
+    _source_review,
+    build_primary_evidence,
 )
 
 ACC = "0001045810-18-000004"
@@ -36,13 +38,13 @@ def _index(acc: str, form: str, day: str, filename: str) -> bytes:
 
 def _content() -> bytes:
     return (
-        "<html><body><h1>NVIDIA CORPORATION</h1>"
-        "<h2>Item 2.02. Results of Operations and Financial Condition</h2>"
-        "<p>NVIDIA announced its quarterly results in a press release. "
-        "The reported information is provided only for historical source "
-        "research and must not be used as a real-time trading signal.</p>"
-        "</body></html>"
-    ).encode()
+        b"<html><body><h1>NVIDIA CORPORATION</h1>"
+        b"<h2>Item 2.02. Results of Operations and Financial Condition</h2>"
+        b"<p>NVIDIA announced its quarterly results in a press release. "
+        b"The reported information is provided only for historical source "
+        b"research and must not be used as a real-time trading signal.</p>"
+        b"</body></html>"
+    )
 
 
 def _fixtures(tmp_path: Path) -> tuple[dict, dict]:
