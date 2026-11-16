@@ -680,7 +680,8 @@ def test_two_step_article_understanding_precedes_event_impact_reasoning() -> Non
                      "kind": "FACT", "stage": "INITIAL_REPORT"}
                     for aid in ("a1", "a2")
                     for q in anchors if q["articleId"] == aid
-                ][:2]})
+                    and q["quoteId"].endswith(":q0")
+                ]})
             assert "impacts" in schema["properties"]
             assert len(request["articleUnderstanding"]) == 2
             return json.dumps(answer(case))
