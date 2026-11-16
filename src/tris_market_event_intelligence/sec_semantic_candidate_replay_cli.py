@@ -71,7 +71,7 @@ def replay_candidate(
 ) -> dict:
     report = run_semantic_research(
         prepared, provider, start_index=plan["startIndex"],
-        limit=len(plan["caseIndexes"]),
+        limit=len(plan["caseIndexes"]), evidence_gated=True,
     )
     if ([case["caseIndex"] for case in report["cases"]] != plan["caseIndexes"]
             or report["primaryReportSha256"] != plan["primaryReportSha256"]
@@ -130,6 +130,7 @@ def main() -> None:
         print(json.dumps({
             "status": candidate["status"],
             "casesAnalyzed": candidate["casesAnalyzed"],
+            "casesAbstained": candidate["casesAbstained"],
             "caseIndexes": plan["caseIndexes"],
             "modelCalls": candidate["modelCalls"],
             "baselineModified": False,
