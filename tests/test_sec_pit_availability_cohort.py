@@ -21,7 +21,7 @@ ACC = (
     "0001045810-18-000003",
     "0001045810-19-000001",
     "0001045810-19-000002",
-    "0001045810-19-000003",
+    "0001193125-19-000003",
 )
 
 
@@ -191,3 +191,26 @@ def test_read_study_private_bytes_sha_and_symlinks(tmp_path: Path) -> None:
     link.symlink_to(study_path)
     with pytest.raises(ValueError, match="SEC_STUDY_FILE_INVALID"):
         _read_study(link)
+
+
+def test_inventory_accepts_valid_nonissuer_filing_agent_accession() -> None:
+    # Official SEC submissions can include filing-agent accession prefixes.
+    # Issuer identity still comes from the original NVIDIA inventory and
+    # its accession-specific archive URL, not the first ten accession digits.
+    inventory, study = _inputs()
+    result = _build(inventory=inventory, study=study)
+    agent = next(row for row in result["filingAvailabilityLedger"]
+                 if row["accession"] == "0001193125-19-000003")
+    assert agent["form"] == "10-K"
+    assert agent["evidenceStatus"] == "SEC_SUBMISSIONS_METADATA_ONLY"
+    assert agent["usableAsPreopenModelFeature"] is False
+
+
+def test_inventory_filing_agent_accession_does_not_weaken_issuer_path() -> None:
+    inventory, study = _inputs()
+    inventory["filings"][-1]["secIndexUrl"] = (
+        "https://www.sec.gov/Archives/edgar/data/9999999/"
+        "000119312519000003/0001193125-19-000003-index.htm"
+    )
+    with pytest.raises(ValueError, match="SEC_INVENTORY_ROW_PROVENANCE_INVALID"):
+        _build(inventory=inventory, study=study)
