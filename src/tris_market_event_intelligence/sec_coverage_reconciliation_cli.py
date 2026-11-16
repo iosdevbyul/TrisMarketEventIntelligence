@@ -108,8 +108,10 @@ def reconcile_sec_coverage(*, inventory: dict, inventory_sha: str,
         acc = filing.get("accession")
         form = filing.get("form")
         filing_date = filing.get("filingDate")
+        if isinstance(acc, str) and acc in seen:
+            raise ValueError("SEC_FILING_CANDIDATES_NOT_UNIQUE")
         if (not isinstance(acc, str) or not ACCESSION.fullmatch(acc)
-                or acc in seen or form not in ("8-K", "10-Q", "10-K")
+                or form not in ("8-K", "10-Q", "10-K")
                 or not isinstance(filing_date, str)
                 or filing.get("secAcceptanceTimeIndependentlyVerified") is not False
                 or filing.get("filingExhibitFactsVerified") is not False
