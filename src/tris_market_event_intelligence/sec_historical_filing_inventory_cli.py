@@ -60,6 +60,20 @@ def _get_json(client: httpx.Client, url: str, user_agent: str) -> tuple[dict, st
     return packet, hashlib.sha256(raw).hexdigest()
 
 
+def _safe_primary_document_path(value: str) -> bool:
+    """Permit only bounded relative SEC paths; never use unchecked values as URLs."""
+    if not value or len(value) > 240:
+        return False
+    if any(ord(ch) < 33 or ord(ch) == 127 for ch in value):
+        return False
+    if any(ch in value for ch in ("\\", "?", "#", "%", ":")):
+        return False
+    parts = value.split("/")
+    return not value.startswith("/") and all(
+        part not in ("", ".", "..") for part in parts
+    )
+
+
 def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
     fields = (
         "accessionNumber", "filingDate", "acceptanceDateTime", "form",
@@ -98,21 +112,20 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
             accepted,
         ):
             raise ValueError("SEC_ACCEPTANCE_FORMAT")
-        # SEC documents may legitimately live in accession subdirectories.
-        # Preserve the SEC path as metadata but forbid traversal and odd paths.
-        parts = primary_doc.split("/")
-        if (not primary_doc or len(primary_doc) > 240
-                or "\\" in primary_doc or "?" in primary_doc or "#" in primary_doc
-                or any(not part or part in {".", ".."} for part in parts)
-                or primary_doc.startswith("/")):
-            raise ValueError("SEC_PRIMARY_DOCUMENT_PATH")
+        # Candidate discovery uses the accession index, not primaryDocument.
+        # Missing/unsafe document paths remain quarantined, with source SHA.
+        primary_doc_safe = _safe_primary_document_path(primary_doc)
         out.append({
             "accession": acc,
             "filingDate": day.isoformat(),
             "rawSecAcceptanceDateTime": accepted,
             "form": form,
             "formItems": items or "",
-            "secPrimaryDocument": primary_doc,
+            "secPrimaryDocument": primary_doc if primary_doc_safe else None,
+            "secPrimaryDocumentPathStatus": (
+                "SAFE_RELATIVE_PATH" if primary_doc_safe
+                else "QUARANTINED_MISSING_OR_UNSAFE"
+            ),
             "secIndexUrl": (
                 f"https://www.sec.gov/Archives/edgar/data/{int(CIK)}/"
                 f"{acc.replace('-', '')}/{acc}-index.htm"
@@ -164,7 +177,8 @@ def build_sec_filing_inventory(
             # Compare filing facts, not the independently pinned page origin.
             non_origin = (
                 "filingDate", "rawSecAcceptanceDateTime", "form",
-                "formItems", "secPrimaryDocument", "secIndexUrl",
+                "formItems", "secPrimaryDocument",
+                "secPrimaryDocumentPathStatus", "secIndexUrl",
             )
             if any(existing[acc][key] != item[key] for key in non_origin):
                 raise ValueError("SEC_ACCESSION_CONFLICT")
@@ -176,6 +190,10 @@ def build_sec_filing_inventory(
     ]
     filtered.sort(key=lambda item: (item["filingDate"], item["accession"]))
     forms = dict(sorted(Counter(row["form"] for row in filtered).items()))
+    quarantined = sum(
+        row["secPrimaryDocumentPathStatus"] == "QUARANTINED_MISSING_OR_UNSAFE"
+        for row in filtered
+    )
     return {
         "schemaVersion": "sec_historical_filing_inventory_v1",
         "status": "SEC_SUBMISSIONS_CANDIDATES_REQUIRE_INDEPENDENT_TIME_AND_EXHIBIT_VERIFICATION",
@@ -188,6 +206,8 @@ def build_sec_filing_inventory(
         "sourcePages": len(histories) + 1,
         "candidateFilings": len(filtered),
         "formCounts": forms,
+        "quarantinedPrimaryDocumentPaths": quarantined,
+        "allPrimaryDocumentsHaveSafePaths": quarantined == 0,
         "originalIssuerTextDownloaded": False,
         "originalFilingExhibitsPinned": False,
         "secAcceptanceTimeIndependentlyVerified": False,
@@ -260,6 +280,7 @@ def main() -> None:
             "filings": report["candidateFilings"],
             "sourcePages": report["sourcePages"],
             "byForm": report["formCounts"],
+            "quarantinedPrimaryDocumentPaths": report["quarantinedPrimaryDocumentPaths"],
             "sha256": fingerprint,
             "secClockVerified": False,
             "trainingReady": False,
