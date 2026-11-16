@@ -225,7 +225,7 @@ def _validate_response(case: dict, raw: str) -> dict:
         if (category not in CATEGORIES or category in categories
                 or not isinstance(ids, list) or len(ids) > 1
                 or any(x != evidence_id for x in ids)
-                or (category == "SECTOR_ALTERNATIVE" and ids)
+                or (category in {"SECTOR_ALTERNATIVE", "MISSING_CONTEXT"} and ids)
                 or not isinstance(row["mechanism"], str)
                 or not 15 <= len(row["mechanism"].strip()) <= 1000
                 or not isinstance(row["limitation"], str)
