@@ -572,7 +572,7 @@ def test_unknown_stage_article_is_rejected_without_false_complete_status() -> No
     }]
     assert report["unresolvedStageArticleIds"] == []
     assert report["historicalBenchmarkEligible"] is False
-    assert report["status"] == "NEWS_EVENT_STAGES_INCOMPLETE_REQUIRES_REVIEW"
+    assert report["status"] == "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
 
 
 def test_complete_event_stages_are_unchanged_and_eligible_for_regular_review() -> None:
