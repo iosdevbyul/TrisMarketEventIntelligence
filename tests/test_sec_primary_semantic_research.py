@@ -15,6 +15,7 @@ from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
+    _quote_anchors,
     _validate_response,
     prepare_primary_cases,
     run_semantic_research,
@@ -107,6 +108,18 @@ def _response(case: dict) -> dict:
     }
 
 
+def _as_anchored(response: dict, case: dict) -> dict:
+    """Stub format intentionally mirrors the new provider wire contract."""
+    anchored = copy.deepcopy(response)
+    anchors = _quote_anchors(case)
+    values = list(anchors)
+    anchored["observations"] = [
+        {"quote_id": values[i], "interpretation": obs["interpretation"]}
+        for i, obs in enumerate(response["observations"])
+    ]
+    return anchored
+
+
 class _StubProvider:
     model_id = "test-structured-runtime"
 
@@ -121,7 +134,18 @@ class _StubProvider:
         assert self.messages[-1]["priceReturnsAvailable"] is False
         assert "sourceEvidence" in self.messages[-1]
         assert schema is not None
-        return json.dumps(self.responses.pop(0))
+        assert "quoteAnchors" in self.messages[-1]
+        response = self.responses.pop(0)
+        anchor_map = {
+            row["quote_id"]: row["verbatimSourceText"]
+            for row in self.messages[-1]["quoteAnchors"]
+        }
+        anchored = copy.deepcopy(response)
+        anchored["observations"] = [
+            {"quote_id": list(anchor_map)[i], "interpretation": ob["interpretation"]}
+            for i, ob in enumerate(response["observations"])
+        ]
+        return json.dumps(anchored)
 
 
 def test_prepare_exact_pinned_raw_bytes_not_just_json_excerpt(tmp_path: Path) -> None:
@@ -275,8 +299,18 @@ class _HypothesisCorrectionProvider:
 
     def generate_json(self, *, system: str, user: str,
                       schema: dict[str, object] | None) -> str:
-        self.calls.append({"request": json.loads(user), "schema": schema})
-        return json.dumps(self.responses.pop(0))
+        request = json.loads(user)
+        self.calls.append({"request": request, "schema": schema})
+        response = self.responses.pop(0)
+        if "quoteAnchors" in request:
+            anchored = copy.deepcopy(response)
+            ids = [row["quote_id"] for row in request["quoteAnchors"]]
+            anchored["observations"] = [
+                {"quote_id": ids[i], "interpretation": ob["interpretation"]}
+                for i, ob in enumerate(response["observations"])
+            ]
+            return json.dumps(anchored)
+        return json.dumps(response)
 
 
 def _commentary_only(hypotheses: list[dict]) -> list[dict]:
@@ -304,7 +338,11 @@ def test_one_hypothesis_only_correction_preserves_verified_quotes(tmp_path: Path
     assert report["hypothesesCorrectionCount"] == 1
     assert report["modelCalls"] == 2
     assert report["cases"][0]["hypothesesCorrectionAttempted"] is True
-    assert report["cases"][0]["interpretation"]["observations"] == original["observations"]
+    assert all(
+        ob["verbatim_quote"] in prepared["cases"][0]["evidence"][0]["text"]
+        for ob in report["cases"][0]["interpretation"]["observations"]
+    )
+    assert report["cases"][0]["quoteAnchorSelectionApplied"] is True
     assert all(
         hypothesis["evidence_ids"] == []
         for hypothesis in report["cases"][0]["interpretation"]["hypotheses"]
@@ -381,3 +419,59 @@ def test_repair_failure_reports_only_allowlisted_shape_code(
     assert len(provider.calls) == 2
     assert str(exc.value) == expected
     assert "original private text" not in str(exc.value)
+
+
+def test_anchors_are_exact_bounded_source_substrings(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    case = prepared["cases"][0]
+    anchors = _quote_anchors(case)
+    assert len(anchors) >= 2
+    assert all(
+        12 <= len(quote) <= 200 and quote in case["evidence"][0]["text"]
+        for quote in anchors.values()
+    )
+
+
+@pytest.mark.parametrize(
+    "observation_mutation",
+    ["unknown_id", "fabricated_quote", "wrong_evidence", "duplicate_id"],
+)
+def test_model_cannot_invent_quote_or_citation_even_in_anchored_response(
+    tmp_path: Path, observation_mutation: str,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    original = _response(prepared["cases"][0])
+    bad = _as_anchored(original, prepared["cases"][0])
+    if observation_mutation == "unknown_id":
+        bad["observations"][0]["quote_id"] = "q99"
+    elif observation_mutation == "fabricated_quote":
+        bad["observations"][0]["verbatim_quote"] = "Fabricated SEC quote"
+    elif observation_mutation == "wrong_evidence":
+        bad["observations"][0]["evidence_id"] = "fake-evidence"
+    elif observation_mutation == "duplicate_id":
+        bad["observations"][1]["quote_id"] = bad["observations"][0]["quote_id"]
+    class _UntrustedProvider:
+        model_id = "untrusted-fixture"
+
+        def generate_json(self, *, system: str, user: str,
+                          schema: dict[str, object] | None) -> str:
+            return json.dumps(bad)
+
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_OBSERVATION_ANCHOR_INVALID"):
+        run_semantic_research(prepared, _UntrustedProvider(), limit=1)
+
+
+def test_anchored_model_cannot_claim_verified_publication(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    original = _as_anchored(_response(prepared["cases"][0]), prepared["cases"][0])
+    original["historical_public_time_verified"] = True
+
+    class _UntrustedProvider:
+        model_id = "untrusted-fixture"
+
+        def generate_json(self, *, system: str, user: str,
+                          schema: dict[str, object] | None) -> str:
+            return json.dumps(original)
+
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_UNSUPPORTED_MODEL_CLAIM"):
+        run_semantic_research(prepared, _UntrustedProvider(), limit=1)
