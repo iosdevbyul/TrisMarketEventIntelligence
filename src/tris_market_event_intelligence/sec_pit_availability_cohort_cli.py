@@ -21,6 +21,10 @@ MAX_CANDIDATES = 15000
 MAX_RESEARCH_EVENTS = 500
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 ACCESSION = re.compile(r"0001045810-\d{2}-\d{6}\Z")
+# SEC accession prefix denotes the submitting filer/agent, not always issuer CIK.
+# Match all valid SEC accession submitters in the already issuer-PINned inventory;
+# the issuer boundary is enforced by companyCik + canonical issuer archive path.
+INVENTORY_ACCESSION = re.compile(r"\d{10}-\d{2}-\d{6}\Z")
 FORMS = ("8-K", "10-Q", "10-K")
 HORIZONS = ("1", "3", "5")
 
@@ -132,7 +136,7 @@ def _validate_inventory(inventory: dict, study: dict) -> list[dict]:
         if not isinstance(row, dict):
             raise TypeError("SEC_INVENTORY_ROW_INVALID")
         acc = row.get("accession")
-        if (not isinstance(acc, str) or not ACCESSION.fullmatch(acc) or acc in seen
+        if (not isinstance(acc, str) or not INVENTORY_ACCESSION.fullmatch(acc) or acc in seen
                 or row.get("form") not in FORMS
                 or not isinstance(row.get("filingDate"), str)
                 or not isinstance(row.get("secIndexUrl"), str)
