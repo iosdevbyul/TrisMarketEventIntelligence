@@ -61,7 +61,7 @@ def _source_bytes(event: dict, *, index: bool) -> bytes:
             "GOVERNANCE": "Item 5.02"}[category]
     accepted = event["secAcceptedEastern"][:19].replace("T", " ")
     exhibit_link = (
-        f'<a href="q4fy18pr.htm">EX-99.1</a>'
+        '<a href="q4fy18pr.htm">EX-99.1</a>'
         if category == "EARNINGS" else ""
     )
     text = (
