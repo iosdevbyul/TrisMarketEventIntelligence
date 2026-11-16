@@ -365,12 +365,24 @@ def test_model_citation_in_corrected_hypotheses_fails_closed(tmp_path: Path) -> 
 
 def test_fabricated_quote_cannot_be_repaired(tmp_path: Path) -> None:
     prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
-    bad = _response(prepared["cases"][0])
+    bad = _as_anchored(_response(prepared["cases"][0]), prepared["cases"][0])
     bad["observations"][0]["verbatim_quote"] = "Fabricated NVIDIA filing data is here."
-    provider = _HypothesisCorrectionProvider([bad])
-    with pytest.raises(ValueError, match="SEC_SEMANTIC_QUOTE_NOT_IN_PINNED_SOURCE"):
+
+    class _MaliciousProvider:
+        model_id = "malicious-fixture"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate_json(self, *, system: str, user: str,
+                          schema: dict[str, object] | None) -> str:
+            self.calls += 1
+            return json.dumps(bad)
+
+    provider = _MaliciousProvider()
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_OBSERVATION_ANCHOR_INVALID"):
         run_semantic_research(prepared, provider, limit=1)
-    assert len(provider.calls) == 1
+    assert provider.calls == 1
 
 
 def test_missing_context_cannot_cite_issuer_as_independent_context(
