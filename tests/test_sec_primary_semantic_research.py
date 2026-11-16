@@ -307,7 +307,7 @@ def test_invalid_second_hypotheses_fail_closed_after_one_correction(
     provider = _HypothesisCorrectionProvider([
         wrong, {"hypotheses": wrong["hypotheses"]},
     ])
-    with pytest.raises(ValueError, match="SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED"):
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_REPAIR_EVIDENCE_INVALID"):
         run_semantic_research(prepared, provider, limit=1)
     assert len(provider.calls) == 2
 
@@ -330,3 +330,41 @@ def test_missing_context_cannot_cite_issuer_as_independent_context(
     response["hypotheses"][2]["evidence_ids"] = [f"sec-{ACC}-primary"]
     with pytest.raises(ValueError, match="SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED"):
         _validate_response(prepared["cases"][0], json.dumps(response))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("category", "SEC_SEMANTIC_REPAIR_CATEGORY_INVALID"),
+        ("duplicate", "SEC_SEMANTIC_REPAIR_DUPLICATE_CATEGORY"),
+        ("mechanism", "SEC_SEMANTIC_REPAIR_MECHANISM_LENGTH_INVALID"),
+        ("limitation", "SEC_SEMANTIC_REPAIR_LIMITATION_LENGTH_INVALID"),
+        ("fields", "SEC_SEMANTIC_REPAIR_FIELDS_INVALID"),
+    ],
+)
+def test_repair_failure_reports_only_allowlisted_shape_code(
+    tmp_path: Path, mutation: str, expected: str,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    original = _response(prepared["cases"][0])
+    wrong = copy.deepcopy(original)
+    wrong["hypotheses"][1]["evidence_ids"] = [f"sec-{ACC}-primary"]
+    repaired = copy.deepcopy(original["hypotheses"])
+    if mutation == "category":
+        repaired[0]["category"] = "INVENTED_SECTOR_FACT"
+    elif mutation == "duplicate":
+        repaired[1]["category"] = "ISSUER_FUNDAMENTALS"
+    elif mutation == "mechanism":
+        repaired[0]["mechanism"] = "short"
+    elif mutation == "limitation":
+        repaired[0]["limitation"] = "short"
+    elif mutation == "fields":
+        repaired[0]["unexpected"] = "original private text must not be leaked"
+    provider = _HypothesisCorrectionProvider([
+        wrong, {"hypotheses": repaired},
+    ])
+    with pytest.raises(ValueError, match=expected) as exc:
+        run_semantic_research(prepared, provider, limit=1)
+    assert len(provider.calls) == 2
+    assert str(exc.value) == expected
+    assert "original private text" not in str(exc.value)

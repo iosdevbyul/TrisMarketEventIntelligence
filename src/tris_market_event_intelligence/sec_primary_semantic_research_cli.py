@@ -283,6 +283,39 @@ def _repair_hypotheses(
     return {**previous, "hypotheses": repair["hypotheses"]}
 
 
+def _repair_failure_code(case: dict, hypotheses: object) -> str:
+    """Allowlisted shape-only failure category; never expose model-generated text."""
+    if not isinstance(hypotheses, list) or len(hypotheses) != 3:
+        return "SEC_SEMANTIC_REPAIR_HYPOTHESIS_COUNT_INVALID"
+    evidence_id = case["evidence"][0]["id"]
+    categories: set[str] = set()
+    for row in hypotheses:
+        if not isinstance(row, dict) or set(row) != {
+            "category", "evidence_ids", "mechanism", "limitation",
+        }:
+            return "SEC_SEMANTIC_REPAIR_FIELDS_INVALID"
+        category = row["category"]
+        if not isinstance(category, str) or category not in CATEGORIES:
+            return "SEC_SEMANTIC_REPAIR_CATEGORY_INVALID"
+        if category in categories:
+            return "SEC_SEMANTIC_REPAIR_DUPLICATE_CATEGORY"
+        categories.add(category)
+        ids = row["evidence_ids"]
+        if (not isinstance(ids, list) or len(ids) > 1
+                or any(not isinstance(x, str) or x != evidence_id for x in ids)
+                or (category in {"SECTOR_ALTERNATIVE", "MISSING_CONTEXT"} and ids)):
+            return "SEC_SEMANTIC_REPAIR_EVIDENCE_INVALID"
+        if (not isinstance(row["mechanism"], str)
+                or not 15 <= len(row["mechanism"].strip()) <= 1000):
+            return "SEC_SEMANTIC_REPAIR_MECHANISM_LENGTH_INVALID"
+        if (not isinstance(row["limitation"], str)
+                or not 15 <= len(row["limitation"].strip()) <= 1000):
+            return "SEC_SEMANTIC_REPAIR_LIMITATION_LENGTH_INVALID"
+    if categories != set(CATEGORIES):
+        return "SEC_SEMANTIC_REPAIR_CATEGORIES_INCOMPLETE"
+    return "SEC_SEMANTIC_REPAIR_FULL_VALIDATION_INVALID"
+
+
 def run_semantic_research(
     prepared: dict, provider: LLMProvider, *, limit: int = 3,
 ) -> dict:
@@ -326,7 +359,19 @@ def run_semantic_research(
             # Ask the model to replace ONLY hypotheses; never rewrite sources.
             original = json.loads(raw)
             revised = _repair_hypotheses(case, original, provider)
-            validated = _validate_response(case, json.dumps(revised))
+            try:
+                validated = _validate_response(case, json.dumps(revised))
+            except ValueError as repair_exc:
+                if str(repair_exc) in {
+                    "SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED",
+                    "SEC_SEMANTIC_HYPOTHESIS_FIELDS_INVALID",
+                    "SEC_SEMANTIC_HYPOTHESIS_CATEGORIES_INCOMPLETE",
+                    "SEC_SEMANTIC_RESPONSE_CARDINALITY_INVALID",
+                }:
+                    raise ValueError(
+                        _repair_failure_code(case, revised.get("hypotheses"))
+                    ) from None
+                raise
             repair_used = True
         results.append({
             "accession": case["accession"], "sourceSha256": case["sourceSha256"],
