@@ -264,11 +264,17 @@ _OBSERVED_MARKET_OUTCOME = re.compile(
 def _observed_outcome_claim(text: str) -> bool:
     # Defensive *claim* screening, not a truth classifier. Conditional
     # scenarios are allowed; already-realized market moves are quarantined.
-    conditional = re.search(
-        r"\\b(?:if|could|might|may|would|potential|hypothetical)\\b",
-        text, re.IGNORECASE,
-    )
-    return bool(_OBSERVED_MARKET_OUTCOME.search(text)) and not conditional
+    for match in _OBSERVED_MARKET_OUTCOME.finditer(text):
+        # Inspect the matched assertion, plus its immediately preceding
+        # conditional cue, rather than letting "might" anywhere in a
+        # paragraph immunize an unrelated observed-outcome assertion.
+        prefix = text[max(0, match.start() - 32):match.start()]
+        if not re.search(
+            r"\\b(?:if|could|might|may|would|potential|hypothetical)\\b",
+            prefix + match.group(), re.IGNORECASE,
+        ):
+            return True
+    return False
 
 
 def _validate_answer(
@@ -463,7 +469,24 @@ def _validate_answer(
                 rejected_market_outcome_claims.append({
                     "impactIndex": impact_index, "reason": code,
                 })
+    narrative_proposals = [
+        {"location": "overallAssessment", "text": answer.overallAssessment},
+        *[
+            {"location": f"eventGroups[{i}].summary", "text": group.summary}
+            for i, group in enumerate(answer.eventGroups)
+        ],
+        *[
+            {"location": f"eventLinks[{i}].explanation", "text": link.explanation}
+            for i, link in enumerate(answer.eventLinks)
+        ],
+    ]
+    rejected_narratives = [
+        {"location": row["location"],
+         "reason": "NEWS_TEST_UNSUPPORTED_OBSERVED_MARKET_OUTCOME"}
+        for row in narrative_proposals if _observed_outcome_claim(row["text"])
+    ]
     return {
+        "rejectedNarrativeClaims": rejected_narratives,
         "eventGroups": [g.model_dump() for g in groups],
         "eventStages": valid_stages,
         "rejectedEventStages": rejected_stages,
@@ -475,7 +498,11 @@ def _validate_answer(
         "rejectedImpacts": rejected_impacts,
         "unverifiedCompanyCandidates": unverified_company_candidates,
         "rejectedMarketOutcomeClaims": rejected_market_outcome_claims,
-        "impactValidationComplete": not rejected_impacts and not unverified_company_candidates,
+        "impactValidationComplete": (
+            not rejected_impacts and not unverified_company_candidates
+            and not rejected_narratives
+            and not (target_selection and target_selection["rejected"])
+        ),
         "overallAssessment": answer.overallAssessment,
     }
 
@@ -797,6 +824,7 @@ def main() -> None:
             "rejectedImpacts": report["rejectedImpacts"],
             "targetSelection": report["targetSelection"],
             "rejectedMarketOutcomeClaims": report["rejectedMarketOutcomeClaims"],
+            "rejectedNarrativeClaims": report["rejectedNarrativeClaims"],
             "impactResults": [
                 {
                     "targetType": row["targetType"],
