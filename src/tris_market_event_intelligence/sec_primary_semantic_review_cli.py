@@ -77,13 +77,18 @@ def build_review_packet(
             if not isinstance(acc, str) or acc not in by_accession or acc in seen:
                 raise ValueError("SEC_SEMANTIC_REVIEW_DUPLICATE_OR_UNKNOWN_CASE")
             index, case = by_accession[acc]
-            if "sourceSpan" in item:
-                if body_mode != VERSION:
-                    raise ValueError("SEC_BODY_SPAN_MODE_REQUIRED")
+            if body_mode == VERSION:
                 raw_path = source_dir / f"sec-{acc}-primary.source"
                 if raw_path.is_symlink() or not raw_path.is_file():
                     raise ValueError("SEC_BODY_ORIGINAL_SOURCE_REQUIRED")
-                case = reverify_body_span(case, raw_path.read_bytes(), item["sourceSpan"])
+                raw = raw_path.read_bytes()
+                expected = select_body_span(case, raw)
+                if ("sourceSpan" in item) != (expected is not None):
+                    raise ValueError("SEC_BODY_SPAN_SELECTION_MISMATCH")
+                if expected is not None:
+                    case = reverify_body_span(case, raw, item["sourceSpan"])
+            elif "sourceSpan" in item:
+                raise ValueError("SEC_BODY_SPAN_MODE_REQUIRED")
             if (item.get("sourceSha256") != case["sourceSha256"]
                     or item.get("historicalTimeEligibility") is not False
                     or item.get("sourceInterpretationIsHumanUnverified") is not True
