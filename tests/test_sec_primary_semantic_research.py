@@ -591,3 +591,53 @@ def test_final_identity_guard_still_rejects_mutations(tmp_path: Path) -> None:
     raw["source_sha256"] = "a" * 64
     with pytest.raises(ValueError, match="SEC_SEMANTIC_UNSUPPORTED_MODEL_CLAIM"):
         _validate_response(case, json.dumps(raw))
+
+
+@pytest.mark.parametrize("unsupported", [
+    "Management initiated supply-chain restructuring across divisions.",
+    "An R&D strategy shift explains the filing.",
+    "The issuer has short-term financing dependency.",
+    "Operational inefficiency caused the change.",
+    "Its internal valuation model changed the outcome.",
+    "Trade restrictions changed the issuer's prospects.",
+    "Government subsidies account for the result.",
+    "Competitor production capacity explains the disclosure.",
+])
+def test_new_generation_rejects_unsourced_concrete_narratives(
+    tmp_path: Path, unsupported: str,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    response = _response(prepared["cases"][0])
+    response["hypotheses"][0]["mechanism"] = unsupported
+    provider = _StubProvider([response])
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_UNGROUNDED_SPECIFIC_NARRATIVE"):
+        run_semantic_research(prepared, provider, limit=1)
+
+
+def test_absent_keywords_do_not_require_evidence_for_conditional_hypothesis(
+    tmp_path: Path,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    response = _response(prepared["cases"][0])
+    response["hypotheses"][1]["mechanism"] = (
+        "Unverified outside market conditions might also be relevant."
+    )
+    provider = _StubProvider([response])
+    result = run_semantic_research(prepared, provider, limit=1)
+    assert result["casesAnalyzed"] == 1
+    assert result["trainingReady"] is False
+
+
+def test_specific_narrative_gate_is_not_a_truth_verification() -> None:
+    case = {"evidence": [{"text": "The issuer discusses trade restrictions here."}]}
+    response = {
+        "summary": "The issuer discusses trade restrictions here.",
+        "observations": [{"interpretation": "Trade restrictions appear in the excerpt."}],
+        "hypotheses": [{
+            "mechanism": "Trade restrictions might matter.",
+            "limitation": "No independent effect has been established.",
+        }],
+    }
+    # Matching words only avoid this particular conservative veto.
+    # They do not constitute independently verified causal evidence.
+    semantic_cli._check_ungrounded_specifics(case, response)
