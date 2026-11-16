@@ -11,6 +11,10 @@ from test_sec_primary_semantic_review import _packet, _Provider
 from tris_market_event_intelligence.sec_claim_evidence_review_cli import (
     build_claim_review,
 )
+from tris_market_event_intelligence.sec_pinned_body_spans import (
+    VERSION,
+    apply_body_spans,
+)
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
@@ -20,10 +24,6 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
 )
 from tris_market_event_intelligence.sec_primary_semantic_review_cli import (
     build_review_packet,
-)
-from tris_market_event_intelligence.sec_pinned_body_spans import (
-    VERSION,
-    apply_body_spans,
 )
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     SUBSTANTIVE,
