@@ -639,3 +639,64 @@ Only after diagnosis identifies the correct issue and the evidence
 validation is rechecked should the non-diagnostic command create the
 private research packet. Do not overwrite existing immutable receipts
 or re-download historical prices as a workaround.
+
+## SEC historical inventory x all-session event universe coverage reconciliation
+
+The 2018-11-16 NVIDIA SEC source-to-outcome packet is actually stored and
+verified on the user's Mac: all 16 read-only SHA/field/return checks PASSED.
+Do not recreate it. NVDA was -18.7559%, SPY +0.2601%, excess -19.0159
+percentage points on **previous-close to event-date close**, not a
+tradable 09:30 forward return.
+
+Existing `sec-history-inventory` collects SEC historical **filing candidate
+metadata** and deliberately does not verify exact first-publication market
+availability or issuer exhibit facts. Existing `historical-sec-universe`
+constructs a 1/3/5-session retrospective price-outcome universe from
+separately verified event packets and does not turn unobserved days into
+true "no news" controls.
+
+New offline `sec-coverage-reconcile` combines these existing contracts
+without a fresh SEC fetch, any model call, or a new price download.
+A verified SEC event is matched **by accession number** to inventory
+metadata, but inventory-only filings remain **unverified review candidates**.
+For each unverified accession, the filing calendar day and first following
+market session are *possible audit targets only*; they are not independently
+established at-market publication windows. No outcome, direction, or
+stock-return field enters this review queue. Missing/unknown filing
+candidates never imply that a session had no company or macro news.
+Submission acceptance clocks from the raw metadata are **not** promoted
+to verified market decision timestamps.
+
+Use the existing local private historical SEC inventory JSON, the
+SHA-verified 2018 SEC event packet and the previously collected EOD CSVs.
+Set `INVENTORY` to the **actual SEC historical inventory path** already
+collected on your Mac. Do not invent or create an inventory file if one
+does not exist:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+INVENTORY="/path/to/existing-sec-historical-inventory.json"
+bash scripts/news-learning-review.sh --update sec-coverage-reconcile \
+  --inventory "$INVENTORY" \
+  --stock-csv "$DATA/nvda-eod-2016-2026.csv" \
+  --benchmark-csv "$DATA/spy-eod-2016-2026.csv" \
+  --event "$DATA/nvda-2018-sec-price-event-v1.json" \
+  --preview
+```
+
+A subsequent `--output "$DATA/nvda-sec-coverage-v1.json"` is
+create-only (mode 0600) if preview and inventory validation pass.
+The output captures per-source SHA, form counts, verified accession
+matches, unverified candidate counts, a bounded and date-ordered
+human review queue, and explicit `trainingReady=false`,
+`backtestReady=false`, `finalTestTouched=false`. It does **not**
+perform the independent SEC index/exhibit retrieval required to
+verify additional filings or prove forecasting skill.
+
+**Next research milestone:** manually or independently certify a
+small, genuine spread of archived SEC exhibit/acceptance-time cases
+from different market periods and ordinary-price sessions. Then feed
+those new fully verified event packets to the existing universe and
+repeat this coverage audit. Respect SEC fair-use identification,
+copyright conditions and independent source/time evidence. Only
+thereafter evaluate truly time-forward research with sealed outcomes.
