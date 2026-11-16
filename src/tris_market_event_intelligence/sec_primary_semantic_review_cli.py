@@ -12,8 +12,8 @@ from pathlib import Path
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
-    MAX_INPUT,
     MAX_CASES,
+    MAX_INPUT,
     _validate_response,
     prepare_primary_cases,
 )
@@ -58,7 +58,7 @@ def build_review_packet(
         corrections = 0
         for item in report["cases"]:
             if not isinstance(item, dict):
-                raise ValueError("SEC_SEMANTIC_REVIEW_CASE_INVALID")
+                raise TypeError("SEC_SEMANTIC_REVIEW_CASE_INVALID")
             acc = item.get("accession")
             if not isinstance(acc, str) or acc not in by_accession or acc in seen:
                 raise ValueError("SEC_SEMANTIC_REVIEW_DUPLICATE_OR_UNKNOWN_CASE")
