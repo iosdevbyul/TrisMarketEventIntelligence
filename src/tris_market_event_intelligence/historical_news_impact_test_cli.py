@@ -304,61 +304,75 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
     article_text = " ".join(a.title + " " + a.body for a in case.articles).casefold()
     processed: set[tuple[str, str, str]] = set()
     result_impacts: list[dict] = []
-    for impact in answer.impacts:
-        if impact.sector not in SECTORS:
-            raise ValueError("NEWS_TEST_SECTOR_UNKNOWN")
-        refs = impact.evidenceQuoteIds
-        if len(set(refs)) != len(refs) or any(key not in lookup for key in refs):
-            raise ValueError("NEWS_TEST_QUOTE_NOT_IN_SOURCE")
-        if impact.targetType == "STOCK":
-            if (not impact.companyName or not impact.ticker
-                    or not TICKER.fullmatch(impact.ticker)):
-                raise ValueError("NEWS_TEST_STOCK_TARGET_INCOMPLETE")
-            mapped = known_by_name.get(impact.companyName.casefold())
-            known_ticker = known_by_ticker.get(impact.ticker)
-            if (mapped is not None and impact.ticker != mapped.ticker) or (
-                known_ticker is not None
-                and known_ticker.companyName.casefold() != impact.companyName.casefold()
-            ):
-                raise ValueError("NEWS_TEST_TICKER_MAPPING_CONFLICT")
-            if (impact.exposure == "DIRECT"
-                    and impact.companyName.casefold() not in article_text):
-                raise ValueError("NEWS_TEST_DIRECT_ENTITY_NOT_IN_NEWS")
-            if (impact.exposure == "INDIRECT"
-                    and mapped is None and impact.companyName.casefold() not in article_text):
-                raise ValueError("NEWS_TEST_INDIRECT_ENTITY_NOT_IN_UNIVERSE")
-            ticker_status = (
-                "USER_SUPPLIED_MAPPING" if mapped and mapped.ticker == impact.ticker
-                else "SOURCE_TEXT" if impact.ticker.casefold() in article_text
-                else "UNVERIFIED_MODEL_PROPOSAL"
-            )
-        else:
-            if impact.companyName is not None or impact.ticker is not None:
-                raise ValueError("NEWS_TEST_SECTOR_HAS_TICKER")
-            ticker_status = "NOT_APPLICABLE"
-        interval = impact.conditionalMovePctRange
-        if impact.direction in {"POSITIVE", "NEGATIVE"}:
-            if interval is None or impact.intensity == "UNASSESSED":
-                raise ValueError("NEWS_TEST_DIRECTION_WITHOUT_MAGNITUDE")
-            if (impact.direction == "POSITIVE"
-                    and not (0 <= interval.minPct < interval.maxPct)):
-                raise ValueError("NEWS_TEST_POSITIVE_RANGE_INVALID")
-            if (impact.direction == "NEGATIVE"
-                    and not (interval.minPct < interval.maxPct <= 0)):
-                raise ValueError("NEWS_TEST_NEGATIVE_RANGE_INVALID")
-        elif interval is not None or impact.intensity != "UNASSESSED":
-            raise ValueError("NEWS_TEST_UNCERTAIN_DIRECTION_WITH_RANGE")
-        identity = (impact.targetType, impact.ticker or impact.sector, impact.market)
-        if identity in processed:
-            raise ValueError("NEWS_TEST_DUPLICATE_IMPACT")
-        processed.add(identity)
-        entry = impact.model_dump()
-        entry["tickerProvenance"] = ticker_status
-        entry["evidence"] = [lookup[key] for key in refs]
-        entry["horizonTradingDays"] = case.horizonTradingDays
-        entry["estimateCalibrated"] = False
-        entry["returnIsObserved"] = False
-        result_impacts.append(entry)
+    rejected_impacts: list[dict] = []
+    for impact_index, impact in enumerate(answer.impacts):
+        try:
+            if impact.sector not in SECTORS:
+                raise ValueError("NEWS_TEST_SECTOR_UNKNOWN")
+            refs = impact.evidenceQuoteIds
+            if len(set(refs)) != len(refs) or any(key not in lookup for key in refs):
+                raise ValueError("NEWS_TEST_QUOTE_NOT_IN_SOURCE")
+            if impact.targetType == "STOCK":
+                if (not impact.companyName or not impact.ticker
+                        or not TICKER.fullmatch(impact.ticker)):
+                    raise ValueError("NEWS_TEST_STOCK_TARGET_INCOMPLETE")
+                mapped = known_by_name.get(impact.companyName.casefold())
+                known_ticker = known_by_ticker.get(impact.ticker)
+                if (mapped is not None and impact.ticker != mapped.ticker) or (
+                    known_ticker is not None
+                    and known_ticker.companyName.casefold() != impact.companyName.casefold()
+                ):
+                    raise ValueError("NEWS_TEST_TICKER_MAPPING_CONFLICT")
+                if (impact.exposure == "DIRECT"
+                        and impact.companyName.casefold() not in article_text):
+                    raise ValueError("NEWS_TEST_DIRECT_ENTITY_NOT_IN_NEWS")
+                if (impact.exposure == "INDIRECT"
+                        and mapped is None and impact.companyName.casefold() not in article_text):
+                    raise ValueError("NEWS_TEST_INDIRECT_ENTITY_NOT_IN_UNIVERSE")
+                ticker_status = (
+                    "USER_SUPPLIED_MAPPING" if mapped and mapped.ticker == impact.ticker
+                    else "SOURCE_TEXT" if impact.ticker.casefold() in article_text
+                    else "UNVERIFIED_MODEL_PROPOSAL"
+                )
+            else:
+                if impact.companyName is not None or impact.ticker is not None:
+                    raise ValueError("NEWS_TEST_SECTOR_HAS_TICKER")
+                ticker_status = "NOT_APPLICABLE"
+            interval = impact.conditionalMovePctRange
+            if impact.direction in {"POSITIVE", "NEGATIVE"}:
+                if interval is None or impact.intensity == "UNASSESSED":
+                    raise ValueError("NEWS_TEST_DIRECTION_WITHOUT_MAGNITUDE")
+                if (impact.direction == "POSITIVE"
+                        and not (0 <= interval.minPct < interval.maxPct)):
+                    raise ValueError("NEWS_TEST_POSITIVE_RANGE_INVALID")
+                if (impact.direction == "NEGATIVE"
+                        and not (interval.minPct < interval.maxPct <= 0)):
+                    raise ValueError("NEWS_TEST_NEGATIVE_RANGE_INVALID")
+            elif interval is not None or impact.intensity != "UNASSESSED":
+                raise ValueError("NEWS_TEST_UNCERTAIN_DIRECTION_WITH_RANGE")
+            identity = (impact.targetType, impact.ticker or impact.sector, impact.market)
+            if identity in processed:
+                raise ValueError("NEWS_TEST_DUPLICATE_IMPACT")
+            processed.add(identity)
+            entry = impact.model_dump()
+            entry["tickerProvenance"] = ticker_status
+            entry["evidence"] = [lookup[key] for key in refs]
+            entry["horizonTradingDays"] = case.horizonTradingDays
+            entry["estimateCalibrated"] = False
+            entry["returnIsObserved"] = False
+            result_impacts.append(entry)
+        except ValueError as exc:
+            # Do not reinterpret an unsupported sector, fabricated ticker,
+            # ungrounded evidence, duplicate identity, or invalid direction.
+            # Preserve the exact model proposal for an auditable review.
+            code = str(exc)
+            if not re.fullmatch(r"NEWS_TEST_[A-Z0-9_]{6,90}", code):
+                raise
+            rejected_impacts.append({
+                "impactIndex": impact_index,
+                "reason": code,
+                "proposal": impact.model_dump(),
+            })
     return {
         "eventGroups": [g.model_dump() for g in groups],
         "eventStages": valid_stages,
@@ -368,6 +382,8 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         "eventLinks": valid_links,
         "rejectedEventLinks": rejected_links,
         "impacts": result_impacts,
+        "rejectedImpacts": rejected_impacts,
+        "impactValidationComplete": not rejected_impacts,
         "overallAssessment": answer.overallAssessment,
     }
 
@@ -507,10 +523,14 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         "historicalBenchmarkEligible": False if (
             revised_source_ids or case.skippedSources
             or not reviewed["eventStageCoverageComplete"]
+            or not reviewed["impactValidationComplete"]
         ) else None,
         "status": (
-            "NEWS_EVENT_STAGES_INCOMPLETE_REQUIRES_REVIEW"
-            if not reviewed["eventStageCoverageComplete"]
+            "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
+            if (
+                not reviewed["eventStageCoverageComplete"]
+                or not reviewed["impactValidationComplete"]
+            )
             else "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
             if reviewed["impacts"] else "BLIND_NEWS_ABSTAINED"
         ),
@@ -518,7 +538,7 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         "modelCalls": call_count,
         "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
-        "promptVersion": "historical-news-impact-v4-stage-quarantine",
+        "promptVersion": "historical-news-impact-v5-evidence-quarantine",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -651,6 +671,8 @@ def main() -> None:
             "eventStageCoverageComplete": report["eventStageCoverageComplete"],
             "unresolvedStageArticleIds": report["unresolvedStageArticleIds"],
             "rejectedEventStages": report["rejectedEventStages"],
+            "impactValidationComplete": report["impactValidationComplete"],
+            "rejectedImpacts": report["rejectedImpacts"],
             "impactResults": [
                 {
                     "targetType": row["targetType"],
