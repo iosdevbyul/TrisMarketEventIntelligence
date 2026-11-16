@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import re
 
+from tris_market_event_intelligence.sec_ranked_multi_passages import CAUSE
 from tris_market_event_intelligence.sec_revenue_context_guard import (
     UNSUPPORTED_CAUSES,
     reject_unsupported_revenue_causes,
 )
-from tris_market_event_intelligence.sec_ranked_multi_passages import CAUSE
 
 MAX_RESPONSE = 14000
 NUMBER = re.compile(r"\b\d+(?:\.\d+)?%?\b")
@@ -212,7 +212,7 @@ def generate_ranked_interpretation(case: dict, provider: object) -> dict:
     }:
         raise ValueError("SEC_MULTI_MODEL_SCHEMA_INVALID")
     if not isinstance(response["observations"], list):
-        raise ValueError("SEC_MULTI_MODEL_OBSERVATIONS_INVALID")
+        raise TypeError("SEC_MULTI_MODEL_OBSERVATIONS_INVALID")
     expanded = []
     for obs in response["observations"]:
         if not isinstance(obs, dict) or set(obs) != {"quote_id", "interpretation"}:
@@ -227,7 +227,7 @@ def generate_ranked_interpretation(case: dict, provider: object) -> dict:
         })
     hypotheses = []
     if not isinstance(response["hypotheses"], list):
-        raise ValueError("SEC_MULTI_MODEL_HYPOTHESES_INVALID")
+        raise TypeError("SEC_MULTI_MODEL_HYPOTHESES_INVALID")
     for hyp in response["hypotheses"]:
         if not isinstance(hyp, dict) or set(hyp) != {
             "category", "quote_id", "mechanism", "limitation",
