@@ -46,6 +46,8 @@ Only use the supplied historical articles; do NOT know or assume what the
 stock price, index, or sector actually did after the AS-OF cutoff.
 First reconstruct event groups chronologically, mark initial reports,
 new information, reactions and corrections, and link related articles.
+Set eventStagesByArticleId as a single object: each exact input articleId
+is ONE key and its value is its stage label. Never output a list of stages.
 Do NOT collapse unrelated headlines into a fabricated causal chain.
 Then name plausible affected stocks and sectors (including indirect exposure
 if justified), positive/negative/mixed/uncertain direction, conditional
@@ -147,12 +149,10 @@ class NewsLink(Strict):
     explanation: str = Field(min_length=12, max_length=450)
 
 
-class EventStage(Strict):
-    articleId: str
-    stage: Literal[
-        "INITIAL_REPORT", "NEW_FACT", "OFFICIAL_ACTION",
-        "REACTION", "CORRECTION", "INDEPENDENT",
-    ]
+StageLabel = Literal[
+    "INITIAL_REPORT", "NEW_FACT", "OFFICIAL_ACTION",
+    "REACTION", "CORRECTION", "INDEPENDENT",
+]
 
 
 class MoveRange(Strict):
@@ -184,7 +184,9 @@ class ImpactTarget(Strict):
 
 class ModelAnswer(Strict):
     eventGroups: list[EventGroup] = Field(min_length=1, max_length=MAX_ARTICLES)
-    eventStages: list[EventStage] = Field(min_length=2, max_length=MAX_ARTICLES)
+    eventStagesByArticleId: dict[str, StageLabel] = Field(
+        min_length=2, max_length=MAX_ARTICLES,
+    )
     eventLinks: list[NewsLink] = Field(max_length=12)
     impacts: list[ImpactTarget] = Field(max_length=12)
     overallAssessment: str = Field(min_length=20, max_length=750)
@@ -241,10 +243,8 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         article_id: group.eventId
         for group in groups for article_id in group.articleIds
     }
-    if {x.articleId for x in answer.eventStages} != set(articles):
+    if set(answer.eventStagesByArticleId) != set(articles):
         raise ValueError("NEWS_TEST_STAGE_COVERAGE_INVALID")
-    if len(answer.eventStages) != len(articles):
-        raise ValueError("NEWS_TEST_DUPLICATE_STAGE_INVALID")
     # Article clustering is the model's substantive result; never discard a
     # complete impact answer because a small model reversed a link or
     # included an unverified cross-group edge. Quarantine invalid edges.
@@ -335,7 +335,11 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         result_impacts.append(entry)
     return {
         "eventGroups": [g.model_dump() for g in groups],
-        "eventStages": [s.model_dump() for s in answer.eventStages],
+        "eventStages": [
+            {"articleId": article.articleId,
+             "stage": answer.eventStagesByArticleId[article.articleId]}
+            for article in case.articles
+        ],
         "eventLinks": valid_links,
         "rejectedEventLinks": rejected_links,
         "impacts": result_impacts,
@@ -379,11 +383,24 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
     # violation. The news, quote anchors and historical cutoff never change.
     # Never fix stages, sources, tickers or price estimates in Python.
     source_ids = [article.articleId for article in case.articles]
+    model_schema = ModelAnswer.model_json_schema()
+    model_schema["properties"]["eventStagesByArticleId"] = {
+        "type": "object",
+        "properties": {
+            article_id: {"type": "string", "enum": [
+                "INITIAL_REPORT", "NEW_FACT", "OFFICIAL_ACTION",
+                "REACTION", "CORRECTION", "INDEPENDENT",
+            ]} for article_id in source_ids
+        },
+        "required": source_ids,
+        "additionalProperties": False,
+    }
     correction_rules = (
         "Regenerate the COMPLETE structured answer using only these SAME "
         "source articles. Never use future market prices or outcomes. "
-        "Return exactly one eventStages item PER source articleId, with no "
-        "missing, duplicate or invented IDs. EventGroups must cover each "
+        "Return eventStagesByArticleId as an object mapping every source "
+        "articleId to exactly one stage label (never an array). Do not "
+        "omit any source ID or add unknown IDs. EventGroups must cover each "
         "source article exactly once, without duplicates or unknown IDs. "
         "Every evidenceQuoteId must occur in sourceQuoteAnchors. "
         "Mention directly affected companies only when actually named in "
@@ -421,7 +438,7 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         call_count += 1
         raw = provider.generate_json(
             system=SYSTEM, user=request,
-            schema=ModelAnswer.model_json_schema(),
+            schema=model_schema,
         )
         if not isinstance(raw, str) or len(raw.encode("utf-8")) > 26000:
             raise ValueError("NEWS_TEST_RESPONSE_SIZE_INVALID")
