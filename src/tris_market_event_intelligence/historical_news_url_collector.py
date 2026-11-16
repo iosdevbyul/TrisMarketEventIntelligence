@@ -246,6 +246,37 @@ def _jsonld_dates(doc: ArticleHTML) -> tuple[list[str], list[str]]:
     return published, modified
 
 
+def _jsonld_article_body(doc: ArticleHTML) -> str:
+    """Embedded primary NewsArticle.articleBody is permitted, not previews."""
+    found: list[str] = []
+
+    def visit(item: object) -> None:
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+        elif isinstance(item, dict):
+            category = item.get("@type", "")
+            types = category if isinstance(category, list) else [category]
+            if any(
+                isinstance(value, str) and (
+                    "Article" in value or "News" in value
+                ) for value in types
+            ):
+                body = item.get("articleBody")
+                if isinstance(body, str) and len(body.strip()) >= 250:
+                    found.append(" ".join(body.split()))
+            for child in item.values():
+                if isinstance(child, (list, dict)):
+                    visit(child)
+
+    for raw in doc.ld_scripts[:20]:
+        try:
+            visit(json.loads(raw))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+    return max(found, key=len, default="")
+
+
 def parse_article(
     raw: bytes, url: str, as_of: str, article_id: str, *,
     allow_revised: bool = False,
@@ -279,7 +310,9 @@ def parse_article(
     title = doc.meta.get("og:title") or " ".join("".join(doc.title).split())
     paragraphs = doc.article_paragraphs()
     body = "\n".join(paragraphs)
-    if not 8 <= len(title) <= 240 or len(body) < 250 or len(paragraphs) < 3:
+    if len(body) < 250:
+        body = _jsonld_article_body(doc)
+    if not 8 <= len(title) <= 240 or len(body) < 250:
         raise ValueError("NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE")
     if len(body) > MAX_ARTICLE:
         # Never silently truncate a primary article and call it original text.
