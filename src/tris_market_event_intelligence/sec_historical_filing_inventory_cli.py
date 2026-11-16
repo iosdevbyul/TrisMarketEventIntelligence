@@ -37,7 +37,7 @@ MAX_USER_AGENT_LENGTH = 200
 def _get_json(client: httpx.Client, url: str, user_agent: str) -> tuple[dict, str]:
     if not url.startswith(BASE) or (url != BASE + f"CIK{CIK}.json"
                                    and not HISTORY_NAME.fullmatch(url.removeprefix(BASE))):
-        raise ValueError("Unapproved SEC JSON URL")
+        raise ValueError("SEC_UNAPPROVED_SOURCE_URL")
     with client.stream(
         "GET", url, headers={
             "User-Agent": user_agent,
@@ -48,15 +48,15 @@ def _get_json(client: httpx.Client, url: str, user_agent: str) -> tuple[dict, st
         response.raise_for_status()
         if (response.headers.get("Content-Length", "0").isdigit()
                 and int(response.headers["Content-Length"]) > MAX_SOURCE_BYTES):
-            raise ValueError("SEC page too large")
+            raise ValueError("SEC_SOURCE_TOO_LARGE")
         raw = bytearray()
         for chunk in response.iter_bytes():
             raw.extend(chunk)
             if len(raw) > MAX_SOURCE_BYTES:
-                raise ValueError("SEC page too large")
+                raise ValueError("SEC_SOURCE_TOO_LARGE")
     packet = json.loads(raw)
     if not isinstance(packet, dict):
-        raise TypeError("SEC page must be object")
+        raise TypeError("SEC_SCHEMA_PAGE_NOT_OBJECT")
     return packet, hashlib.sha256(raw).hexdigest()
 
 
@@ -66,18 +66,18 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
         "primaryDocument",
     )
     if not isinstance(columns, dict):
-        raise TypeError("SEC columns missing")
+        raise TypeError("SEC_SCHEMA_COLUMNS_NOT_OBJECT")
     values = [columns.get(key) for key in fields]
     if (not all(isinstance(v, list) for v in values)
             or len({len(v) for v in values}) != 1
             or len(values[0]) > MAX_ROWS):
-        raise ValueError("Malformed SEC parallel columns")
+        raise ValueError("SEC_SCHEMA_COLUMNS")
     # Historical SEC pages can omit the 8-K items column, or use null.
     items_column = columns.get("items")
     if items_column is None:
         items_column = [""] * len(values[0])
     if not isinstance(items_column, list) or len(items_column) != len(values[0]):
-        raise ValueError("Malformed SEC items column")
+        raise ValueError("SEC_SCHEMA_ITEMS")
     out = []
     for vals in zip(*values, items_column, strict=True):
         acc, filing_date, accepted, form, primary_doc, items = vals
@@ -88,7 +88,7 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
                 or not isinstance(accepted, str)
                 or not isinstance(primary_doc, str)
                 or (items is not None and not isinstance(items, str))):
-            raise ValueError("Malformed historical filing metadata")
+            raise ValueError("SEC_FILING_METADATA")
         day = date.fromisoformat(filing_date)
         # SEC submissions 'acceptanceDateTime' may be a timezone-less
         # representation. Store raw value, do NOT turn it into a
@@ -97,11 +97,15 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
             r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?",
             accepted,
         ):
-            raise ValueError("Invalid unverified SEC acceptance clock text")
-        if ("/" in primary_doc or "\\" in primary_doc
-                or primary_doc.startswith(".") or not primary_doc
-                or len(primary_doc) > 180):
-            raise ValueError("SEC primary document contains path traversal")
+            raise ValueError("SEC_ACCEPTANCE_FORMAT")
+        # SEC documents may legitimately live in accession subdirectories.
+        # Preserve the SEC path as metadata but forbid traversal and odd paths.
+        parts = primary_doc.split("/")
+        if (not primary_doc or len(primary_doc) > 240
+                or "\\" in primary_doc or "?" in primary_doc or "#" in primary_doc
+                or any(not part or part in {".", ".."} for part in parts)
+                or primary_doc.startswith("/")):
+            raise ValueError("SEC_PRIMARY_DOCUMENT_PATH")
         out.append({
             "accession": acc,
             "filingDate": day.isoformat(),
@@ -130,22 +134,29 @@ def build_sec_filing_inventory(
     if (end < start or (end - start).days > 4000
             or not isinstance(main, dict) or str(main.get("cik")) != str(int(CIK))
             or not isinstance(main.get("filings"), dict)):
-        raise ValueError("Invalid NVIDIA filing scope or CIK")
+        raise ValueError("SEC_SCOPE_OR_CIK")
     recent = main["filings"].get("recent")
     rows = _rows(recent, page_id=f"CIK{CIK}.json", page_sha=main_sha)
     seen_history = set()
     for name, doc, digest in histories:
         if (not HISTORY_NAME.fullmatch(name) or name in seen_history
                 or len(seen_history) >= MAX_HISTORY_FILES):
-            raise ValueError("Invalid or duplicate SEC history page")
+            raise ValueError("SEC_HISTORY_MANIFEST")
         seen_history.add(name)
         rows.extend(_rows(doc, page_id=name, page_sha=digest))
     existing = {}
     for item in rows:
         acc = item["accession"]
         if acc in existing:
-            if existing[acc] != item:
-                raise ValueError("Conflicting SEC accession provenance")
+            # The SEC main and historical pages can overlap around a
+            # pagination boundary. Their page-name/SHA necessarily differ.
+            # Compare filing facts, not the independently pinned page origin.
+            non_origin = (
+                "filingDate", "rawSecAcceptanceDateTime", "form",
+                "formItems", "secPrimaryDocument", "secIndexUrl",
+            )
+            if any(existing[acc][key] != item[key] for key in non_origin):
+                raise ValueError("SEC_ACCESSION_CONFLICT")
             continue
         existing[acc] = item
     filtered = [
@@ -188,21 +199,21 @@ def inventory_from_sec(
     main, sha = _get_json(client, BASE + f"CIK{CIK}.json", user_agent)
     files = main.get("filings", {}).get("files", [])
     if not isinstance(files, list) or len(files) > 100:
-        raise ValueError("Invalid SEC historical page manifest")
+        raise ValueError("SEC_HISTORY_MANIFEST")
     names = []
     for ref in files:
         if not isinstance(ref, dict):
-            raise TypeError("Invalid SEC history page")
+            raise TypeError("SEC_HISTORY_MANIFEST")
         name = ref.get("name")
         if not isinstance(name, str) or not HISTORY_NAME.fullmatch(name):
-            raise ValueError("Unsafe SEC history page name")
+            raise ValueError("SEC_HISTORY_MANIFEST")
         if ref.get("filingFrom") is None or ref.get("filingTo") is None:
-            raise ValueError("Missing SEC historical coverage")
+            raise ValueError("SEC_HISTORY_MANIFEST")
         if (date.fromisoformat(ref["filingFrom"]) <= end
                 and date.fromisoformat(ref["filingTo"]) >= start):
             names.append(name)
     if len(names) > MAX_HISTORY_FILES:
-        raise ValueError("SEC historical range requires too many pages")
+        raise ValueError("SEC_HISTORY_PAGE_LIMIT")
     histories = []
     for name in names:
         # Less than 2 requests/second, far beneath SEC max 10/s.
@@ -254,22 +265,22 @@ def main() -> None:
     except httpx.HTTPError:
         parser.exit(2, "sec-history-inventory: SEC_TRANSPORT_FAILED\\n")
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        # Never emit response bodies, the User-Agent, or local file paths.
-        # The diagnostic is a bounded category, not arbitrary exception text.
+        # Expose only code-owned, fixed diagnostic categories; do not disclose
+        # SEC response content, identifying User-Agent/email, or local paths.
         allowed = {
-            "Malformed SEC parallel columns": "SEC_SCHEMA_COLUMNS",
-            "Malformed SEC items column": "SEC_SCHEMA_ITEMS",
-            "SEC historical range requires too many pages": "SEC_HISTORY_PAGE_LIMIT",
-            "Unsafe SEC history page name": "SEC_HISTORY_MANIFEST",
-            "Invalid or duplicate SEC history page": "SEC_HISTORY_MANIFEST",
-            "Malformed historical filing metadata": "SEC_FILING_METADATA",
-            "Invalid unverified SEC acceptance clock text": "SEC_ACCEPTANCE_FORMAT",
-            "SEC requires identifying application and contact User-Agent":
-                "SEC_USER_AGENT_INVALID",
+            "SEC_SCHEMA_PAGE_NOT_OBJECT", "SEC_SCHEMA_COLUMNS_NOT_OBJECT",
+            "SEC_SCHEMA_COLUMNS", "SEC_SCHEMA_ITEMS", "SEC_FILING_METADATA",
+            "SEC_ACCEPTANCE_FORMAT", "SEC_PRIMARY_DOCUMENT_PATH",
+            "SEC_SCOPE_OR_CIK", "SEC_HISTORY_MANIFEST", "SEC_ACCESSION_CONFLICT",
+            "SEC_HISTORY_PAGE_LIMIT", "SEC_SOURCE_TOO_LARGE",
+            "SEC_UNAPPROVED_SOURCE_URL",
         }
-        parser.exit(
-            2, f"sec-history-inventory: {allowed.get(str(exc), 'SEC_SOURCE_VALIDATION_FAILED')}\\n",
-        )
+        code = str(exc) if str(exc) in allowed else "SEC_SOURCE_VALIDATION_FAILED"
+        if isinstance(exc, json.JSONDecodeError):
+            code = "SEC_RESPONSE_NOT_JSON"
+        if str(exc) == "SEC requires identifying application and contact User-Agent":
+            code = "SEC_USER_AGENT_INVALID"
+        parser.exit(2, f"sec-history-inventory: {code}\\n")
 
 
 if __name__ == "__main__":
