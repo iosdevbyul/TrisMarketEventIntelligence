@@ -183,3 +183,47 @@ def test_standard_mode_reports_offending_article_ordinal_and_host(
             URLS, as_of=AS_OF, case_id="nvda-strict",
             horizon=1, client=session,
         )
+
+
+@pytest.mark.parametrize("container", [
+    '<main><div class="wp-block-post-content">',
+    '<div class="article__content">',
+    '<article><div class="story-body">',
+])
+def test_publisher_article_main_and_wordpress_containers(
+    container: str,
+) -> None:
+    source = html().replace("<article>", container)
+    source = source.replace("</article></body>", "</div></main></body>")
+    parsed = fetcher.parse_article(source.encode(), URLS[0], AS_OF, "a1")
+    assert "Nvidia announced its own independent board investigation" in parsed["body"]
+    assert "The inquiry will review reports" in parsed["body"]
+    assert parsed["title"] == "Nvidia board opens independent investigation"
+
+
+def test_publisher_main_excludes_navigation_related_links_and_marketing() -> None:
+    source = html().replace(
+        "<article>",
+        '<main><nav><p>' + ("You may want to subscribe to every newsletter. " * 9)
+        + '</p></nav><div class="article-body">',
+    ).replace(
+        "</article></body>",
+        '</div><aside><p>' + ("Recommended subscription products here. " * 9)
+        + '</p></aside></main></body>',
+    )
+    parsed = fetcher.parse_article(source.encode(), URLS[0], AS_OF, "a1")
+    assert "You may want to subscribe" not in parsed["body"]
+    assert "Recommended subscription products" not in parsed["body"]
+    assert "Nvidia announced its own" in parsed["body"]
+
+
+def test_nonarticle_main_marketing_not_passed_as_real_reporting() -> None:
+    page = (
+        '<html><head><meta property="article:published_time" '
+        'content="2026-11-08T21:00:00Z"/></head><body>'
+        '<main><nav><p>' + ("Subscribe for our best updates. " * 20)
+        + '</p></nav><aside><p>' + ("Read more recommendations here. " * 20)
+        + '</p></aside></main></body></html>'
+    )
+    with pytest.raises(ValueError, match="NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE"):
+        fetcher.parse_article(page.encode(), URLS[0], AS_OF, "a1")
