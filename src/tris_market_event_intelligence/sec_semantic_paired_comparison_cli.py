@@ -80,7 +80,16 @@ def compare_semantic_reports(
         changed_fields += sum(d["change"] != "UNCHANGED" for d in deltas)
         pairs.append({
             "caseIndex": index,
-            "evidenceScopeChanged": old.get("sourceSpan") != updated.get("sourceSpan"),
+            "evidenceScopeChanged": (
+                old.get("sourceSpan") != updated.get("sourceSpan")
+                or old.get("sourcePassages") != updated.get("sourcePassages")
+            ),
+            "baselinePassageSha256": [
+                p["spanSha256"] for p in old.get("sourcePassages", [])
+            ],
+            "candidatePassageSha256": [
+                p["spanSha256"] for p in updated.get("sourcePassages", [])
+            ],
             "baselineSourceSpanSha256": old.get("sourceSpan", {}).get("spanSha256"),
             "candidateSourceSpanSha256": updated.get("sourceSpan", {}).get("spanSha256"),
             "baselineSemanticReportSha256": old["semanticReportSha256"],
