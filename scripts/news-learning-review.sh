@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 usage() {
   echo "Usage:"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-semantic --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --prepare|--run [--model gemma4:e2b --limit 3 --start-index 1] --output NEW_PRIVATE_JSON"\n  echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_REVIEW_JSON"
+  echo "  bash scripts/news-learning-review.sh [--update] sec-claim-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_CLAIMS_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-quality --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --review PRIVATE_REVIEW_JSON --output NEW_PRIVATE_AUDIT_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-content --cohort PIT_JSON --batch INDEX_BATCH_JSON --source-dir PRIVATE_DIR --limit 12 --preview|--run --output NEW_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-source-lineage --cohort PRIVATE_PIT_JSON --study TEN_CASE_JSON --batch BATCH01_JSON --source-dir PRIVATE_DIR [--witnesses HISTORICAL_WITNESS_JSON] --preview|--output NEW_PRIVATE_JSON"
@@ -107,6 +108,9 @@ case "$action" in
     ;;
   sec-semantic-review)
     module="tris_market_event_intelligence.sec_primary_semantic_review_cli"
+    ;;
+  sec-claim-review)
+    module="tris_market_event_intelligence.sec_claim_evidence_review_cli"
     ;;
   sec-semantic-quality)
     module="tris_market_event_intelligence.sec_primary_semantic_quality_cli"
