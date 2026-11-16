@@ -172,12 +172,14 @@ def test_standard_mode_reports_offending_article_ordinal_and_host(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(fetcher, "_public_dns", lambda u: None)
-    with _mock_session(modified="2026-11-12T12:00:00Z") as session:
-        with pytest.raises(
+    with (
+        _mock_session(modified="2026-11-12T12:00:00Z") as session,
+        pytest.raises(
             ValueError,
             match=r"NEWS_URL_REVISED_AFTER_CUTOFF\|article=1\|host=techcrunch\.com",
-        ):
-            fetcher.collect_urls(
-                URLS, as_of=AS_OF, case_id="nvda-strict",
-                horizon=1, client=session,
-            )
+        ),
+    ):
+        fetcher.collect_urls(
+            URLS, as_of=AS_OF, case_id="nvda-strict",
+            horizon=1, client=session,
+        )
