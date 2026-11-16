@@ -54,7 +54,7 @@ def audit_semantic_quality(
     counts = {"observations": 0, "hypotheses": 0, "summaries": 0}
     for case in expected["cases"]:
         index = case["caseIndex"]
-        def check(location: str, value: str) -> None:
+        def check(location: str, value: str, case_index: int = index) -> None:
             for code, expression in (
                 ("POTENTIAL_UNSUPPORTED_CAUSAL_LANGUAGE", CAUSAL),
                 ("POTENTIAL_STOCK_DIRECTION_ASSERTION", PRICE),
@@ -62,7 +62,7 @@ def audit_semantic_quality(
             ):
                 if expression.search(value):
                     findings.append({
-                        "caseIndex": index, "location": location, "code": code,
+                        "caseIndex": case_index, "location": location, "code": code,
                     })
         for number, observation in enumerate(case["observations"]):
             counts["observations"] += 1
