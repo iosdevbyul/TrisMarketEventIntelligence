@@ -14,6 +14,7 @@ from tris_market_event_intelligence.historical_issuer_corroboration_cli import _
 from tris_market_event_intelligence.sec_pinned_body_spans import (
     VERSION,
     reverify_body_span,
+    select_body_span,
 )
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     MAX_CASES,
