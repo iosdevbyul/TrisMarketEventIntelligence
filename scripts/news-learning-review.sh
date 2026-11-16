@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh [--update] sec-publication-capture --cohort PRIVATE_JSON --source-dir PRIVATE_DIR --limit 12 --preview|--run --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-pit-cohort --inventory PRIVATE_JSON --study PRIVATE_JSON --preview|--output NEW_PRIVATE_JSON [--max-per-year-form 3]"
   echo "  bash scripts/news-learning-review.sh [--update] sec-multiyear-study --review research/nvda-multiyear-sec-eight-k-official-review-2018-2026.json --inventory PRIVATE_SEC_INVENTORY --stock-csv NVDA_CSV --benchmark-csv SPY_CSV --raw-dir PRIVATE_DIR --preview|--run [--output NEW_PRIVATE_JSON]"
   echo "  TRIS_SEC_USER_AGENT=\"YourApp Contact@example.com\" bash scripts/news-learning-review.sh [--update] sec-history-inventory --start 2016-11-15 --end 2026-11-13 --output NEW_PRIVATE_JSON"
@@ -97,6 +98,9 @@ fi
 shift
 
 case "$action" in
+  sec-publication-capture)
+    module="tris_market_event_intelligence.sec_publication_evidence_capture_cli"
+    ;;
   sec-pit-cohort)
     module="tris_market_event_intelligence.sec_pit_availability_cohort_cli"
     ;;
