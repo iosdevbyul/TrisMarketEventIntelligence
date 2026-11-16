@@ -62,7 +62,7 @@ def test_candidates_are_not_approved_historic_news() -> None:
     assert row["eligibleAsNewsModelFeature"] is False
     assert row["secAcceptanceTimeIndependentlyVerified"] is False
     assert row["secIndexUrl"].endswith(
-        "/104581018000148/0001045810-18-000148-index.htm"
+        "/000104581018000148/0001045810-18-000148-index.htm"
     )
     assert "direction" not in json.dumps(row).lower()
 
