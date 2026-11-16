@@ -31,6 +31,9 @@ from tris_market_event_intelligence.sec_primary_semantic_review_cli import (
     MAX_REPORT_BYTES,
     build_review_packet,
 )
+from tris_market_event_intelligence.sec_ranked_multi_passages import (
+    apply_ranked_passages,
+)
 from tris_market_event_intelligence.sec_revenue_context_guard import STOP_STATUSES
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     INSUFFICIENT,
@@ -42,7 +45,7 @@ from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_js
 def prepare_candidate_replay(
     primary: dict, primary_sha: str, source_dir: Path,
     baseline: list[tuple[dict, str]], *, start_index: int, limit: int,
-    body_spans: bool = False,
+    body_spans: bool = False, multi_passages: bool = False,
 ) -> tuple[dict, dict]:
     """Fail closed unless every requested case exists in the verified baseline."""
     prepared = prepare_primary_cases(primary, primary_sha, source_dir)
@@ -57,8 +60,12 @@ def prepare_candidate_replay(
     present = {case["caseIndex"] for case in reviewed["cases"]}
     if not wanted <= present:
         raise ValueError("SEC_CANDIDATE_BASELINE_CASES_MISSING")
+    if body_spans and multi_passages:
+        raise ValueError("SEC_CANDIDATE_SELECTION_MODE_CONFLICT")
     if body_spans:
         prepared = apply_body_spans(prepared, source_dir)
+    elif multi_passages:
+        prepared = apply_ranked_passages(prepared, source_dir)
     return prepared, {
         "schemaVersion": "sec_semantic_controlled_candidate_plan_v1",
         "status": "VERIFIED_BASELINE_REPLAY_READY",
@@ -68,6 +75,14 @@ def prepare_candidate_replay(
         "baselineCasesValidated": reviewed["reviewCasesPrepared"],
         "sourceQuotesReverified": True,
         "bodySpansEnabled": body_spans,
+        "multiPassagesEnabled": multi_passages,
+        "multiPassageCasesSelected": sum(
+            "sourcePassages" in prepared["cases"][index] for index in sorted(wanted)
+        ),
+        "selectedPassagesCount": sum(
+            len(prepared["cases"][index].get("sourcePassages", []))
+            for index in sorted(wanted)
+        ),
         "requestedBodySpansSelected": sum(
             "sourceSpan" in prepared["cases"][index] for index in sorted(wanted)
         ),
@@ -110,7 +125,9 @@ def main() -> None:
     parser.add_argument("--start-index", type=int, required=True)
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), required=True)
     parser.add_argument("--model", default="gemma4:e2b")
-    parser.add_argument("--body-spans", action="store_true")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--body-spans", action="store_true")
+    selection.add_argument("--multi-passages", action="store_true")
     parser.add_argument("--output", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prepare", action="store_true")
@@ -133,6 +150,7 @@ def main() -> None:
             primary, sha, args.source_dir, baseline,
             start_index=args.start_index, limit=args.limit,
             body_spans=args.body_spans,
+            multi_passages=args.multi_passages,
         )
         if args.prepare:
             print(json.dumps(plan))
@@ -143,7 +161,9 @@ def main() -> None:
         ]
         if all(
             (
-                case.get("sourceSpan", {}).get("contextStatus")
+                (INSUFFICIENT if args.multi_passages
+                 and "sourcePassages" not in case else None)
+                or case.get("sourceSpan", {}).get("contextStatus")
                 or (INSUFFICIENT if source_evidence_status(
                     case["evidence"][0]["text"]
                 ) == INSUFFICIENT else None)
@@ -176,6 +196,8 @@ def main() -> None:
             "casesAnalyzed": candidate["casesAnalyzed"],
             "casesAbstained": candidate["casesAbstained"],
             "bodySpansSelected": plan["requestedBodySpansSelected"],
+            "multiPassageCasesSelected": plan["multiPassageCasesSelected"],
+            "selectedPassagesCount": plan["selectedPassagesCount"],
             "referentsUnresolved": plan["referentsUnresolved"],
             "descriptiveOnly": plan["descriptiveOnly"],
             "caseIndexes": plan["caseIndexes"],
