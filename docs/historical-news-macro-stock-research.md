@@ -1034,3 +1034,43 @@ fi
 ```
 
 Possible unresolved document links in 8-K/10-K/10-Q indices are reported accurately, not treated as model data. The report is produced on real Mac only when actual runtime succeeds; CI synthetic checks cannot establish that the first 12 official documents are already available or that independent historical news publication times exist. All existing official SEC indexes/exhibits, 10-year NVDA/SPY CSV, original 10 study, PIT cohort, 12-index batch and 20-unique-index audit remain untouched.
+
+## PR #191 — SHA-verified SEC primary body → model-neutral retrospective semantic hypotheses
+
+The user already captured 12 first-batch SEC filing **primary documents** successfully on Mac, saved as immutable `nvda-sec-primary-content-batch01-v1.json`, alongside twelve `sec-<accession>-primary.source` raw original files. These are not the same as the original twenty distinct SEC filing *index* cases; no need to refetch indexes, document bodies, NVDA/SPY daily price CSV, or SEC metadata inventory.
+
+The opt-in `sec-primary-semantic` works entirely from these existing original sources. It first verifies the exact SHA-256 of each primary document on disk and recomputes the bounded verbatim excerpt and observed SEC Item headings to compare them with the saved, source-bound primary capture report. It rejects attempts to promote historical market availability or replace original source with fabricated JSON excerpts. The deterministic `--prepare` mode is completely offline, calls no model, reads no outcomes, and creates a new private 0600 research input JSON. The `--run` mode also does that validation but then delegates model calls to existing provider-neutral `LLMSettings` + `build_runtime` (Ollama Gemma4 by default, future explicitly configured OpenAI-compatible models supported) and writes new immutable 0600 model results.
+
+Each model response is strict-schema-checked, bounded and bound to the original accession/source SHA. Every observation **must reproduce a contiguous verbatim quote** from its SHA-verified original excerpt and cite the correct source evidence ID. The three hypotheses cover issuer fundamentals, an unverified sector alternative (which must not cite the issuer-only filing as sector proof), and missing context. All are labeled unverified interpretation; model output must explicitly deny proven historical first-publication time, proven price causality and forecast direction. Invalid citations or invented quoted facts cause the **entire model run to fail without a finalized output JSON**.
+
+IMPORTANT: Model-proposed mechanisms are possible explanations, **not confirmed truth**; even original SEC text recovered today is not proven available at a past market cutoff. The tool never reads the price outcome study, issues trading commands, trains a model, creates Gold labels, changes production DB or promotes strategies. `trainingReady=false` and historical independent public clock evidence count 0 remain. A stock price direction model belongs to DonghakStockVision.
+
+Safe one-time Mac source-preparation command after PR #191 merged (does NOT need Ollama):
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-sec-primary-semantic-input-batch01-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+else
+  bash scripts/news-learning-review.sh --update sec-primary-semantic \
+    --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+    --source-dir "$DATA" --prepare --output "$OUT"
+fi
+```
+
+After successful preparation the user may explicitly opt in to run at most two Gemma4 source interpretations in a distinct private output file; `--limit 2` is the initial conservative batch to avoid JSON truncation on local 16GB Intel Mac. If the model response is truncated or its quotes don't match the pinned source verbatim, fail closed and inspect the exact category without weakening validators. Do not change previously saved inputs or run 12 Gemma calls automatically.
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-sec-primary-semantic-gemma4-batch01-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+else
+  bash scripts/news-learning-review.sh --update sec-primary-semantic \
+    --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+    --source-dir "$DATA" --run --model gemma4:e2b --limit 2 --output "$OUT"
+fi
+```
+
+These commands use the existing central LLM settings/env and model factory. Outputs are for historical news semantics **research** and human review only, not PIT-eligible intraday features or verified trading performance.
