@@ -44,6 +44,15 @@ EVENT = re.compile(
     r"announced a merger|settled a lawsuit|"
     r"raised capital|issued debt|repurchased shares)\b"
 )
+RISK_DISCLOSURE = re.compile(
+    r"(?i)\b(?:depends? on|relies? on|reliance on|exposed to|"
+    r"subject to|may adversely affect|risk of)\b"
+)
+RISK_SUBJECT = re.compile(
+    r"(?i)\b(?:suppliers?|manufacturing|litigation|"
+    r"export controls?|regulations?|customers?|cybersecurity|"
+    r"intellectual property|production)\b"
+)
 ISSUER = re.compile(r"(?i)\b(?:nvidia|the company|we|our|issuer)\b")
 STRUCTURE = re.compile(r"(?i)\b(?:restructur|accounting|oversight|governance|supply.chain|financ|trade|export|subsid|lawsuit|launch|production|capacity|valuation|r\s*&\s*d)\w*")
 CHANGE = re.compile(
@@ -80,7 +89,11 @@ def source_evidence_status(excerpt: str) -> str:
             continue
         if not ISSUER.search(line):
             continue
-        if (FINANCIAL.search(line) and MAGNITUDE.search(line)) or EVENT.search(line):
+        if (
+            (FINANCIAL.search(line) and MAGNITUDE.search(line))
+            or EVENT.search(line)
+            or (RISK_DISCLOSURE.search(line) and RISK_SUBJECT.search(line))
+        ):
             return SUBSTANTIVE
     return INSUFFICIENT
 
