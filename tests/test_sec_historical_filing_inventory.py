@@ -104,14 +104,13 @@ def test_official_history_fetch_only_overlap_and_source_hash() -> None:
 def test_no_undisclosed_sec_bot_identification() -> None:
     with httpx.Client(transport=httpx.MockTransport(
         lambda request: pytest.fail("Network attempted without User-Agent")
-    )) as client:
-        with pytest.raises(ValueError, match="User-Agent"):
-            inventory_from_sec(
-                client=client,
-                user_agent="",
-                start=date(2018, 1, 1),
-                end=date(2018, 12, 31),
-            )
+    )) as client, pytest.raises(ValueError, match="User-Agent"):
+        inventory_from_sec(
+            client=client,
+            user_agent="",
+            start=date(2018, 1, 1),
+            end=date(2018, 12, 31),
+        )
 
 
 def test_bad_parallel_columns_and_nonhistorical_ranges_fail() -> None:
@@ -139,6 +138,5 @@ def test_prevent_traversal_and_bad_download_host() -> None:
         )
     with httpx.Client(transport=httpx.MockTransport(
         lambda request: pytest.fail("Unexpected domain")
-    )) as client:
-        with pytest.raises(ValueError, match="Unapproved SEC"):
-            _get_json(client, "https://example.com/untrusted", "abc@example.com")
+    )) as client, pytest.raises(ValueError, match="Unapproved SEC"):
+        _get_json(client, "https://example.com/untrusted", "abc@example.com")
