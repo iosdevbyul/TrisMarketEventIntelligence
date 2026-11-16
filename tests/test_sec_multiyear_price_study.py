@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -58,10 +59,12 @@ def _source_bytes(event: dict, *, index: bool) -> bytes:
         return b"<html><body>NVIDIA fiscal quarter revenue 2020 " + b"results" * 75 + b"</body></html>"
     category = event["category"]
     item = {"EARNINGS": "Item 2.02", "OTHER_EVENT": "Item 8.01",
-            "GOVERNANCE": "Item 5.02"}[category]
+            "GOVERNANCE": "Item 5.02",
+            "CONTRACT_TERMINATION": "Item 1.02"}[category]
     accepted = event["secAcceptedEastern"][:19].replace("T", " ")
     exhibit_link = (
-        '<a href="q4fy18pr.htm">EX-99.1</a>'
+        '<a href="' + urlsplit(event["exhibit99_1Url"]).path.rsplit("/", 1)[-1]
+        + '">EX-99.1</a>'
         if category == "EARNINGS" else ""
     )
     text = (
@@ -109,7 +112,8 @@ def test_two_year_sources_pinned_and_prices_are_retrospective(tmp_path: Path) ->
         assert event["outcome"]["includesMovementBeforeDecision"] is True
         assert set(event["outcome"]["horizonsTradingSessions"]) == {"1", "3", "5"}
         assert "stockReturn" not in json.dumps(event["features"])
-        assert event["sourceAvailableByDecisionCutoff"] is True
+        assert event["sourceAvailableByDecisionCutoff"] is False
+        assert event["secReceiptBeforeDecisionCutoff"] is True
         assert event["publisherFirstReleaseTimeVerified"] is False
     assert report["events"][0]["category"] == "EARNINGS"
     assert report["events"][1]["category"] == "OTHER_EVENT"
@@ -159,7 +163,7 @@ def test_unverified_cross_issuer_or_future_clock_rejected(tmp_path: Path) -> Non
     review, inventory, _, _ = _inputs(tmp_path)
     assert len(_validated_inputs(review, inventory)) == 2
     review["entries"][0]["secAcceptedUtc"] = "2018-02-08T20:23:23+00:00"
-    with pytest.raises(ValueError, match="SEC_EVENT_ACCEPTANCE_NOT_AFTER_CLOSE"):
+    with pytest.raises(ValueError, match="SEC_EVENT_ACCEPTANCE_IN_INVALID_SESSION_WINDOW"):
         _validated_inputs(review, inventory)
     review, inventory, _, _ = _inputs(tmp_path)
     review["entries"][0]["indexUrl"] = "https://evil.example/Archives/malicious"
@@ -184,3 +188,78 @@ def test_sec_url_allowlist_blocks_path_traversal_or_queries() -> None:
         base + "000104581018000004/q4fy18pr.htm?secret=1",
     ):
         assert not _approved_url(url, acc, index=False)
+
+
+def test_preopen_2019_and_2022_join_same_session(tmp_path: Path) -> None:
+    review = json.loads(Path(
+        "research/nvda-multiyear-sec-eight-k-official-review-2017-2026-v2.json"
+    ).read_text())
+    review["entries"] = [event for event in review["entries"]
+                         if event["filingDate"] in ("2019-01-28", "2022-02-08")]
+    inventory = {
+        "schemaVersion": "sec_historical_filing_inventory_v1",
+        "companyCik": "0001045810", "ticker": "NVDA",
+        "trainingReady": False, "candidateFilings": 2,
+        "filings": [{"accession": e["accession"], "filingDate": e["filingDate"],
+                     "form": "8-K"} for e in review["entries"]],
+    }
+    dates = [
+        "2019-01-24", "2019-01-25", "2019-01-28", "2019-01-29",
+        "2019-01-30", "2019-01-31", "2019-02-01",
+        "2022-02-04", "2022-02-07", "2022-02-08", "2022-02-09",
+        "2022-02-10", "2022-02-11", "2022-02-14",
+    ]
+    stock, market = tmp_path / "nvda.csv", tmp_path / "spy.csv"
+    for path, step in ((stock, 2), (market, 1)):
+        path.write_text(
+            "date,adjusted_close,volume\n" +
+            "".join(f"{day},{100 + step * i},100\n"
+                    for i, day in enumerate(dates))
+        )
+    assert len(_validated_inputs(review, inventory)) == 2
+    calls: list[str] = []
+    with _client(review, calls) as client:
+        result = build_multiyear_sec_study(
+            review=review, review_sha="a" * 64,
+            inventory=inventory, inventory_sha="b" * 64,
+            stock_csv=stock, benchmark_csv=market, raw_dir=tmp_path,
+            client=client, user_agent="Tris research contact@example.com",
+            persist_raw=True,
+        )
+    assert result["eventCount"] == 2
+    assert result["earningsEventCount"] == 1
+    assert result["nonEarningsEventCount"] == 1
+    assert result["rawSourceCount"] == 3
+    assert len(calls) == 3
+    for event in result["events"]:
+        assert event["eventSession"] == event["secAcceptedAt"][:10]
+        assert event["secReceiptTiming"] == "PREOPEN_SAME_SESSION"
+        assert event["sourceAvailableByDecisionCutoff"] is False
+        assert event["independentPublicAvailabilityAtCutoffVerified"] is False
+        assert event["decisionAt"] > event["secAcceptedAt"]
+        assert event["trainingEligible"] is False
+    assert result["events"][0]["features"]["previousSession"] == "2019-01-25"
+    assert result["events"][1]["features"]["previousSession"] == "2022-02-07"
+    assert result["events"][1]["category"] == "CONTRACT_TERMINATION"
+
+
+def test_mid_session_sec_filing_cannot_be_backdated(tmp_path: Path) -> None:
+    review, inventory, _, _ = _inputs(tmp_path)
+    review["entries"][0]["secAcceptedEastern"] = "2018-02-08T13:30:00-05:00"
+    review["entries"][0]["secAcceptedUtc"] = "2018-02-08T18:30:00+00:00"
+    with pytest.raises(ValueError, match="SEC_EVENT_ACCEPTANCE_IN_INVALID_SESSION_WINDOW"):
+        _validated_inputs(review, inventory)
+
+
+def test_original_review_manifest_remains_unchanged() -> None:
+    prior = json.loads(REVIEW.read_text())
+    expanded = json.loads(Path(
+        "research/nvda-multiyear-sec-eight-k-official-review-2017-2026-v2.json"
+    ).read_text())
+    assert len(prior["entries"]) == 7
+    assert len(expanded["entries"]) == 10
+    assert expanded["remainingYearFirstEightKUnreviewed"] == []
+    for entry in prior["entries"]:
+        assert entry in expanded["entries"]
+    assert expanded["rawIndexAndExhibitSha256Pinned"] is False
+    assert expanded["trainingReady"] is False

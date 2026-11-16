@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "sec_multiyear_eight_k_primary_source_review_v1",
+  "ticker": "NVDA",
+  "companyCik": "0001045810",
+  "selectionRule": "EX_ANTE_FIRST_EIGHT_K_PER_YEAR_FROM_SEC_COVERAGE_REVIEW_QUEUE",
+  "sourceScope": "USER_COLLECTED_OFFICIAL_SEC_SUBMISSIONS_AND_PUBLIC_SEC_EDGAR_INDEX_EXHIBIT",
+  "reviewStatus": "PUBLIC_SEC_INDEX_REVIEWED_RAW_BYTES_UNPINNED_FOR_NEW_EVENTS",
+  "rawIndexAndExhibitSha256Pinned": false,
+  "secIndexAcceptanceClockReviewed": true,
+  "secIndexAcceptanceDoesNotProveFirstPublisherRelease": true,
+  "secIndexAcceptanceDoesNotProveFirstMarketAvailability": true,
+  "announcementTextAsOfDecisionValidated": false,
+  "trainingReady": false,
+  "forecastEvaluationReady": false,
+  "modelPredictionMadeBeforeOutcome": false,
+  "modelPromotionAllowed": false,
+  "causalityVerified": false,
+  "productionDbModified": false,
+  "entries": [
+    {
+      "accession": "0001045810-17-000006",
+      "filingDate": "2017-01-19",
+      "secAcceptedEastern": "2017-01-19T16:10:06-05:00",
+      "secAcceptedUtc": "2017-01-19T21:10:06+00:00",
+      "filingItems": [
+        "5.02",
+        "9.01"
+      ],
+      "category": "GOVERNANCE",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581017000006/0001045810-17-000006-index.htm",
+      "exhibit99_1Url": null,
+      "issuerQuarter": null,
+      "issuerQuarterRevenueUsdMillions": null,
+      "exhibitDocumentReviewed": false,
+      "acceptanceEvidence": "SEC EDGAR submission index header 20170119161006",
+      "availabilityEvidence": "NOT_INDEPENDENTLY_VERIFIED"
+    },
+    {
+      "accession": "0001045810-18-000004",
+      "filingDate": "2018-02-08",
+      "secAcceptedEastern": "2018-02-08T16:23:23-05:00",
+      "secAcceptedUtc": "2018-02-08T21:23:23+00:00",
+      "filingItems": [
+        "2.02",
+        "9.01"
+      ],
+      "category": "EARNINGS",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581018000004/0001045810-18-000004-index.htm",
+      "exhibit99_1Url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581018000004/q4fy18pr.htm",
+      "issuerQuarter": "Q4 FY2018",
+      "issuerQuarterRevenueUsdMillions": 2911,
+      "exhibitDocumentReviewed": true
+    },
+    {
+      "accession": "0001045810-19-000004",
+      "filingDate": "2019-01-28",
+      "secAcceptedEastern": "2019-01-28T09:04:54-05:00",
+      "secAcceptedUtc": "2019-01-28T14:04:54+00:00",
+      "filingItems": [
+        "2.02",
+        "9.01"
+      ],
+      "category": "EARNINGS",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581019000004/0001045810-19-000004-index.htm",
+      "exhibit99_1Url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581019000004/pressrelease.htm",
+      "issuerQuarter": "Q4 FY2019 GUIDANCE UPDATE",
+      "issuerQuarterRevenueUsdMillions": null,
+      "exhibitDocumentReviewed": true,
+      "acceptanceEvidence": "SEC EDGAR filing detail 2019-01-28 09:04:54",
+      "availabilityEvidence": "NOT_INDEPENDENTLY_VERIFIED"
+    },
+    {
+      "accession": "0001045810-20-000007",
+      "filingDate": "2020-02-13",
+      "secAcceptedEastern": "2020-02-13T16:21:20-05:00",
+      "secAcceptedUtc": "2020-02-13T21:21:20+00:00",
+      "filingItems": [
+        "2.02",
+        "9.01"
+      ],
+      "category": "EARNINGS",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000007/0001045810-20-000007-index.htm",
+      "exhibit99_1Url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000007/q4fy20pr.htm",
+      "issuerQuarter": "Q4 FY2020",
+      "issuerQuarterRevenueUsdMillions": 3105,
+      "exhibitDocumentReviewed": true
+    },
+    {
+      "accession": "0001045810-21-000007",
+      "filingDate": "2021-02-24",
+      "secAcceptedEastern": "2021-02-24T16:22:27-05:00",
+      "secAcceptedUtc": "2021-02-24T21:22:27+00:00",
+      "filingItems": [
+        "2.02",
+        "9.01"
+      ],
+      "category": "EARNINGS",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000007/0001045810-21-000007-index.htm",
+      "exhibit99_1Url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000007/q4fy21pr.htm",
+      "issuerQuarter": "Q4 FY2021",
+      "issuerQuarterRevenueUsdMillions": 5000,
+      "exhibitDocumentReviewed": true
+    },
+    {
+      "accession": "0001045810-22-000005",
+      "filingDate": "2022-02-08",
+      "secAcceptedEastern": "2022-02-08T08:09:34-05:00",
+      "secAcceptedUtc": "2022-02-08T13:09:34+00:00",
+      "filingItems": [
+        "1.02"
+      ],
+      "category": "CONTRACT_TERMINATION",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581022000005/0001045810-22-000005-index.htm",
+      "exhibit99_1Url": null,
+      "issuerQuarter": null,
+      "issuerQuarterRevenueUsdMillions": null,
+      "exhibitDocumentReviewed": false,
+      "acceptanceEvidence": "SEC EDGAR filing detail 2022-02-08 08:09:34",
+      "availabilityEvidence": "NOT_INDEPENDENTLY_VERIFIED"
+    },
+    {
+      "accession": "0001045810-23-000014",
+      "filingDate": "2023-02-22",
+      "secAcceptedEastern": "2023-02-22T16:52:26-05:00",
+      "secAcceptedUtc": "2023-02-22T21:52:26+00:00",
+      "filingItems": [
+        "2.02",
+        "9.01"
+      ],
+      "category": "EARNINGS",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000014/0001045810-23-000014-index.htm",
+      "exhibit99_1Url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000014/q4fy23pr.htm",
+      "issuerQuarter": "Q4 FY2023",
+      "issuerQuarterRevenueUsdMillions": 6051,
+      "exhibitDocumentReviewed": true
+    },
+    {
+      "accession": "0001045810-24-000028",
+      "filingDate": "2024-02-21",
+      "secAcceptedEastern": "2024-02-21T16:22:09-05:00",
+      "secAcceptedUtc": "2024-02-21T21:22:09+00:00",
+      "filingItems": [
+        "2.02",
+        "9.01"
+      ],
+      "category": "EARNINGS",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000028/0001045810-24-000028-index.htm",
+      "exhibit99_1Url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000028/q4fy24pr.htm",
+      "issuerQuarter": "Q4 FY2024",
+      "issuerQuarterRevenueUsdMillions": 22103,
+      "exhibitDocumentReviewed": true
+    },
+    {
+      "accession": "0001045810-25-000007",
+      "filingDate": "2025-01-17",
+      "secAcceptedEastern": "2025-01-17T16:59:50-05:00",
+      "secAcceptedUtc": "2025-01-17T21:59:50+00:00",
+      "filingItems": [
+        "8.01"
+      ],
+      "category": "OTHER_EVENT",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581025000007/0001045810-25-000007-index.htm",
+      "exhibit99_1Url": null,
+      "issuerQuarter": null,
+      "issuerQuarterRevenueUsdMillions": null,
+      "exhibitDocumentReviewed": false
+    },
+    {
+      "accession": "0001045810-26-000003",
+      "filingDate": "2026-01-23",
+      "secAcceptedEastern": "2026-01-23T17:01:33-05:00",
+      "secAcceptedUtc": "2026-01-23T22:01:33+00:00",
+      "filingItems": [
+        "5.02"
+      ],
+      "category": "GOVERNANCE",
+      "indexUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000003/0001045810-26-000003-index.htm",
+      "exhibit99_1Url": null,
+      "issuerQuarter": null,
+      "issuerQuarterRevenueUsdMillions": null,
+      "exhibitDocumentReviewed": false
+    }
+  ],
+  "remainingYearFirstEightKUnreviewed": [],
+  "selectedYearsCount": 10,
+  "indexesReviewed": 10,
+  "exhibit99_1Reviewed": 6,
+  "researchEligibility": "SEC_RAW_SOURCE_MUST_BE_SHA_PINNED_BEFORE_PRICE_PACKET;_EDGAR_RECEIPT_NOT_PROVEN_PUBLICATION",
+  "noPricesOrOutcomeLabelsIncluded": true,
+  "morningAcceptedFilingsNeedSameSessionCutoffReview": [
+    "0001045810-19-000004",
+    "0001045810-22-000005"
+  ],
+  "sourceAvailabilityVerifiedAtMarketDecision": false
+}

@@ -842,3 +842,48 @@ cross-temporal dataset with a sufficiently broad set of independently
 verified SEC filings (including ordinary/non-earnings days) and a
 properly sealed, time-forward evaluation. Do not equate the new
 retrospective returns with forecasting performance.
+
+## 2017–2026 annual first 8-K expansion (no hindsight selection)
+
+Preserve original user-Mac validated v1 seven-event study JSON and
+12 cached raw SEC HTML files. Newly added
+`research/nvda-multiyear-sec-eight-k-official-review-2017-2026-v2.json`
+contains **ten first 8-Ks of each year 2017–2026**; no source
+selection used realized returns.
+
+- 2017-01-19: `0001045810-17-000006`, SEC 16:10:06 ET,
+  Items 5.02/9.01, GOVERNANCE, next trading session
+- 2019-01-28: `0001045810-19-000004`, SEC 09:04:54 ET,
+  Items 2.02/9.01, revised guidance, EX-99.1 pressrelease.htm,
+  **same** trading session
+- 2022-02-08: `0001045810-22-000005`, SEC 08:09:34 ET,
+  Item 1.02, CONTRACT_TERMINATION, **same** trading session;
+  no earnings exhibit
+
+The original all-after-close implementation would misdate
+2019/2022 preopen receipts. The expanded builder now selects
+the same session for receipts strictly before NY 09:30 and
+the next session for receipts after NY 16:00, rejecting
+intraday receipts from preopen feature inclusion.
+The SEC receipt is **not** the original publisher clock nor
+verified public dissemination time; SEC says availability may
+lag EDGAR receipt. Outputs mark
+`secReceiptBeforeDecisionCutoff=true`,
+`sourceAvailableByDecisionCutoff=false`, and
+`independentPublicAvailabilityAtCutoffVerified=false`.
+Original preopen/overnight price movements remain embedded in
+previous-close → target-close retrospective 1/3/5 day returns,
+**not** an executable 09:30-entry return or predictive result.
+Training, causality, model promotion and 24/7 remain disabled.
+
+Run the existing `sec-multiyear-study` command on the Mac,
+replacing `--review` with the new v2 manifest and using
+`--output "$DATA/nvda-multiyear-sec-8k-study-2017-2026-v2.json"`.
+Use the same existing SEC inventory, 10-year NVDA/SPY CSV and
+private raw SEC cache directory; existing HTML source paths are
+never overwritten. The report is create-only. With all sources
+validated the expected count is **10 events, six earnings,
+four other categories and 16 original source HTML documents**
+(ten indexes and six EX-99.1 exhibits). These numbers are
+EXPECTED, not yet verified by a real Mac execution; no newly
+selected SEC HTML has been locally PINned as of this code PR.

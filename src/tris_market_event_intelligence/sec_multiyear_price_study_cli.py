@@ -11,7 +11,7 @@ import json
 import os
 import re
 import time
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from datetime import UTC, date, datetime
 from datetime import time as clock_time
 from html.parser import HTMLParser
@@ -128,10 +128,11 @@ def _validated_inputs(review: dict, inventory: dict) -> list[dict]:
         if (accepted.utcoffset() is None
                 or accepted.astimezone(NY).date() != filing_day
                 or accepted.astimezone(UTC).isoformat() != event.get("secAcceptedUtc")
-                or accepted.astimezone(NY).time() <= clock_time(16, 0)):
-            raise ValueError("SEC_EVENT_ACCEPTANCE_NOT_AFTER_CLOSE")
+                or (clock_time(9, 30) <= accepted.astimezone(NY).time()
+                    < clock_time(16, 0))):
+            raise ValueError("SEC_EVENT_ACCEPTANCE_IN_INVALID_SESSION_WINDOW")
         earnings = event.get("category") == "EARNINGS"
-        if (event.get("category") not in ("EARNINGS", "OTHER_EVENT", "GOVERNANCE")
+        if (event.get("category") not in ("EARNINGS", "OTHER_EVENT", "GOVERNANCE", "CONTRACT_TERMINATION")
                 or not _approved_url(event.get("indexUrl"), acc, index=True)
                 or (earnings and not _approved_url(
                     event.get("exhibit99_1Url"), acc, index=False))
@@ -154,7 +155,8 @@ def _verify_index(raw: bytes, event: dict) -> None:
                              text, re.IGNORECASE)):
         raise ValueError("SEC_INDEX_FACTS_OR_ACCEPTANCE_MISMATCH")
     type_pattern = {"EARNINGS": "Item 2.02", "OTHER_EVENT": "Item 8.01",
-                    "GOVERNANCE": "Item 5.02"}[event["category"]]
+                    "GOVERNANCE": "Item 5.02",
+                    "CONTRACT_TERMINATION": "Item 1.02"}[event["category"]]
     if type_pattern not in text:
         raise ValueError("SEC_INDEX_EVENT_TYPE_MISMATCH")
     exhibit = event.get("exhibit99_1Url")
@@ -264,7 +266,15 @@ def build_multiyear_sec_study(
             exhibit_sha = hashlib.sha256(raw_exhibit).hexdigest()
         accepted = datetime.fromisoformat(event["secAcceptedEastern"]).astimezone(UTC)
         filing_day = date.fromisoformat(event["filingDate"])
-        start_index = bisect_right(sessions, filing_day)
+        # SEC receipts before NY 09:30 are assigned to that trading
+        # session, while after-close receipts belong to the next session.
+        # Mid-session receipts are excluded rather than backdated.
+        accepted_ny = accepted.astimezone(NY)
+        after_close = accepted_ny.time() >= clock_time(16, 0)
+        start_index = (
+            bisect_right(sessions, filing_day) if after_close
+            else bisect_left(sessions, filing_day)
+        )
         if start_index == 0 or start_index + max(HORIZONS) - 1 >= len(sessions):
             raise ValueError("SEC_EVENT_PRICE_WINDOW_MISSING")
         event_day = sessions[start_index]
@@ -301,7 +311,11 @@ def build_multiyear_sec_study(
             "secExhibit99_1Sha256": exhibit_sha,
             "issuerFilingIndexContentVerified": True,
             "issuerExhibitContentVerified": exhibit_sha is not None,
-            "sourceAvailableByDecisionCutoff": True,
+            "secReceiptBeforeDecisionCutoff": True,
+            "sourceAvailableByDecisionCutoff": False,
+            "independentPublicAvailabilityAtCutoffVerified": False,
+            "secReceiptTiming": ("AFTER_CLOSE_NEXT_SESSION" if after_close
+                                 else "PREOPEN_SAME_SESSION"),
             "publisherFirstReleaseTimeVerified": False,
             "firstTradableAvailabilityVerified": False,
             "features": {
