@@ -11,6 +11,10 @@ import re
 from pathlib import Path
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
+from tris_market_event_intelligence.sec_pinned_body_spans import (
+    VERSION,
+    reverify_body_span,
+)
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     MAX_CASES,
     MAX_INPUT,
@@ -61,6 +65,9 @@ def build_review_packet(
                 or not isinstance(report.get("modelId"), str)
                 or not report["modelId"]):
             raise ValueError("SEC_SEMANTIC_REVIEW_REPORT_PROVENANCE_INVALID")
+        body_mode = report.get("bodySpanSelectionVersion")
+        if body_mode is not None and body_mode != VERSION:
+            raise ValueError("SEC_BODY_SPAN_SELECTION_VERSION_INVALID")
         corrections = 0
         abstained = 0
         for item in report["cases"]:
@@ -70,6 +77,13 @@ def build_review_packet(
             if not isinstance(acc, str) or acc not in by_accession or acc in seen:
                 raise ValueError("SEC_SEMANTIC_REVIEW_DUPLICATE_OR_UNKNOWN_CASE")
             index, case = by_accession[acc]
+            if "sourceSpan" in item:
+                if body_mode != VERSION:
+                    raise ValueError("SEC_BODY_SPAN_MODE_REQUIRED")
+                raw_path = source_dir / f"sec-{acc}-primary.source"
+                if raw_path.is_symlink() or not raw_path.is_file():
+                    raise ValueError("SEC_BODY_ORIGINAL_SOURCE_REQUIRED")
+                case = reverify_body_span(case, raw_path.read_bytes(), item["sourceSpan"])
             if (item.get("sourceSha256") != case["sourceSha256"]
                     or item.get("historicalTimeEligibility") is not False
                     or item.get("sourceInterpretationIsHumanUnverified") is not True
@@ -104,6 +118,7 @@ def build_review_packet(
             corrections += int(item["hypothesesCorrectionAttempted"])
             entries.append({
                 "caseIndex": index,
+                **({"sourceSpan": case["sourceSpan"]} if "sourceSpan" in case else {}),
                 **({"analysisStatus": analysis_status} if gated else {}),
                 "accession": acc,
                 "form": case["form"],
