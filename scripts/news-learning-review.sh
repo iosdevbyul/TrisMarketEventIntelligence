@@ -6,6 +6,7 @@ usage() {
   echo "Usage:"
   echo "  TRIS_SEC_USER_AGENT=\"YourApp Contact@example.com\" bash scripts/news-learning-review.sh [--update] sec-history-inventory --start 2016-11-15 --end 2026-11-13 --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] historical-sec-universe --stock-csv EXISTING_NVDA --benchmark-csv EXISTING_SPY --event EXISTING_SEC_PRICE_PACKET [--event ANOTHER_VERIFIED_PACKET] --preview|--output NEW_PRIVATE_JSON"
+  echo "  bash scripts/news-learning-review.sh [--update] sec-coverage-reconcile --inventory PRIVATE_SEC_INVENTORY_JSON --stock-csv NVDA_CSV --benchmark-csv SPY_CSV --event PRIVATE_VERIFIED_SEC_EVENT_JSON --preview|--output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] historical-sec-event --corroboration PRIVATE_JSON --sec research/nvda-2018-11-15-sec-8k-acceptance.json --stock-csv PRIVATE_NVDA_CSV --benchmark-csv PRIVATE_SPY_CSV --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] historical-issuer-corroborate --review PRIVATE_STORY_REVIEW_JSON --issuer research/nvda-2018-11-15-issuer-primary-evidence.json --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] gdelt-replay --study PRIVATE_SHOCKS_JSON --data-dir PRIVATE_DIR --start-rank 2 --count 2 --preview|--run"
@@ -94,6 +95,9 @@ fi
 shift
 
 case "$action" in
+  sec-coverage-reconcile)
+    module="tris_market_event_intelligence.sec_coverage_reconciliation_cli"
+    ;;
   sec-history-inventory)
     module="tris_market_event_intelligence.sec_historical_filing_inventory_cli"
     ;;
