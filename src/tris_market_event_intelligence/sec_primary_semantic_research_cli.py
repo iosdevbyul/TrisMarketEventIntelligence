@@ -20,10 +20,10 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
+from tris_market_event_intelligence.sec_pinned_body_spans import apply_body_spans
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
-from tris_market_event_intelligence.sec_pinned_body_spans import apply_body_spans
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     ABSTENTION_SUMMARY,
     INSUFFICIENT,
