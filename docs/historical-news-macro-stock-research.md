@@ -595,3 +595,47 @@ import **verified** source-positive cases into PR #176 SEC universe
 without treating every other date as a true no-news control. Genuine
 ML forecasting requires more evidence-backed cases, a tradable horizon
 aligned with the decision cutoff, and sealed time-forward tests.
+
+## SEC event Mac input diagnosis (no new private files)
+
+Actual 2026-11-16 Mac execution of the original `historical-sec-event`
+failed with the generic `INVALID_SOURCE_OR_PIT_EVIDENCE` response.
+This message hides the internal validation stage, so the incident **does
+not establish** a broken Conda installation, lost price history,
+missing SEC filing, or a specific case of date alignment. The same
+Mac has previously processed the NVDA/SPY CSVs into 2,512 observed
+outcome rows, and the issuer-GDELT corroboration completed separately.
+
+The SEC event CLI now supports `--diagnose`: use exactly the original
+private inputs and `--output` path, plus `--diagnose`. It validates
+and calculates the outcome but **never writes the output file**.
+If the run fails, it reports a bounded JSON `failureCode` and
+`phase`, never private source contents or absolute local paths.
+Possible named categories include `CORROBORATION_FILE_INVALID`,
+`SEC_EVIDENCE_FILE_INVALID`,
+`CORROBORATION_CONTRACT_MISMATCH`,
+`SEC_EVIDENCE_CONTRACT_MISMATCH`,
+`SEC_ACCEPTANCE_TIME_MISMATCH`,
+`PRICE_EVENT_SESSION_MISSING`,
+`PRICE_PREVIOUS_SESSION_MISMATCH` and
+`PRICE_FILE_OR_EVENT_VALIDATION_FAILED`.
+A successful diagnose prints retrospective actual returns while
+`diagnosticOnly=true`, `outputCreated=false` and
+`trainingReady=false`. The original restricted provenance,
+cutoff, and price validation gates are **not weakened**.
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update historical-sec-event \
+  --corroboration "$DATA/nvda-2018-issuer-corroboration-v1.json" \
+  --sec research/nvda-2018-11-15-sec-8k-acceptance.json \
+  --stock-csv "$DATA/nvda-eod-2016-2026.csv" \
+  --benchmark-csv "$DATA/spy-eod-2016-2026.csv" \
+  --output "$DATA/nvda-2018-sec-price-event-v1.json" \
+  --diagnose
+```
+
+Only after diagnosis identifies the correct issue and the evidence
+validation is rechecked should the non-diagnostic command create the
+private research packet. Do not overwrite existing immutable receipts
+or re-download historical prices as a workaround.
