@@ -73,6 +73,11 @@ class NewsArticle(Strict):
     publishedAt: str = Field(min_length=20, max_length=40)
     source: str = Field(min_length=2, max_length=120)
     sourceUrl: str | None = Field(default=None, max_length=500)
+    sourceModifiedAt: str | None = Field(default=None, max_length=40)
+    sourceIntegrity: Literal[
+        "CURRENT_PAGE_REVISED_AFTER_CUTOFF",
+        "PUBLISHER_METADATA_NO_LATE_REVISION_DETECTED",
+    ] | None = None
     title: str = Field(min_length=8, max_length=240)
     body: str = Field(min_length=55, max_length=2800)
 
@@ -355,7 +360,9 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
     data = {
         "asOf": case.asOf,
         "horizonTradingDays": case.horizonTradingDays,
-        "articles": [a.model_dump() for a in case.articles],
+        "articles": [a.model_dump(exclude={
+            "sourceModifiedAt", "sourceIntegrity",
+        }) for a in case.articles],
         "knownTickers": [t.model_dump() for t in case.knownTickers],
         "sourceQuoteAnchors": quotes,
         "historicalOutcomesAvailable": False,
@@ -368,8 +375,18 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         raise ValueError("NEWS_TEST_RESPONSE_SIZE_INVALID")
     model_answer = ModelAnswer.model_validate_json(raw)
     reviewed = _validate_answer(case, model_answer, lookup)
+    revised_source_ids = [
+        a.articleId for a in case.articles
+        if a.sourceIntegrity == "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
+    ]
     return {
         **preflight,
+        "sourceIntegrityStatus": (
+            "EXPLORATORY_POST_CUTOFF_REVISED_SOURCE"
+            if revised_source_ids else "PUBLISHER_METADATA_UNARCHIVED"
+        ),
+        "revisedSourceArticleIds": revised_source_ids,
+        "historicalBenchmarkEligible": False if revised_source_ids else None,
         "status": (
             "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
             if reviewed["impacts"] else "BLIND_NEWS_ABSTAINED"
@@ -381,6 +398,8 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
                 "source": a.source, "sourceUrl": a.sourceUrl,
+                "sourceModifiedAt": a.sourceModifiedAt,
+                "sourceIntegrity": a.sourceIntegrity,
                 "articleSha256": _sha(a.model_dump()),
             }
             for a in case.articles
@@ -418,6 +437,11 @@ def main() -> None:
     parser.add_argument("--as-of")
     parser.add_argument("--horizon", type=int, choices=(1, 3, 5), default=1)
     parser.add_argument("--source-output", type=Path)
+    parser.add_argument(
+        "--exploratory-current-pages", action="store_true",
+        help="Use post-cutoff revised live pages ONLY for qualitative smoke tests; "
+             "never call results a historical benchmark",
+    )
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -432,6 +456,8 @@ def main() -> None:
             or not args.output.parent.is_dir() or args.output.parent.is_symlink()
         ):
             raise ValueError("NEWS_TEST_OUTPUT_NOT_CREATE_ONLY")
+        if args.exploratory_current_pages and args.urls is None:
+            raise ValueError("NEWS_TEST_EXPLORATORY_REQUIRES_URLS")
         if args.urls is not None:
             if not args.case_id or not args.as_of:
                 raise ValueError("NEWS_TEST_URL_CASE_AND_CUTOFF_REQUIRED")
@@ -446,6 +472,7 @@ def main() -> None:
             source_data = collect_urls(
                 args.urls, as_of=args.as_of, case_id=args.case_id,
                 horizon=args.horizon,
+                allow_revised=args.exploratory_current_pages,
             )
             for article, url in zip(source_data["articles"], args.urls, strict=True):
                 article["sourceUrl"] = url
@@ -483,6 +510,9 @@ def main() -> None:
             "modelCalls": 1,
             "marketPricesRead": False,
             "accuracyVerified": False,
+            "sourceIntegrityStatus": report["sourceIntegrityStatus"],
+            "revisedSourceArticleIds": report["revisedSourceArticleIds"],
+            "historicalBenchmarkEligible": report["historicalBenchmarkEligible"],
             "eventResults": report["eventGroups"],
             "impactResults": [
                 {
@@ -503,14 +533,19 @@ def main() -> None:
         }, ensure_ascii=False))
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError,
             ValidationError, LLMExecutionError, httpx.HTTPError) as exc:
+        raw = str(exc)
         code = (
-            exc.args[0] if type(exc) in {ValueError, TypeError}
-            and exc.args and isinstance(exc.args[0], str)
-            and re.fullmatch(r"NEWS_(?:TEST|URL)_[A-Z0-9_]{5,90}", exc.args[0])
+            raw.split("|", 1)[0] if isinstance(exc, ValueError)
+            and re.fullmatch(r"NEWS_(?:TEST|URL)_[A-Z0-9_]{5,90}", raw.split("|", 1)[0])
             else exc.code if isinstance(exc, LLMExecutionError)
             else "NEWS_TEST_INVALID_INPUT_OR_MODEL_RESULT"
         )
-        parser.exit(2, f"historical-news-impact: ERROR_CODE={code}\n")
+        context = raw.split("|", 1)[1] if (
+            isinstance(exc, ValueError) and "|" in raw
+            and code != "NEWS_TEST_INVALID_INPUT_OR_MODEL_RESULT"
+        ) else ""
+        parser.exit(2, f"historical-news-impact: ERROR_CODE={code}"
+                    f" {context}\n")
 
 
 if __name__ == "__main__":
