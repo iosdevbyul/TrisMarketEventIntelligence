@@ -19,17 +19,16 @@ from tris_market_event_intelligence.sec_revenue_context_guard import (
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     EVENT,
     FINANCIAL,
+    INSUFFICIENT,
     MAGNITUDE,
     RISK_DISCLOSURE,
     RISK_SUBJECT,
     source_evidence_status,
-    INSUFFICIENT,
 )
 
 VERSION = "sec_ranked_multi_passage_v3"
 MAX_VISIBLE = 2_000_000
 MAX_PASSAGES = 3
-MAX_CANDIDATES = 240
 MAX_WINDOW = 880
 MIN_DISTINCT_DISTANCE = 140
 CAUSE = re.compile(r"(?i)\b(?:because|due to|resulted in|as a result of)\b")
@@ -117,9 +116,6 @@ def select_ranked_passages(case: dict, raw: bytes) -> list[dict]:
             "text": window,
         }
         candidates.append((-score, start, row))
-        if len(candidates) >= MAX_CANDIDATES:
-            # Count is bounded; cannot misrepresent this as a full-source scan.
-            break
     candidates.sort(key=lambda item: (item[0], item[1]))
     picked: list[dict] = []
     for _, start, row in candidates:
