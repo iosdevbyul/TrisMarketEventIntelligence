@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh [--update] historical-impact-test --url NEWS_URL --url NEWS_URL [--url NEWS_URL] --case-id CASE_ID --as-of ISO_TIME --horizon 1 --run --source-output NEW_SOURCE_JSON --output NEW_RESULT_JSON [--model gemma4:e2b]"
   echo "  bash scripts/news-learning-review.sh [--update] historical-impact-test --input PRIVATE_NEWS_JSON --prepare|--run [--model gemma4:e2b --output NEW_PRIVATE_RESULT_JSON]"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-semantic --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --prepare|--run [--model gemma4:e2b --limit 3 --start-index 1 --body-spans|--multi-passages] --output NEW_PRIVATE_JSON"\n  echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_REVIEW_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-claim-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_CLAIMS_JSON"
