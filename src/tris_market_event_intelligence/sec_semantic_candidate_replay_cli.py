@@ -19,6 +19,7 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
+from tris_market_event_intelligence.sec_pinned_body_spans import apply_body_spans
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     MAX_CASES,
     MAX_INPUT,
@@ -40,6 +41,7 @@ from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_js
 def prepare_candidate_replay(
     primary: dict, primary_sha: str, source_dir: Path,
     baseline: list[tuple[dict, str]], *, start_index: int, limit: int,
+    body_spans: bool = False,
 ) -> tuple[dict, dict]:
     """Fail closed unless every requested case exists in the verified baseline."""
     prepared = prepare_primary_cases(primary, primary_sha, source_dir)
@@ -54,6 +56,8 @@ def prepare_candidate_replay(
     present = {case["caseIndex"] for case in reviewed["cases"]}
     if not wanted <= present:
         raise ValueError("SEC_CANDIDATE_BASELINE_CASES_MISSING")
+    if body_spans:
+        prepared = apply_body_spans(prepared, source_dir)
     return prepared, {
         "schemaVersion": "sec_semantic_controlled_candidate_plan_v1",
         "status": "VERIFIED_BASELINE_REPLAY_READY",
@@ -62,6 +66,10 @@ def prepare_candidate_replay(
         "caseIndexes": sorted(wanted),
         "baselineCasesValidated": reviewed["reviewCasesPrepared"],
         "sourceQuotesReverified": True,
+        "bodySpansEnabled": body_spans,
+        "requestedBodySpansSelected": sum(
+            "sourceSpan" in prepared["cases"][index] for index in sorted(wanted)
+        ),
         "historicalPublicTimesIndependentlyVerified": 0,
         "humanDecisionsRecorded": 0,
         "qualityImprovementVerified": False,
@@ -93,6 +101,7 @@ def main() -> None:
     parser.add_argument("--start-index", type=int, required=True)
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), required=True)
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--body-spans", action="store_true")
     parser.add_argument("--output", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prepare", action="store_true")
@@ -114,6 +123,7 @@ def main() -> None:
         prepared, plan = prepare_candidate_replay(
             primary, sha, args.source_dir, baseline,
             start_index=args.start_index, limit=args.limit,
+            body_spans=args.body_spans,
         )
         if args.prepare:
             print(json.dumps(plan))
@@ -151,6 +161,7 @@ def main() -> None:
             "status": candidate["status"],
             "casesAnalyzed": candidate["casesAnalyzed"],
             "casesAbstained": candidate["casesAbstained"],
+            "bodySpansSelected": plan["requestedBodySpansSelected"],
             "caseIndexes": plan["caseIndexes"],
             "modelCalls": candidate["modelCalls"],
             "baselineModified": False,

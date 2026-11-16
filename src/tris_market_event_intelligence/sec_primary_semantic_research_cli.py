@@ -20,6 +20,7 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
+from tris_market_event_intelligence.sec_pinned_body_spans import apply_body_spans
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
@@ -598,6 +599,7 @@ def run_semantic_research(
                 raise
             repair_used = True
         results.append({
+            **({"sourceSpan": case["sourceSpan"]} if "sourceSpan" in case else {}),
             **({"analysisStatus": "SUBSTANTIVE_ISSUER_EVIDENCE_PRESENT"}
                if evidence_gated else {}),
             "accession": case["accession"], "sourceSha256": case["sourceSha256"],
@@ -614,6 +616,8 @@ def run_semantic_research(
         "primaryReportSha256": prepared["primaryReportSha256"],
         "modelId": provider.model_id,
         "casesAnalyzed": len(results),
+        **({"bodySpanSelectionVersion": prepared["bodySpanSelectionVersion"]}
+           if "bodySpanSelectionVersion" in prepared else {}),
         **({"evidenceGateVersion": "sec_substantive_evidence_v1",
             "casesAbstained": sum(
                 row.get("analysisStatus") == INSUFFICIENT for row in results
@@ -644,6 +648,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), default=2)
     parser.add_argument("--start-index", type=int, default=0)
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--body-spans", action="store_true")
     # New CLI execution uses the evidence gate by default. The legacy Python
     # API remains readable for existing archived fixture generation.
     modes = parser.add_mutually_exclusive_group(required=True)
@@ -656,6 +661,8 @@ def main() -> None:
             raise ValueError("SEC_SEMANTIC_NEW_OUTPUT_REQUIRED")
         packet, digest = _read_json(args.primary, MAX_INPUT)
         prepared = prepare_primary_cases(packet, digest, args.source_dir)
+        if args.body_spans:
+            prepared = apply_body_spans(prepared, args.source_dir)
         if args.prepare:
             report = prepared
         else:
