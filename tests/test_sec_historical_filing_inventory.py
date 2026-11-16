@@ -128,14 +128,32 @@ def test_bad_parallel_columns_and_nonhistorical_ranges_fail() -> None:
         )
 
 
-def test_prevent_traversal_and_bad_download_host() -> None:
-    bad = _main()
-    bad["filings"]["recent"]["primaryDocument"][0] = "../../secrets"
-    with pytest.raises(ValueError, match="SEC_PRIMARY_DOCUMENT_PATH"):
-        build_sec_filing_inventory(
+def test_unsafe_primary_path_quarantined_and_bad_download_host_rejected() -> None:
+    unsafe_paths = ("", "../../secrets", "reports/../secret", "/absolute.htm",
+                    "https://external.example/document", "foo%2f..%2fbar",
+                    "folder\\\\evil.htm", "earnings.htm?token=1", "a//b",
+                    "a/./b", "report#fragment.htm", "my file.htm")
+    for unsafe in unsafe_paths:
+        bad = _main()
+        bad["filings"]["recent"]["primaryDocument"][0] = unsafe
+        report = build_sec_filing_inventory(
             main=bad, main_sha="a" * 64, histories=[],
-            start=date(2018, 1, 1), end=date(2018, 12, 31),
+            start=date(2018, 1, 1), end=date(2023, 12, 31),
         )
+        assert report["candidateFilings"] == 3
+        assert report["quarantinedPrimaryDocumentPaths"] == 1
+        assert report["allPrimaryDocumentsHaveSafePaths"] is False
+        row = report["filings"][0]
+        assert row["secPrimaryDocument"] is None
+        assert row["secPrimaryDocumentPathStatus"] == (
+            "QUARANTINED_MISSING_OR_UNSAFE"
+        )
+        assert row["secIndexUrl"].startswith(
+            "https://www.sec.gov/Archives/edgar/data/1045810/"
+        )
+        assert row["eligibleAsNewsModelFeature"] is False
+        assert row["submissionSourcePageSha256"] == "a" * 64
+        assert unsafe not in json.dumps(row) if unsafe else True
     with httpx.Client(transport=httpx.MockTransport(
         lambda request: pytest.fail("Unexpected domain")
     )) as client, pytest.raises(ValueError, match="SEC_UNAPPROVED_SOURCE_URL"):
@@ -209,7 +227,7 @@ def test_real_filing_disagreement_still_fails_closed() -> None:
         )
 
 
-def test_safe_nested_sec_primary_document_path() -> None:
+def test_nested_safe_path_preserved_but_traversal_quarantined() -> None:
     main = _main()
     main["filings"]["recent"]["primaryDocument"][0] = "reports/earnings.htm"
     result = build_sec_filing_inventory(
@@ -217,12 +235,18 @@ def test_safe_nested_sec_primary_document_path() -> None:
         start=date(2018, 1, 1), end=date(2023, 12, 31),
     )
     assert result["filings"][0]["secPrimaryDocument"] == "reports/earnings.htm"
+    assert result["filings"][0]["secPrimaryDocumentPathStatus"] == "SAFE_RELATIVE_PATH"
+    assert result["quarantinedPrimaryDocumentPaths"] == 0
     main["filings"]["recent"]["primaryDocument"][0] = "reports/../secret"
-    with pytest.raises(ValueError, match="SEC_PRIMARY_DOCUMENT_PATH"):
-        build_sec_filing_inventory(
-            main=main, main_sha="a" * 64, histories=[],
-            start=date(2018, 1, 1), end=date(2023, 12, 31),
-        )
+    result = build_sec_filing_inventory(
+        main=main, main_sha="a" * 64, histories=[],
+        start=date(2018, 1, 1), end=date(2023, 12, 31),
+    )
+    assert result["filings"][0]["secPrimaryDocument"] is None
+    assert result["filings"][0]["secPrimaryDocumentPathStatus"] == (
+        "QUARANTINED_MISSING_OR_UNSAFE"
+    )
+    assert result["trainingReady"] is False
 
 
 def test_accepts_real_sec_zero_padded_cik_and_short_equivalent() -> None:
