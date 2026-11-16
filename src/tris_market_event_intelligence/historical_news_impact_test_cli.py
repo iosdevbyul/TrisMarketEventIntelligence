@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+import httpx
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
@@ -26,6 +28,7 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
+from tris_market_event_intelligence.historical_news_url_collector import collect_urls
 
 VERSION = "historical_news_impact_test_v1"
 MAX_INPUT_BYTES = 40000
@@ -70,6 +73,7 @@ class NewsArticle(Strict):
     articleId: str = Field(min_length=1, max_length=40)
     publishedAt: str = Field(min_length=20, max_length=40)
     source: str = Field(min_length=2, max_length=120)
+    sourceUrl: str | None = Field(default=None, max_length=500)
     title: str = Field(min_length=8, max_length=240)
     body: str = Field(min_length=55, max_length=2800)
 
@@ -230,18 +234,34 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         raise ValueError("NEWS_TEST_STAGE_COVERAGE_INVALID")
     if len(answer.eventStages) != len(articles):
         raise ValueError("NEWS_TEST_DUPLICATE_STAGE_INVALID")
+    # Article clustering is the model's substantive result; never discard a
+    # complete impact answer because a small model reversed a link or
+    # included an unverified cross-group edge. Quarantine invalid edges.
     seen_links: set[tuple[str, str]] = set()
+    valid_links: list[dict] = []
+    rejected_links: list[dict] = []
     for link in answer.eventLinks:
         pair = (link.earlierArticleId, link.laterArticleId)
-        if (pair[0] not in articles or pair[1] not in articles
-                or pair[0] == pair[1] or pair in seen_links
-                or by_group[pair[0]] != by_group[pair[1]]
-                or _timestamp(articles[pair[0]].publishedAt)
-                > _timestamp(articles[pair[1]].publishedAt)):
-            raise ValueError("NEWS_TEST_EVENT_LINK_INVALID")
-        seen_links.add(pair)
-    if any(len(g.articleIds) > 1 for g in groups) and not answer.eventLinks:
-        raise ValueError("NEWS_TEST_MISSING_EVENT_RELATIONS")
+        reason = None
+        if pair[0] not in articles or pair[1] not in articles:
+            reason = "UNKNOWN_ARTICLE"
+        elif pair[0] == pair[1]:
+            reason = "SELF_LINK"
+        elif by_group[pair[0]] != by_group[pair[1]]:
+            reason = "CROSS_EVENT_GROUP"
+        elif _timestamp(articles[pair[0]].publishedAt) > _timestamp(
+            articles[pair[1]].publishedAt
+        ):
+            reason = "REVERSED_CHRONOLOGY"
+        elif pair in seen_links:
+            reason = "DUPLICATE_LINK"
+        if reason is None:
+            seen_links.add(pair)
+            valid_links.append(link.model_dump())
+        else:
+            rejected_links.append({"reason": reason, "articleIds": list(pair)})
+    # Do not invent a relationship to fill missing links. The event group
+    # remains visible with unverified semantic grouping, not causal proof.
     known_by_name = {x.companyName.casefold(): x for x in case.knownTickers}
     known_by_ticker = {x.ticker: x for x in case.knownTickers}
     article_text = " ".join(a.title + " " + a.body for a in case.articles).casefold()
@@ -305,7 +325,8 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
     return {
         "eventGroups": [g.model_dump() for g in groups],
         "eventStages": [s.model_dump() for s in answer.eventStages],
-        "eventLinks": [link.model_dump() for link in answer.eventLinks],
+        "eventLinks": valid_links,
+        "rejectedEventLinks": rejected_links,
         "impacts": result_impacts,
         "overallAssessment": answer.overallAssessment,
     }
@@ -360,13 +381,13 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
-                "source": a.source,
+                "source": a.source, "sourceUrl": a.sourceUrl,
                 "articleSha256": _sha(a.model_dump()),
             }
             for a in case.articles
         ],
         **reviewed,
-        "timeEligibility": "USER_SUPPLIED_TIMESTAMPS_NOT_INDEPENDENTLY_VERIFIED",
+        "timeEligibility": "PUBLICATION_METADATA_NOT_INDEPENDENTLY_ARCHIVED",
         "numericRangesAre": "UNCALIBRATED_CONDITIONAL_ABNORMAL_RETURN_SCENARIOS",
         "knownOutcomesHiddenFromModel": True,
         "marketPricesRead": False, "outcomesRead": False,
@@ -391,7 +412,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Blind multi-news event chain and stock/sector conditional impact test"
     )
-    parser.add_argument("--input", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input", type=Path)
+    source.add_argument("--url", action="append", dest="urls")
+    parser.add_argument("--case-id")
+    parser.add_argument("--as-of")
+    parser.add_argument("--horizon", type=int, choices=(1, 3, 5), default=1)
+    parser.add_argument("--source-output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -406,7 +433,28 @@ def main() -> None:
             or not args.output.parent.is_dir() or args.output.parent.is_symlink()
         ):
             raise ValueError("NEWS_TEST_OUTPUT_NOT_CREATE_ONLY")
-        case = _read_input(args.input)
+        if args.urls is not None:
+            if not args.case_id or not args.as_of:
+                raise ValueError("NEWS_TEST_URL_CASE_AND_CUTOFF_REQUIRED")
+            if args.run and args.source_output is None:
+                raise ValueError("NEWS_TEST_SOURCE_OUTPUT_REQUIRED")
+            if args.source_output is not None and (
+                args.source_output.is_symlink() or args.source_output.exists()
+                or not args.source_output.parent.is_dir()
+                or args.source_output.parent.is_symlink()
+            ):
+                raise ValueError("NEWS_TEST_SOURCE_NOT_CREATE_ONLY")
+            source_data = collect_urls(
+                args.urls, as_of=args.as_of, case_id=args.case_id,
+                horizon=args.horizon,
+            )
+            for article, url in zip(source_data["articles"], args.urls, strict=True):
+                article["sourceUrl"] = url
+            case = CaseInput.model_validate(source_data)
+        else:
+            if args.case_id or args.as_of or args.source_output:
+                raise ValueError("NEWS_TEST_INPUT_MODE_CONFLICT")
+            case = _read_input(args.input)
         if args.prepare:
             print(json.dumps(prepare_case(case), ensure_ascii=False))
             return
@@ -418,6 +466,11 @@ def main() -> None:
             ),
         )
         provider = build_runtime(settings, confirm_model=True)
+        if args.urls is not None:
+            # Immutable source snapshot is persisted BEFORE the model call.
+            # A failed model still leaves the source recoverable; --input can
+            # resume with the exact same article bytes without refetching.
+            _write(args.source_output, case.model_dump())
         report = run_case(case, provider)
         _write(args.output, report)
         print(json.dumps({
@@ -450,7 +503,7 @@ def main() -> None:
             "outputCreated": True,
         }, ensure_ascii=False))
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError,
-            ValidationError, LLMExecutionError) as exc:
+            ValidationError, LLMExecutionError, httpx.HTTPError) as exc:
         code = (
             exc.args[0] if type(exc) in {ValueError, TypeError}
             and exc.args and isinstance(exc.args[0], str)
