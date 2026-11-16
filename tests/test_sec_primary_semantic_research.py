@@ -262,3 +262,71 @@ def test_cli_reports_source_sha_mismatch_without_disclosing_source(
     assert "ERROR_CODE=SEC_SEMANTIC_SOURCE_SHA_MISMATCH" in stderr
     assert str(tmp_path) not in stderr
     assert not (tmp_path / "new.json").exists()
+
+
+class _HypothesisCorrectionProvider:
+    model_id = "structured-fixture"
+
+    def __init__(self, responses: list[dict]) -> None:
+        self.responses = responses
+        self.calls: list[dict] = []
+
+    def generate_json(self, *, system: str, user: str,
+                      schema: dict[str, object] | None) -> str:
+        self.calls.append({"request": json.loads(user), "schema": schema})
+        return json.dumps(self.responses.pop(0))
+
+
+def test_one_hypothesis_only_correction_preserves_verified_quotes(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    original = _response(prepared["cases"][0])
+    wrong = copy.deepcopy(original)
+    wrong["hypotheses"][1]["evidence_ids"] = [f"sec-{ACC}-primary"]
+    provider = _HypothesisCorrectionProvider([
+        wrong, {"hypotheses": original["hypotheses"]},
+    ])
+    report = run_semantic_research(prepared, provider, limit=1)
+    assert len(provider.calls) == 2
+    assert set(provider.calls[1]["schema"]["required"]) == {"hypotheses"}
+    assert provider.calls[1]["request"]["sectorAndMissingContextAllowedEvidenceIds"] == []
+    assert report["hypothesesCorrectionCount"] == 1
+    assert report["modelCalls"] == 2
+    assert report["cases"][0]["hypothesesCorrectionAttempted"] is True
+    assert report["cases"][0]["interpretation"]["observations"] == original["observations"]
+    assert report["cases"][0]["interpretation"]["hypotheses"] == original["hypotheses"]
+    assert report["trainingReady"] is False
+
+
+def test_invalid_second_hypotheses_fail_closed_after_one_correction(
+    tmp_path: Path,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    original = _response(prepared["cases"][0])
+    wrong = copy.deepcopy(original)
+    wrong["hypotheses"][1]["evidence_ids"] = [f"sec-{ACC}-primary"]
+    provider = _HypothesisCorrectionProvider([
+        wrong, {"hypotheses": wrong["hypotheses"]},
+    ])
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED"):
+        run_semantic_research(prepared, provider, limit=1)
+    assert len(provider.calls) == 2
+
+
+def test_fabricated_quote_cannot_be_repaired(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    bad = _response(prepared["cases"][0])
+    bad["observations"][0]["verbatim_quote"] = "Fabricated NVIDIA filing data is here."
+    provider = _HypothesisCorrectionProvider([bad])
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_QUOTE_NOT_IN_PINNED_SOURCE"):
+        run_semantic_research(prepared, provider, limit=1)
+    assert len(provider.calls) == 1
+
+
+def test_missing_context_cannot_cite_issuer_as_independent_context(
+    tmp_path: Path,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    response = _response(prepared["cases"][0])
+    response["hypotheses"][2]["evidence_ids"] = [f"sec-{ACC}-primary"]
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED"):
+        _validate_response(prepared["cases"][0], json.dumps(response))
