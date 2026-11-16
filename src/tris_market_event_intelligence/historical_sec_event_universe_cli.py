@@ -8,7 +8,6 @@ preopen returns or sealed predictions. No training or model calls happen.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -25,7 +24,6 @@ from tris_market_event_intelligence.historical_shock_research import (
 
 MAX_EVENTS = 500
 HORIZONS = (1, 3, 5)
-ONE_MILLION = 1_000_000
 
 
 def _hex_digest(value: object) -> bool:
