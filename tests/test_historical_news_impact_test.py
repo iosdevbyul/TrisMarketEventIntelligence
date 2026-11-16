@@ -184,27 +184,75 @@ def test_invalid_timing_and_identity_rejected(mutation: object) -> None:
         cli.CaseInput.model_validate(supplied)
 
 
-@pytest.mark.parametrize("mutate", [
-    lambda result: result["eventGroups"][0].update({"articleIds": ["a1"]}),
-    lambda result: result["impacts"][0].update({"evidenceQuoteIds": ["bad:q0"]}),
-    lambda result: result["impacts"][0].update({"ticker": "FAKE"}),
-    lambda result: result["impacts"][0].update({"companyName": "Other Company"}),
-    lambda result: result["impacts"][0].update({
-        "conditionalMovePctRange": {"minPct": 0.5, "maxPct": 2.0},
-    }),
-    lambda result: result["impacts"][0].update({
-        "conditionalMovePctRange": {"minPct": -25, "maxPct": -1},
-    }),
-    lambda result: result["impacts"][1].update({
-        "conditionalMovePctRange": {"minPct": 1, "maxPct": 2},
-    }),
-])
-def test_forged_chains_targets_quotes_and_influence_fail_closed(mutate: object) -> None:
+def test_invalid_event_group_still_fails_closed() -> None:
     case = cli.CaseInput.model_validate(sample_case())
-    result = answer(case)
-    mutate(result)
-    with pytest.raises((ValueError, ValidationError)):
-        cli.run_case(case, FakeProvider(result))
+    wrong = answer(case)
+    wrong["eventGroups"][0]["articleIds"] = ["a1"]
+    with pytest.raises(ValueError, match="NEWS_TEST_EVENT_GROUP_COVERAGE_INVALID"):
+        cli.run_case(case, FakeProvider(wrong))
+
+
+@pytest.mark.parametrize(("mutate", "reason"), [
+    (
+        lambda result: result["impacts"][0].update(
+            {"evidenceQuoteIds": ["bad:q0"]},
+        ),
+        "NEWS_TEST_QUOTE_NOT_IN_SOURCE",
+    ),
+    (
+        lambda result: result["impacts"][0].update({"ticker": "FAKE"}),
+        "NEWS_TEST_TICKER_MAPPING_CONFLICT",
+    ),
+    (
+        lambda result: result["impacts"][0].update({"companyName": "Other Company"}),
+        "NEWS_TEST_TICKER_MAPPING_CONFLICT",
+    ),
+    (
+        lambda result: result["impacts"][0].update({
+            "conditionalMovePctRange": {"minPct": 0.5, "maxPct": 2.0},
+        }),
+        "NEWS_TEST_NEGATIVE_RANGE_INVALID",
+    ),
+    (
+        lambda result: result["impacts"][1].update({
+            "conditionalMovePctRange": {"minPct": 1, "maxPct": 2.0},
+        }),
+        "NEWS_TEST_UNCERTAIN_DIRECTION_WITH_RANGE",
+    ),
+    (
+        lambda result: result["impacts"][1].update({"sector": "INFORMATION_TECH"}),
+        "NEWS_TEST_SECTOR_UNKNOWN",
+    ),
+])
+def test_invalid_impact_proposals_are_quarantined_not_normalized(
+    mutate: object, reason: str,
+) -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    proposal = answer(case)
+    mutate(proposal)
+    provider = FakeProvider(proposal)
+    report = cli.run_case(case, provider)
+    assert provider.calls == 1
+    assert report["impactValidationComplete"] is False
+    assert report["historicalBenchmarkEligible"] is False
+    assert report["status"] == "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
+    assert report["rejectedImpacts"][0]["reason"] == reason
+    assert report["rejectedImpacts"][0]["impactIndex"] in (0, 1)
+    assert report["rejectedImpacts"][0]["proposal"] == proposal["impacts"][
+        report["rejectedImpacts"][0]["impactIndex"]
+    ]
+    assert len(report["impacts"]) == 1
+    assert report["trainingReady"] is False
+    assert report["accuracyVerified"] is False
+    assert report["modelCalls"] == 1
+
+
+def test_model_schema_for_out_of_bounds_range_remains_invalid() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    wrong = answer(case)
+    wrong["impacts"][0]["conditionalMovePctRange"] = {"minPct": -25, "maxPct": -1}
+    with pytest.raises(ValidationError):
+        cli.run_case(case, FakeProvider(wrong))
 
 
 def test_extra_model_claims_are_not_silently_discarded() -> None:
@@ -478,7 +526,7 @@ def test_duplicate_event_stages_are_quarantined_without_second_model_call() -> N
     assert provider.calls == 1
     assert report["modelCalls"] == 1
     assert report["eventStageCoverageComplete"] is False
-    assert report["status"] == "NEWS_EVENT_STAGES_INCOMPLETE_REQUIRES_REVIEW"
+    assert report["status"] == "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
     assert report["historicalBenchmarkEligible"] is False
     assert report["unresolvedStageArticleIds"] == ["a2"]
     assert report["eventStages"] == [
@@ -537,23 +585,18 @@ def test_complete_event_stages_are_unchanged_and_eligible_for_regular_review() -
     assert report["status"] == "BLIND_NEWS_IMPACTS_RECORDED_UNCALIBRATED"
 
 
-def test_invalid_quote_relations_regenerate_not_auto_rewritten() -> None:
+def test_invalid_quote_and_wrong_ticker_are_both_audited_in_single_call() -> None:
     case = cli.CaseInput.model_validate(sample_case())
     malformed = answer(case)
     malformed["impacts"][0]["evidenceQuoteIds"] = ["invented:q0"]
-    valid = answer(case)
-    provider = RangeRetryProvider([malformed, valid])
-    result = cli.run_case(case, provider)
-    assert provider.calls == 2
-    assert result["modelContractRetryReason"] == "NEWS_TEST_QUOTE_NOT_IN_SOURCE"
-    assert result["impacts"][0]["evidenceQuoteIds"] == valid["impacts"][0]["evidenceQuoteIds"]
-
-
-def test_news_with_unsupported_impact_targets_cannot_be_silently_relabelled() -> None:
-    case = cli.CaseInput.model_validate(sample_case())
-    malformed = answer(case)
-    malformed["impacts"][0]["ticker"] = "HALLUC"
+    malformed["impacts"][1]["sector"] = "INFORMATION_TECH"
     provider = RangeRetryProvider([malformed])
-    with pytest.raises(ValueError, match="NEWS_TEST_TICKER_MAPPING_CONFLICT"):
-        cli.run_case(case, provider)
-    assert provider.calls == 2
+    result = cli.run_case(case, provider)
+    assert provider.calls == 1
+    assert result["modelContractRetryReason"] is None
+    assert result["impacts"] == []
+    assert [r["reason"] for r in result["rejectedImpacts"]] == [
+        "NEWS_TEST_QUOTE_NOT_IN_SOURCE", "NEWS_TEST_SECTOR_UNKNOWN",
+    ]
+    assert result["status"] == "NEWS_PARTIAL_ANALYSIS_REQUIRES_REVIEW"
+    assert result["historicalBenchmarkEligible"] is False
