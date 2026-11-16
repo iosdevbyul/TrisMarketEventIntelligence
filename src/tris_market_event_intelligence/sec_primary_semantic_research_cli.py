@@ -94,7 +94,13 @@ For SECTOR_ALTERNATIVE evidence_ids MUST be []; there is no independent
 sector evidence. For MISSING_CONTEXT evidence_ids MUST also be [].
 Only ISSUER_FUNDAMENTALS may cite the supplied SEC evidence id (or []).
 Each mechanism and limitation MUST be a full sentence of 15-1000 characters.
-Never cite the issuer filing as independently verified sector evidence.\nDo not create named corporate actions, financial practices, executive intent,\nsupply-chain changes, R&D pivots, funding dependencies, valuation policies,\ntrade measures, subsidies, or competitor capacity unless literally supported\nby the provided source. SEC item headings alone never establish these events.\nIf the excerpt lacks such detail, state a generic conditional mechanism and\nexplicitly identify what further source would be necessary to test it.
+Never cite the issuer filing as independently verified sector evidence.
+Do not create named corporate actions, financial practices, executive intent,
+supply-chain changes, R&D pivots, funding dependencies, valuation policies,
+trade measures, subsidies, or competitor capacity unless literally supported
+by the provided source. SEC item headings alone never establish these events.
+If the excerpt lacks such detail, state a generic conditional mechanism and
+explicitly identify what further source would be necessary to test it.
 A source snippet is from original 2017-2026 SEC text recovered in 2026:
 it was NOT proven available to investors before a historical cutoff.
 No price outcomes or future labels are supplied. Return only JSON matching schema."""
@@ -104,14 +110,14 @@ MAX_RESPONSE = 14_000
 # A lexical match is not a semantic verdict; source presence merely avoids
 # automatic rejection and NEVER establishes the claim as true or causal.
 HIGH_RISK_FACT_PATTERNS = (
-    r"\\bsupply[ -]chain restructur(?:ing|ed|e)\\b",
-    r"\\b(?:r\\s*&\\s*d|research and development) strateg(?:y|ies) (?:shift|change|pivot)\\b",
-    r"\\b(?:short[ -]term|near[ -]term) financ(?:ing|e) (?:dependenc(?:e|y)|reliance)\\b",
-    r"\\boperational inefficienc(?:y|ies)\\b",
-    r"\\binternal valuation (?:method|model|approach)\\b",
-    r"\\b(?:trade|export) restrictions?\\b",
-    r"\\bgovernment subsid(?:y|ies)\\b",
-    r"\\bcompetitor (?:production|manufacturing) capacity\\b",
+    r"\bsupply[ -]chain restructur(?:ing|ed|e)\b",
+    r"\b(?:r\s*&\s*d|research and development) strateg(?:y|ies) (?:shift|change|pivot)\b",
+    r"\b(?:short[ -]term|near[ -]term) financ(?:ing|e) (?:dependenc(?:e|y)|reliance)\b",
+    r"\boperational inefficienc(?:y|ies)\b",
+    r"\binternal valuation (?:method|model|approach)\b",
+    r"\b(?:trade|export) restrictions?\b",
+    r"\bgovernment subsid(?:y|ies)\b",
+    r"\bcompetitor (?:production|manufacturing) capacity\b",
 )
 HIGH_RISK_FACTS = tuple(re.compile(p, re.IGNORECASE) for p in HIGH_RISK_FACT_PATTERNS)
 
