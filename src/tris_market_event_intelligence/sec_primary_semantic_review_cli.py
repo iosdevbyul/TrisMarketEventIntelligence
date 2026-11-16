@@ -17,13 +17,13 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     _validate_response,
     prepare_primary_cases,
 )
-from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 from tris_market_event_intelligence.sec_semantic_evidence_gate import (
     ABSTENTION_SUMMARY,
     INSUFFICIENT,
     SUBSTANTIVE,
     source_evidence_status,
 )
+from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 
 MAX_REPORT_BYTES = 900_000
 SHA = re.compile(r"[a-f0-9]{64}\Z")
