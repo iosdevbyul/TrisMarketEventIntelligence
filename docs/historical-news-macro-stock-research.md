@@ -1107,3 +1107,31 @@ After merged PR194, the actual user Mac SEC first-case Gemma4 call returned `FAI
 The correction model is now asked for **only** category, mechanism and limitation for three hypotheses, using a JSON schema with no `evidence_ids` field. The application assigns `evidence_ids=[]` to these *corrected, unverified hypotheses*, which prevents the SEC issuer filing being silently represented as independent proof of sector or missing-context claims. If the model nevertheless outputs any extra field (including citation IDs), the attempt fails closed rather than stripping or relabeling the generated source claim. Original SEC-quoted observations, source accession/SHA and their exact validation are preserved; corrected hypotheses must still pass the original full response validator. This is not proof that any hypothesis is factual, causal or historically available; human review remains necessary. No stock returns or future outcomes enter the inference path, no model promotion or trading.
 
 The already captured 12 real primary documents and historical SEC/price evidence remain immutable. The actual first-case Gemma4 Mac run is pending until this change passes CI and merges. Do not repeat primary SEC downloads or re-indexing.
+
+
+### 2026-11-17: Reuse successful Gemma4 SEC first case; bounded 12-case research and offline human review
+
+The user's first **real** source-backed Gemma4 semantic report succeeded after PR195 with `cases=1`, `modelCalls=2`, and `trainingReady=false`. Preserve that immutable case-0 output; it must not be generated again. The SHA-verified SEC primary-content packet contains twelve source bodies. Avoid a single long model inference invocation on the Intel Mac: the model CLI now supports explicit zero-based `--start-index`, retaining the three-cases-per-invocation ceiling.
+
+With the existing private `$DATA/nvda-sec-primary-content-batch01-v1.json` and `$DATA/sec-<accession>-primary.source` files already saved, create **new, distinct** private output names for the rest of the fixed cohort:
+
+- Case index 0: use the existing `nvda-sec-primary-semantic-gemma4-firstcase-v1.json`, no rerun.
+- Indices 1–3: `sec-primary-semantic --run --model gemma4:e2b --start-index 1 --limit 3` and unique output name.
+- Indices 4–6: same with `--start-index 4 --limit 3`.
+- Indices 7–9: same with `--start-index 7 --limit 3`.
+- Indices 10–11: `--start-index 10 --limit 3`; the final selection is bounded by available case count, so only 2 cases process.
+
+Every case still validates its original source bytes SHA, source quotations and hypotheses against the previously fixed strict SEC contract. A batch aborts without writing output when any selected case fails. Outputs are create-only; do not overwrite or invent partial successes. Do not blindly rerun failed batches; classify the returned redacted error code first.
+
+After one or more successful batches, create a **new private local** human-review packet with:
+
+```bash
+bash scripts/news-learning-review.sh --update sec-semantic-review \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --report "$DATA/<new-batch-report>.json" \
+  --output "$DATA/<new-human-review-packet>.json"
+```
+
+`sec-semantic-review` is offline and model-free. It re-reads the already SHA-pinned local SEC original bytes, independently validates every report's matching primary-report hash, per-case source identity, exact source quotes, correction/model-call counts, response shape and absence of time/training/causal promotion claims, rejects duplicate accession IDs, then produces a local review template for a human to judge each observation, tentative hypothesis and summary. The packet includes original excerpts and the model's interpretations: **it must remain private and never be published to GitHub/Notion**. Missing case indices are reported without inventing coverage; no human ratings are prefilled. A validated JSON packet is NOT a completed human assessment or historically time-eligible training evidence. Human reviewer must evaluate actual meaning, possible cherry-picking and missing external context. No price outcomes or external network calls are permitted.
