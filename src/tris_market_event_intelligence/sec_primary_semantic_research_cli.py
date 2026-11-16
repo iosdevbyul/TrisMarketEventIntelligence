@@ -134,7 +134,7 @@ def prepare_primary_cases(packet: dict, packet_sha: str, source_dir: Path) -> di
             raise ValueError("SEC_SEMANTIC_SOURCE_SHA_MISMATCH")
         url = case.get("primaryDocumentUrl")
         if not isinstance(url, str):
-            raise ValueError("SEC_SEMANTIC_SOURCE_URL_REQUIRED")
+            raise TypeError("SEC_SEMANTIC_SOURCE_URL_REQUIRED")
         details = _source_review(raw, url)
         if (details["primarySourceVerbatimExcerpt"]
                 != case.get("primarySourceVerbatimExcerpt")
