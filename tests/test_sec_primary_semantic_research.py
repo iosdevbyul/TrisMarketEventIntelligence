@@ -277,7 +277,40 @@ class _HypothesisCorrectionProvider:
         return json.dumps(self.responses.pop(0))
 
 
+def _commentary_only(hypotheses: list[dict]) -> list[dict]:
+    return [
+        {key: value for key, value in hypothesis.items() if key != "evidence_ids"}
+        for hypothesis in hypotheses
+    ]
+
+
 def test_one_hypothesis_only_correction_preserves_verified_quotes(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    original = _response(prepared["cases"][0])
+    wrong = copy.deepcopy(original)
+    wrong["hypotheses"][1]["evidence_ids"] = [f"sec-{ACC}-primary"]
+    provider = _HypothesisCorrectionProvider([
+        wrong, {"hypotheses": _commentary_only(original["hypotheses"])},
+    ])
+    report = run_semantic_research(prepared, provider, limit=1)
+    assert len(provider.calls) == 2
+    assert set(provider.calls[1]["schema"]["required"]) == {"hypotheses"}
+    assert set(provider.calls[1]["schema"]["properties"]["hypotheses"]["items"]["required"]) == {
+        "category", "mechanism", "limitation",
+    }
+    assert provider.calls[1]["request"]["hypothesisEvidenceIdsAssignedByValidator"] is True
+    assert report["hypothesesCorrectionCount"] == 1
+    assert report["modelCalls"] == 2
+    assert report["cases"][0]["hypothesesCorrectionAttempted"] is True
+    assert report["cases"][0]["interpretation"]["observations"] == original["observations"]
+    assert all(
+        hypothesis["evidence_ids"] == []
+        for hypothesis in report["cases"][0]["interpretation"]["hypotheses"]
+    )
+    assert report["trainingReady"] is False
+
+
+def test_model_citation_in_corrected_hypotheses_fails_closed(tmp_path: Path) -> None:
     prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
     original = _response(prepared["cases"][0])
     wrong = copy.deepcopy(original)
@@ -285,29 +318,7 @@ def test_one_hypothesis_only_correction_preserves_verified_quotes(tmp_path: Path
     provider = _HypothesisCorrectionProvider([
         wrong, {"hypotheses": original["hypotheses"]},
     ])
-    report = run_semantic_research(prepared, provider, limit=1)
-    assert len(provider.calls) == 2
-    assert set(provider.calls[1]["schema"]["required"]) == {"hypotheses"}
-    assert provider.calls[1]["request"]["sectorAndMissingContextAllowedEvidenceIds"] == []
-    assert report["hypothesesCorrectionCount"] == 1
-    assert report["modelCalls"] == 2
-    assert report["cases"][0]["hypothesesCorrectionAttempted"] is True
-    assert report["cases"][0]["interpretation"]["observations"] == original["observations"]
-    assert report["cases"][0]["interpretation"]["hypotheses"] == original["hypotheses"]
-    assert report["trainingReady"] is False
-
-
-def test_invalid_second_hypotheses_fail_closed_after_one_correction(
-    tmp_path: Path,
-) -> None:
-    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
-    original = _response(prepared["cases"][0])
-    wrong = copy.deepcopy(original)
-    wrong["hypotheses"][1]["evidence_ids"] = [f"sec-{ACC}-primary"]
-    provider = _HypothesisCorrectionProvider([
-        wrong, {"hypotheses": wrong["hypotheses"]},
-    ])
-    with pytest.raises(ValueError, match="SEC_SEMANTIC_REPAIR_EVIDENCE_INVALID"):
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_REPAIR_FIELDS_INVALID"):
         run_semantic_research(prepared, provider, limit=1)
     assert len(provider.calls) == 2
 
@@ -349,7 +360,7 @@ def test_repair_failure_reports_only_allowlisted_shape_code(
     original = _response(prepared["cases"][0])
     wrong = copy.deepcopy(original)
     wrong["hypotheses"][1]["evidence_ids"] = [f"sec-{ACC}-primary"]
-    repaired = copy.deepcopy(original["hypotheses"])
+    repaired = _commentary_only(copy.deepcopy(original["hypotheses"]))
     if mutation == "category":
         repaired[0]["category"] = "INVENTED_SECTOR_FACT"
     elif mutation == "duplicate":
