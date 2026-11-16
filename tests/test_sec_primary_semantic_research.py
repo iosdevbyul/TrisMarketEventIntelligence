@@ -320,3 +320,13 @@ def test_fabricated_quote_cannot_be_repaired(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="SEC_SEMANTIC_QUOTE_NOT_IN_PINNED_SOURCE"):
         run_semantic_research(prepared, provider, limit=1)
     assert len(provider.calls) == 1
+
+
+def test_missing_context_cannot_cite_issuer_as_independent_context(
+    tmp_path: Path,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    response = _response(prepared["cases"][0])
+    response["hypotheses"][2]["evidence_ids"] = [f"sec-{ACC}-primary"]
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED"):
+        _validate_response(prepared["cases"][0], json.dumps(response))
