@@ -6,7 +6,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from test_sec_primary_semantic_review import _Provider, _packet
+from test_sec_primary_semantic_review import _packet, _Provider
 
 from tris_market_event_intelligence.sec_claim_evidence_review_cli import build_claim_review
 from tris_market_event_intelligence.sec_primary_content_research_cli import _source_review
