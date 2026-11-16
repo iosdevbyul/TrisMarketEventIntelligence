@@ -11,7 +11,7 @@ import json
 import os
 import re
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -27,7 +27,7 @@ COHORT_SIZE = 2_500_000
 MAX_LIMIT = 69
 SHA = re.compile(r"[a-f0-9]{64}\Z")
 ACC = re.compile(r"\d{10}-\d{2}-\d{6}\Z")
-SEC_ACCEPTED = re.compile(r"Accepted\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", re.I)
+SEC_ACCEPTED = re.compile(r"Accepted\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", re.IGNORECASE)
 
 
 def _read_cohort(path: Path) -> tuple[dict, str]:
@@ -204,7 +204,9 @@ def capture_sec_pit_evidence(
             "secIndexSha256": source_sha,
             "secAcceptedLocalUnverifiedTimezone": accepted_header,
             "secReceiptClockOnly": True,
-            "originalIndexAuthenticatedByContentAndSecHost": True,
+            "secIndexMetadataCrossCheckedAgainstCohort": True,
+            "secTransportAuthenticatedInThisRun": not already_cached,
+            "earliestPublicSourceAuthenticityIndependentlyVerified": False,
             "fetchedInThisRun": not already_cached,
             "historicalFirstPublicAvailabilityAt": None,
             "firstIndependentHistoricalObservedAt": None,
