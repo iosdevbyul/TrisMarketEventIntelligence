@@ -16,7 +16,6 @@ from urllib.parse import urlsplit
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.sec_pit_availability_cohort_cli import _read_study
 from tris_market_event_intelligence.sec_publication_evidence_capture_cli import (
-    COHORT_SCHEMA,
     RESULT_SCHEMA,
     _read_cohort,
     _validate_cohort,
@@ -45,7 +44,7 @@ def _read_json(path: Path, limit: int) -> tuple[dict, str]:
 
 def _valid_timestamp(value: object) -> datetime:
     if not isinstance(value, str):
-        raise ValueError("SEC_WITNESS_TIMESTAMP_REQUIRED")
+        raise TypeError("SEC_WITNESS_TIMESTAMP_REQUIRED")
     parsed = datetime.fromisoformat(value)
     if parsed.utcoffset() is None:
         raise ValueError("SEC_WITNESS_TIMESTAMP_TIMEZONE_REQUIRED")
