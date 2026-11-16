@@ -644,7 +644,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), default=2)
     parser.add_argument("--start-index", type=int, default=0)
     parser.add_argument("--model", default="gemma4:e2b")
-    parser.add_argument("--evidence-gated", action="store_true")
+    # New CLI execution uses the evidence gate by default. The legacy Python
+    # API remains readable for existing archived fixture generation.
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--prepare", action="store_true")
     modes.add_argument("--run", action="store_true")
@@ -671,7 +672,7 @@ def main() -> None:
             report = run_semantic_research(
                 prepared, provider=provider, limit=args.limit,
                 start_index=args.start_index,
-                evidence_gated=args.evidence_gated,
+                evidence_gated=True,
             )
         stage = "WRITE_NEW_OUTPUT"
         _write(args.output, report)
