@@ -730,3 +730,38 @@ inventory is **candidate filing metadata only**, not verified
 issuer-exhibit content or independent earliest market-publication
 time. Continue with `sec-coverage-reconcile --preview` only after
 the original download output is confirmed.
+
+## SEC inventory Mac failure: unsafe primaryDocument values quarantined
+
+On 2026-11-16 the user's actual Mac retried `sec-history-inventory`
+after PR #182, and got `SEC_PRIMARY_DOCUMENT_PATH`.
+The downloader successfully reached source parsing, but one or more
+8-K/10-Q/10-K candidate `primaryDocument` values did not satisfy
+its strict relative-document path check. The exact rejected string
+has not been observed or retained; do not infer which SEC filing,
+attribute, or unusual path caused the error.
+
+This inventory is **candidate accession metadata**, not a validated
+first-publication text corpus. A potentially missing or unsafe
+`primaryDocument` must **not** prevent discovery of otherwise valid
+filing accessions and SEC filing indexes. The decoder now records the
+`secPrimaryDocument` only if it is a bounded, safe relative path.
+Empty, traversal, encoded, path-like URL, control/whitespace or query/
+fragment values are replaced with `null` and
+`secPrimaryDocumentPathStatus=QUARANTINED_MISSING_OR_UNSAFE`.
+Each row keeps the SEC accession, filingDate, raw unverified acceptance
+text, SEC index URL, source page ID and SHA. The inventory records
+`quarantinedPrimaryDocumentPaths` and
+`allPrimaryDocumentsHaveSafePaths`, so a successful collection still
+**exposes** the unresolved source evidence gaps. No suspicious document
+string is ever used as a network URL or publicly logged.
+
+This does **not** repair a missing SEC filing, prove the authenticity
+of an exhibit, verify earliest market availability, or make those
+filings eligible as predictive news. `trainingReady=false`,
+`eligibleAsNewsModelFeature=false`; SEC CIK and URL validation, input
+bounds, duplicate accession consistency and create-only private output
+remain enforced. Run the same guarded official SEC inventory command
+and check whether `quarantinedPrimaryDocumentPaths` is nonzero.
+Then use the prior `sec-coverage-reconcile --preview` as the next
+offline evidence-gap audit.
