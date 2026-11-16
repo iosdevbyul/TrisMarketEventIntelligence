@@ -30,9 +30,9 @@ from tris_market_event_intelligence.llm_runtime import (
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 VERSION = "historical_news_impact_test_v1"
-MAX_INPUT_BYTES = 40000
+MAX_INPUT_BYTES = 80000
 MAX_ARTICLES = 6
-MAX_TOTAL_BODY = 14000
+MAX_TOTAL_BODY = 30000
 ARTICLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}\Z")
 TICKER = re.compile(r"[A-Z][A-Z0-9.]{0,9}\Z")
 SECTORS = (
@@ -79,7 +79,7 @@ class NewsArticle(Strict):
         "PUBLISHER_METADATA_NO_LATE_REVISION_DETECTED",
     ] | None = None
     title: str = Field(min_length=8, max_length=240)
-    body: str = Field(min_length=55, max_length=2800)
+    body: str = Field(min_length=55, max_length=9000)
 
 
 class KnownTicker(Strict):
