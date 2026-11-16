@@ -398,3 +398,70 @@ def test_cli_reports_model_schema_failure_and_persists_source_first(
     assert source.is_file()
     assert not output.exists()
     assert json.loads(source.read_text())["schemaVersion"] == case.schemaVersion
+
+
+class RangeRetryProvider:
+    model_id = "range-retry-fake"
+
+    def __init__(self, responses: list[dict]):
+        self.responses = responses
+        self.calls = 0
+        self.requests: list[dict] = []
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        self.requests.append(json.loads(user))
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return json.dumps(response)
+
+
+def test_invalid_conditional_range_triggers_single_model_authored_regeneration() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    malformed = answer(case)
+    malformed["impacts"][0]["conditionalMovePctRange"] = {
+        "minPct": -15, "maxPct": -1,
+    }
+    corrected = answer(case)
+    provider = RangeRetryProvider([malformed, corrected])
+    result = cli.run_case(case, provider)
+    assert provider.calls == 2
+    assert result["modelCalls"] == 2
+    assert result["rangeSchemaRetryUsed"] is True
+    assert result["impacts"][0]["conditionalMovePctRange"] == {
+        "minPct": -3.0, "maxPct": -1.0,
+    }
+    assert "formatCorrection" not in provider.requests[0]
+    assert "formatCorrection" in provider.requests[1]
+    assert provider.requests[1]["historicalOutcomesAvailable"] is False
+    assert "marketPrice" not in json.dumps(provider.requests[1])
+
+
+def test_persistently_invalid_range_fails_after_one_bounded_retry() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    malformed = answer(case)
+    malformed["impacts"][0]["conditionalMovePctRange"] = {
+        "minPct": 4.0, "maxPct": -2.0,
+    }
+    provider = RangeRetryProvider([malformed])
+    with pytest.raises(ValidationError):
+        cli.run_case(case, provider)
+    assert provider.calls == 2
+
+
+def test_unrelated_schema_error_does_not_trigger_regeneration() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    malformed = answer(case)
+    malformed["eventGroups"] = "invalid"
+    provider = RangeRetryProvider([malformed])
+    with pytest.raises(ValidationError):
+        cli.run_case(case, provider)
+    assert provider.calls == 1
+
+
+def test_valid_range_retains_single_model_call() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    provider = RangeRetryProvider([answer(case)])
+    report = cli.run_case(case, provider)
+    assert provider.calls == 1
+    assert report["rangeSchemaRetryUsed"] is False
+    assert report["modelCalls"] == 1
