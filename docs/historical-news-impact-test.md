@@ -140,3 +140,22 @@ The article text is bounded to a per-article character budget; the system
 does not claim this snapshot preserves the entire raw HTML page. Any article
 not fully accessible in public HTML must be replaced with another genuinely
 independent publisher article, not a fabricated paraphrase.
+
+## Post-cutoff source revision: two distinct test modes
+
+NEWS_URL_REVISED_AFTER_CUTOFF is an intentional point-in-time safety rejection.
+The error now identifies article ordinal and host, allowing precise diagnosis.
+The original strict historical mode still rejects pages modified after as-of.
+
+For a qualitative smoke test of actual, publisher-extracted, potentially edited
+current articles, add --exploratory-current-pages to the URL-only command.
+This does not use hand-authored summaries or post-event stock prices; however,
+the source may now contain edits not available at the chosen historical cutoff.
+The result explicitly records sourceIntegrityStatus, revisedSourceArticleIds,
+per-article sourceModifiedAt and historicalBenchmarkEligible=false.
+Such an answer MUST NOT be graded as an unbiased historical stock prediction.
+
+For a valid blind historical market-impact backtest, obtain immutable original
+versions verifiably published by the chosen cutoff (e.g. archived snapshots).
+Never raise the as-of cutoff just to suppress a revision error and then claim
+the response was a prediction made before the market response.

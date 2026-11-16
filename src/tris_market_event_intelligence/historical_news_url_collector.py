@@ -22,7 +22,7 @@ ALLOWED = frozenset({
     "www.washingtonpost.com", "washingtonpost.com", "apnews.com", "www.apnews.com",
 })
 MAX_HTML = 1_800_000
-MAX_ARTICLE = 2800
+MAX_ARTICLE = 9000
 PUBLISHED_META = frozenset({
     "article:published_time", "article:published", "datepublished",
     "date", "pubdate", "publishdate", "citation_publication_date",
@@ -177,7 +177,10 @@ def _jsonld_dates(doc: ArticleHTML) -> tuple[list[str], list[str]]:
     return published, modified
 
 
-def parse_article(raw: bytes, url: str, as_of: str, article_id: str) -> dict:
+def parse_article(
+    raw: bytes, url: str, as_of: str, article_id: str, *,
+    allow_revised: bool = False,
+) -> dict:
     try:
         doc = ArticleHTML()
         doc.feed(raw.decode("utf-8"))
@@ -200,25 +203,35 @@ def parse_article(raw: bytes, url: str, as_of: str, article_id: str) -> dict:
     cutoff = _date(as_of)
     if effective > cutoff:
         raise ValueError("NEWS_URL_ARTICLE_AFTER_CUTOFF")
-    if any(_date(x) > cutoff for x in modified):
+    updated = max((_date(x) for x in modified), default=None)
+    revised = updated is not None and updated > cutoff
+    if revised and not allow_revised:
         raise ValueError("NEWS_URL_REVISED_AFTER_CUTOFF")
     title = doc.meta.get("og:title") or " ".join("".join(doc.title).split())
     body = "\n".join(doc.paragraphs)
     if not 8 <= len(title) <= 240 or len(body) < 250 or len(doc.paragraphs) < 3:
         raise ValueError("NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE")
     if len(body) > MAX_ARTICLE:
-        # Bounded beginning of *extracted primary text*, no invented content.
-        body = body[:MAX_ARTICLE].rsplit(" ", 1)[0]
+        # Never silently truncate a primary article and call it original text.
+        raise ValueError("NEWS_URL_ARTICLE_EXCEEDS_CONTEXT_BUDGET")
     return {
         "articleId": article_id,
         "publishedAt": effective.isoformat(),
         "source": urlsplit(url).hostname or "unknown",
         "title": title,
         "body": body,
+        "sourceModifiedAt": updated.isoformat() if updated is not None else None,
+        "sourceIntegrity": (
+            "CURRENT_PAGE_REVISED_AFTER_CUTOFF" if revised
+            else "PUBLISHER_METADATA_NO_LATE_REVISION_DETECTED"
+        ),
     }
 
 
-def collect_article(url: str, as_of: str, article_id: str, *, client: httpx.Client) -> dict:
+def collect_article(
+    url: str, as_of: str, article_id: str, *,
+    client: httpx.Client, allow_revised: bool = False,
+) -> dict:
     target = _url(url)
     for _ in range(3):
         _public_dns(target)
@@ -239,13 +252,16 @@ def collect_article(url: str, as_of: str, article_id: str, *, client: httpx.Clie
             raise ValueError("NEWS_URL_HTML_REQUIRED")
         if len(response.content) > MAX_HTML:
             raise ValueError("NEWS_URL_HTML_OVERSIZED")
-        return parse_article(response.content, target, as_of, article_id)
+        return parse_article(
+            response.content, target, as_of, article_id,
+            allow_revised=allow_revised,
+        )
     raise ValueError("NEWS_URL_TOO_MANY_REDIRECTS")
 
 
 def collect_urls(
     urls: list[str], *, as_of: str, case_id: str, horizon: int,
-    client: httpx.Client | None = None,
+    client: httpx.Client | None = None, allow_revised: bool = False,
 ) -> dict:
     if not 2 <= len(urls) <= 6 or len(set(urls)) != len(urls):
         raise ValueError("NEWS_URL_COUNT_OR_DUPLICATES")
@@ -255,10 +271,21 @@ def collect_urls(
         timeout=httpx.Timeout(15), trust_env=False, follow_redirects=False,
     )
     try:
-        articles = [
-            collect_article(url, as_of, f"a{i+1}", client=session)
-            for i, url in enumerate(urls)
-        ]
+        articles = []
+        for i, url in enumerate(urls):
+            try:
+                article = collect_article(
+                    url, as_of, f"a{i+1}", client=session,
+                    allow_revised=allow_revised,
+                )
+            except ValueError as exc:
+                # Include only bounded publisher host and ordinal, not raw HTML.
+                code = str(exc).split("|", 1)[0]
+                host = urlsplit(_url(url)).hostname or "unknown"
+                raise ValueError(
+                    f"{code}|article={i+1}|host={host}"
+                ) from exc
+            articles.append(article)
     finally:
         if owned:
             session.close()

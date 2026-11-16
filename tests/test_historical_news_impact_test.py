@@ -311,3 +311,19 @@ def test_reversed_or_fabricated_event_links_are_quarantined_not_fatal() -> None:
         assert report["eventLinks"] == []
         assert report["rejectedEventLinks"][0]["reason"] == expected
         assert len(report["impacts"]) == 2
+
+
+def test_current_revised_originals_are_explicitly_ineligible_for_historical_accuracy() -> None:
+    supplied = sample_case()
+    supplied["articles"][0]["sourceIntegrity"] = "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
+    supplied["articles"][0]["sourceModifiedAt"] = "2018-07-13T16:00:00+00:00"
+    case = cli.CaseInput.model_validate(supplied)
+    provider = FakeProvider(answer(case))
+    report = cli.run_case(case, provider)
+    assert report["revisedSourceArticleIds"] == ["a1"]
+    assert report["sourceIntegrityStatus"] == "EXPLORATORY_POST_CUTOFF_REVISED_SOURCE"
+    assert report["historicalBenchmarkEligible"] is False
+    assert report["accuracyVerified"] is False
+    assert report["causalityProven"] is False
+    assert "sourceModifiedAt" not in provider.request["articles"][0]
+    assert "sourceIntegrity" not in provider.request["articles"][0]
