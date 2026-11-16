@@ -110,16 +110,20 @@ def _response(case: dict) -> dict:
 
 
 
-def _without_model_safety_claims(response: dict) -> dict:
+def _without_model_owned_provenance(response: dict) -> dict:
     result = copy.deepcopy(response)
-    for field in ("historical_public_time_verified", "causal_impact_proven", "stock_direction_predicted"):
+    for field in (
+        "accession", "source_sha256",
+        "historical_public_time_verified", "causal_impact_proven",
+        "stock_direction_predicted",
+    ):
         result.pop(field, None)
     return result
 
 
 def _as_anchored(response: dict, case: dict) -> dict:
     """Stub format intentionally mirrors the new provider wire contract."""
-    anchored = _without_model_safety_claims(response)
+    anchored = _without_model_owned_provenance(response)
     anchors = _quote_anchors(case)
     values = list(anchors)
     anchored["observations"] = [
@@ -149,7 +153,7 @@ class _StubProvider:
             row["quote_id"]: row["verbatimSourceText"]
             for row in self.messages[-1]["quoteAnchors"]
         }
-        anchored = _without_model_safety_claims(response)
+        anchored = _without_model_owned_provenance(response)
         anchored["observations"] = [
             {"quote_id": list(anchor_map)[i], "interpretation": ob["interpretation"]}
             for i, ob in enumerate(response["observations"])
@@ -312,7 +316,7 @@ class _HypothesisCorrectionProvider:
         self.calls.append({"request": request, "schema": schema})
         response = self.responses.pop(0)
         if "quoteAnchors" in request:
-            anchored = _without_model_safety_claims(response)
+            anchored = _without_model_owned_provenance(response)
             ids = [row["quote_id"] for row in request["quoteAnchors"]]
             anchored["observations"] = [
                 {"quote_id": ids[i], "interpretation": ob["interpretation"]}
@@ -531,3 +535,59 @@ def test_source_and_pit_flags_are_code_owned_in_saved_output(tmp_path: Path) -> 
     assert interpretation["causal_impact_proven"] is False
     assert interpretation["stock_direction_predicted"] is False
     assert report["trainingReady"] is False
+
+@pytest.mark.parametrize("forged_key, forged_value", [
+    ("accession", "0001045810-99-999999"),
+    ("source_sha256", "a" * 64),
+    ("accession", ACC),
+    ("source_sha256", SHA),
+])
+def test_model_cannot_write_original_sec_identity(
+    tmp_path: Path, forged_key: str, forged_value: str,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    bad = _as_anchored(_response(prepared["cases"][0]), prepared["cases"][0])
+    bad[forged_key] = forged_value
+
+    class _UntrustedProvider:
+        model_id = "untrusted-fixture"
+
+        def generate_json(self, *, system: str, user: str,
+                          schema: dict[str, object] | None) -> str:
+            assert forged_key not in schema["required"]
+            assert forged_key not in schema["properties"]
+            return json.dumps(bad)
+
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_RESPONSE_SCHEMA_INVALID"):
+        run_semantic_research(prepared, _UntrustedProvider(), limit=1)
+
+
+def test_sec_identity_is_derived_from_pinned_source_not_from_model(
+    tmp_path: Path,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    case = prepared["cases"][0]
+    provider = _HypothesisCorrectionProvider([_response(case)])
+    report = run_semantic_research(prepared, provider, limit=1)
+    initial_schema = provider.calls[0]["schema"]
+    assert set(initial_schema["required"]) == {
+        "observations", "hypotheses", "summary",
+    }
+    assert report["cases"][0]["interpretation"]["accession"] == case["accession"]
+    assert report["cases"][0]["interpretation"]["source_sha256"] == case["sourceSha256"]
+    assert report["cases"][0]["accession"] == case["accession"]
+    assert report["cases"][0]["sourceSha256"] == case["sourceSha256"]
+    assert report["trainingReady"] is False
+
+
+def test_final_identity_guard_still_rejects_mutations(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    case = prepared["cases"][0]
+    raw = _response(case)
+    raw["accession"] = "0001045810-99-999999"
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_UNSUPPORTED_MODEL_CLAIM"):
+        _validate_response(case, json.dumps(raw))
+    raw = _response(case)
+    raw["source_sha256"] = "a" * 64
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_UNSUPPORTED_MODEL_CLAIM"):
+        _validate_response(case, json.dumps(raw))

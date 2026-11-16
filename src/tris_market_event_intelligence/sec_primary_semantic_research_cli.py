@@ -81,10 +81,12 @@ a number, industry news, a historical first-publication clock, a cause of stock
 returns or a prospective stock direction forecast.
 For observations, SELECT a quote_id from the numbered, exact-source
 quoteAnchors list. Explain the selected excerpt tentatively in interpretation.
-DO NOT output evidence_id, verbatim_quote or these safety-status keys:
+DO NOT output accession, source_sha256, evidence_id, verbatim_quote,
 historical_public_time_verified, causal_impact_proven, stock_direction_predicted.
-Code attaches exact original quote bytes and sets unverified status from
-source/PIT policy; the model has no authority over those three fields.
+These are source/validator-owned provenance and safety-status fields; code inserts
+the SHA-verified original identity, exact original quote bytes, and unverified
+status only after validating the complete provider-owned field set.
+The model must never author source identity, evidence citations, or safety flags.
 Never invent quote IDs or describe unsupported facts as established evidence.
 Hypotheses must include exactly one each: issuer fundamentals possibility,
 unverified sector/competitor alternative, and missing-context explanation.
@@ -125,18 +127,20 @@ def _quote_anchors(case: dict) -> dict[str, str]:
 def _anchored_model_schema(anchors: dict[str, str]) -> dict:
     """Provider-side constraints without weakening the final strict validator."""
     schema = json.loads(json.dumps(MODEL_SCHEMA))
-    # These are verified absence-of-evidence constraints, NOT LLM judgments.
+    # Verified source identity and absence-of-evidence constraints are NOT LLM judgments.
     # Keep them in the final stored schema but remove them from the provider's
-    # writable JSON contract entirely (no fabricated true/false declarations).
-    safety_fields = (
+    # writable JSON contract entirely (no fake accession, hash or status).
+    source_owned_fields = (
+        "accession",
+        "source_sha256",
         "historical_public_time_verified",
         "causal_impact_proven",
         "stock_direction_predicted",
     )
     schema["required"] = [
-        key for key in schema["required"] if key not in safety_fields
+        key for key in schema["required"] if key not in source_owned_fields
     ]
-    for key in safety_fields:
+    for key in source_owned_fields:
         del schema["properties"][key]
     schema["properties"]["observations"]["items"] = {
         "type": "object", "additionalProperties": False,
@@ -159,6 +163,7 @@ def _expand_anchored_observations(
         raise ValueError("SEC_SEMANTIC_RESPONSE_SIZE_INVALID")
     result = json.loads(raw)
     expected_fields = set(MODEL_SCHEMA["required"]) - {
+        "accession", "source_sha256",
         "historical_public_time_verified", "causal_impact_proven",
         "stock_direction_predicted",
     }
@@ -186,6 +191,10 @@ def _expand_anchored_observations(
             "interpretation": item["interpretation"],
         })
     result["observations"] = expanded
+    # Original SEC identity was already pinned and verified against raw bytes.
+    # Never allow the LLM to choose or echo an authoritative accession/hash.
+    result["accession"] = case["accession"]
+    result["source_sha256"] = case["sourceSha256"]
     # Inability to establish these facts is owned by source/PIT validation.
     # This never means the model independently assessed them as false.
     result["historical_public_time_verified"] = False

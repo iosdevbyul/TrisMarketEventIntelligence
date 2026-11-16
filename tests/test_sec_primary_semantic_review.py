@@ -115,6 +115,7 @@ class _Provider:
         self.calls.append(acc)
         anchored = _model(self.by_acc[acc])
         for key in (
+            "accession", "source_sha256",
             "historical_public_time_verified", "causal_impact_proven",
             "stock_direction_predicted",
         ):
