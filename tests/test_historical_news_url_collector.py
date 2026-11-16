@@ -227,3 +227,43 @@ def test_nonarticle_main_marketing_not_passed_as_real_reporting() -> None:
     )
     with pytest.raises(ValueError, match="NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE"):
         fetcher.parse_article(page.encode(), URLS[0], AS_OF, "a1")
+
+
+def test_structured_publisher_article_body_fallback_uses_actual_page_text() -> None:
+    substantive = (
+        "Nvidia publicly announced an independent internal review after "
+        "the reports regarding CEO Jensen Huang and concerns about the "
+        "security and governance processes at the company. " * 4
+    )
+    source = (
+        '<html><head><meta property="article:published_time" '
+        'content="2026-11-08T21:00:00Z"/>'
+        '<meta property="og:title" content="Nvidia leadership review announcement"/>'
+        '<script type="application/ld+json">'
+        + json.dumps({
+            "@type": "NewsArticle",
+            "datePublished": "2026-11-08T21:00:00Z",
+            "articleBody": substantive,
+        })
+        + '</script></head><body><main><p>Sign in for more content.</p></main>'
+        '</body></html>'
+    )
+    result = fetcher.parse_article(source.encode(), URLS[0], AS_OF, "a1")
+    assert result["body"] == " ".join(substantive.split())
+
+
+def test_jsonld_short_description_is_not_substituted_for_full_article() -> None:
+    source = (
+        '<html><head><meta property="article:published_time" '
+        'content="2026-11-08T21:00:00Z"/>'
+        '<meta property="og:title" content="Nvidia leadership review announcement"/>'
+        '<script type="application/ld+json">'
+        + json.dumps({
+            "@type": "NewsArticle",
+            "datePublished": "2026-11-08T21:00:00Z",
+            "description": "An announcement related to a company.",
+        })
+        + '</script></head><body></body></html>'
+    )
+    with pytest.raises(ValueError, match="NEWS_URL_ORIGINAL_BODY_NOT_AVAILABLE"):
+        fetcher.parse_article(source.encode(), URLS[0], AS_OF, "a1")
