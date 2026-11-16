@@ -23,6 +23,12 @@ from tris_market_event_intelligence.news_llm_factory import build_runtime
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
     _source_review,
 )
+from tris_market_event_intelligence.sec_semantic_evidence_gate import (
+    ABSTENTION_SUMMARY,
+    INSUFFICIENT,
+    source_evidence_status,
+    validate_concrete_claims,
+)
 from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 
 MAX_INPUT = 2_500_000
@@ -500,7 +506,7 @@ def _repair_failure_code(case: dict, hypotheses: object) -> str:
 
 def run_semantic_research(
     prepared: dict, provider: LLMProvider, *, limit: int = 3,
-    start_index: int = 0,
+    start_index: int = 0, evidence_gated: bool = False,
 ) -> dict:
     if (prepared.get("schemaVersion") != "sec_primary_semantic_input_v1"
             or prepared.get("status") !=
@@ -518,6 +524,23 @@ def run_semantic_research(
     for case_index, case in enumerate(
         prepared["cases"][start_index:start_index + limit], start=start_index,
     ):
+        if evidence_gated and source_evidence_status(case["evidence"][0]["text"]) == INSUFFICIENT:
+            # Deterministic abstention BEFORE invoking the provider.
+            results.append({
+                "accession": case["accession"],
+                "sourceSha256": case["sourceSha256"],
+                "caseIndex": case_index,
+                "analysisStatus": INSUFFICIENT,
+                "quoteAnchorSelectionApplied": False,
+                "interpretation": {
+                    "observations": [], "hypotheses": [],
+                    "summary": ABSTENTION_SUMMARY,
+                },
+                "hypothesesCorrectionAttempted": False,
+                "sourceInterpretationIsHumanUnverified": True,
+                "historicalTimeEligibility": False,
+            })
+            continue
         request = {
             "accession": case["accession"],
             "source_sha256": case["sourceSha256"],
@@ -545,6 +568,8 @@ def run_semantic_research(
         try:
             validated = _validate_response(case, anchored_raw)
             _check_ungrounded_specifics(case, validated)
+            if evidence_gated:
+                validate_concrete_claims(case, validated)
         except ValueError as exc:
             if str(exc) not in {
                 "SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED",
@@ -558,6 +583,8 @@ def run_semantic_research(
             try:
                 validated = _validate_response(case, json.dumps(revised))
                 _check_ungrounded_specifics(case, validated)
+                if evidence_gated:
+                    validate_concrete_claims(case, validated)
             except ValueError as repair_exc:
                 if str(repair_exc) in {
                     "SEC_SEMANTIC_HYPOTHESIS_UNSUPPORTED",
@@ -571,6 +598,8 @@ def run_semantic_research(
                 raise
             repair_used = True
         results.append({
+            **({"analysisStatus": "SUBSTANTIVE_ISSUER_EVIDENCE_PRESENT"}
+               if evidence_gated else {}),
             "accession": case["accession"], "sourceSha256": case["sourceSha256"],
             "caseIndex": case_index,
             "quoteAnchorSelectionApplied": True,
@@ -585,10 +614,16 @@ def run_semantic_research(
         "primaryReportSha256": prepared["primaryReportSha256"],
         "modelId": provider.model_id,
         "casesAnalyzed": len(results),
+        **({"evidenceGateVersion": "sec_substantive_evidence_v1",
+            "casesAbstained": sum(
+                row.get("analysisStatus") == INSUFFICIENT for row in results
+            )} if evidence_gated else {}),
         "startIndex": start_index,
         "originalCasesAvailable": len(prepared["cases"]),
         "cases": results,
-        "modelCalls": len(results) + sum(row["hypothesesCorrectionAttempted"] for row in results),
+        "modelCalls": sum(
+            row.get("analysisStatus") != INSUFFICIENT for row in results
+        ) + sum(row["hypothesesCorrectionAttempted"] for row in results),
         "hypothesesCorrectionCount": sum(row["hypothesesCorrectionAttempted"] for row in results),
         "allQuoteSpansVerifiedAgainstOriginalSHA": True,
         "historicalPublicTimesIndependentlyVerified": 0,
@@ -609,6 +644,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, choices=(1, 2, 3), default=2)
     parser.add_argument("--start-index", type=int, default=0)
     parser.add_argument("--model", default="gemma4:e2b")
+    # New CLI execution uses the evidence gate by default. The legacy Python
+    # API remains readable for existing archived fixture generation.
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--prepare", action="store_true")
     modes.add_argument("--run", action="store_true")
@@ -635,6 +672,7 @@ def main() -> None:
             report = run_semantic_research(
                 prepared, provider=provider, limit=args.limit,
                 start_index=args.start_index,
+                evidence_gated=True,
             )
         stage = "WRITE_NEW_OUTPUT"
         _write(args.output, report)

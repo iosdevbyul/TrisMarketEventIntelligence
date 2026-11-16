@@ -40,7 +40,9 @@ def test_replay_only_exact_existing_baseline_cases(tmp_path: Path) -> None:
     provider = _Provider(prepared["cases"])
     candidate = replay_candidate(prepared, plan, provider)
     assert [c["caseIndex"] for c in candidate["cases"]] == [1, 2]
-    assert len(provider.calls) == 2
+    assert len(provider.calls) == 0
+    assert candidate["modelCalls"] == 0
+    assert candidate["casesAbstained"] == 2
     assert candidate["trainingReady"] is False
     assert candidate["promotionAllowed"] is False
 

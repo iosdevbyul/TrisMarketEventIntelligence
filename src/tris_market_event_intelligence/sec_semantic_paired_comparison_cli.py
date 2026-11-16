@@ -21,6 +21,8 @@ from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_js
 
 def _fields(case: dict) -> dict[str, str]:
     fields: dict[str, str] = {}
+    if case.get("analysisStatus") == "INSUFFICIENT_SUBSTANTIVE_EVIDENCE":
+        return {"analysisStatus": case["analysisStatus"], "summary": case["summary"]}
     for i, observation in enumerate(case["observations"]):
         fields[f"observations[{i}].interpretation"] = observation["interpretation"]
     for i, hypothesis in enumerate(case["hypotheses"]):
@@ -55,6 +57,9 @@ def compare_semantic_reports(
         if old["semanticReportSha256"] == updated["semanticReportSha256"]:
             raise ValueError("SEC_PAIRED_INDEPENDENT_CANDIDATE_REQUIRED")
         old_fields, new_fields = _fields(old), _fields(updated)
+        if old.get("analysisStatus") != updated.get("analysisStatus"):
+            old_fields["analysisStatus"] = old.get("analysisStatus", "LEGACY_ANALYZED")
+            new_fields["analysisStatus"] = updated.get("analysisStatus", "LEGACY_ANALYZED")
         # Observation count can change between generations, but changes must
         # be explicit and never silently counted as no change.
         locations = sorted(old_fields.keys() | new_fields.keys())

@@ -30,6 +30,10 @@ from tris_market_event_intelligence.sec_primary_semantic_review_cli import (
     MAX_REPORT_BYTES,
     build_review_packet,
 )
+from tris_market_event_intelligence.sec_semantic_evidence_gate import (
+    INSUFFICIENT,
+    source_evidence_status,
+)
 from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_json
 
 
@@ -71,7 +75,7 @@ def replay_candidate(
 ) -> dict:
     report = run_semantic_research(
         prepared, provider, start_index=plan["startIndex"],
-        limit=len(plan["caseIndexes"]),
+        limit=len(plan["caseIndexes"]), evidence_gated=True,
     )
     if ([case["caseIndex"] for case in report["cases"]] != plan["caseIndexes"]
             or report["primaryReportSha256"] != plan["primaryReportSha256"]
@@ -115,14 +119,30 @@ def main() -> None:
             print(json.dumps(plan))
             return
         stage = "INITIALIZE_PROVIDER"
-        settings = replace(
-            LLMSettings.from_environment(explicit=True), model_id=args.model,
-            capabilities=LLMCapabilities(
-                json_schema=True, thinking=False,
-                context_window=8192, max_output_tokens=3072,
-            ),
-        )
-        provider = build_runtime(settings, confirm_model=True)
+        requested = prepared["cases"][
+            plan["startIndex"]:plan["startIndex"] + len(plan["caseIndexes"])
+        ]
+        if all(
+            source_evidence_status(case["evidence"][0]["text"]) == INSUFFICIENT
+            for case in requested
+        ):
+            # No Ollama probing or provider network when every case abstains.
+            class NoModelProvider:
+                model_id = args.model
+
+                def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+                    raise AssertionError("SEC_MODEL_MUST_NOT_RUN_ON_INSUFFICIENT_SOURCE")
+
+            provider = NoModelProvider()
+        else:
+            settings = replace(
+                LLMSettings.from_environment(explicit=True), model_id=args.model,
+                capabilities=LLMCapabilities(
+                    json_schema=True, thinking=False,
+                    context_window=8192, max_output_tokens=3072,
+                ),
+            )
+            provider = build_runtime(settings, confirm_model=True)
         stage = "GENERATE_AND_VALIDATE_CANDIDATE"
         candidate = replay_candidate(prepared, plan, provider)
         stage = "WRITE_CREATE_ONLY_PRIVATE_OUTPUT"
@@ -130,6 +150,7 @@ def main() -> None:
         print(json.dumps({
             "status": candidate["status"],
             "casesAnalyzed": candidate["casesAnalyzed"],
+            "casesAbstained": candidate["casesAbstained"],
             "caseIndexes": plan["caseIndexes"],
             "modelCalls": candidate["modelCalls"],
             "baselineModified": False,

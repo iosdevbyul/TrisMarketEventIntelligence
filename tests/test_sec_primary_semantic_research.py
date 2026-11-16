@@ -258,7 +258,9 @@ def test_cli_reports_redacted_model_stage_and_error_code(
 
     def fail_model(
         prepared: dict, provider: object, *, limit: int, start_index: int,
+        evidence_gated: bool,
     ) -> dict:
+        assert evidence_gated is True
         raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
 
     monkeypatch.setattr(semantic_cli, "run_semantic_research", fail_model)
