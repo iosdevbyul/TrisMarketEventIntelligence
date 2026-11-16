@@ -78,6 +78,8 @@ def build_review_packet(
                 raise ValueError("SEC_SEMANTIC_REVIEW_CASE_PROVENANCE_INVALID")
             analysis_status = item.get("analysisStatus")
             gated = report.get("evidenceGateVersion") == "sec_substantive_evidence_v1"
+            if gated and analysis_status not in {INSUFFICIENT, SUBSTANTIVE}:
+                raise ValueError("SEC_SEMANTIC_ANALYSIS_STATUS_INVALID")
             if analysis_status == INSUFFICIENT and gated:
                 if (source_evidence_status(case["evidence"][0]["text"]) != INSUFFICIENT
                         or item.get("quoteAnchorSelectionApplied") is not False
