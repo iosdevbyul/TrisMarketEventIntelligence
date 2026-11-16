@@ -957,3 +957,31 @@ until independently verified public availability with actual
 point-in-time provenance and a much broader event/control universe
 can be established and a genuinely chronological sealed evaluation
 is designed.**
+
+## PR #188 — real SEC original-index custody, historical first-public clock remains unknown
+
+The Mac has already created the PIT cohort: 136 filings, ten SHA-pinned SEC events, and 69 ex-ante form/year research tasks. PR #188 adds an opt-in SEC original HTML capture for an explicitly bounded subset of that fixed queue.
+
+SEC's own Webmaster FAQ (https://www.sec.gov/about/webmaster-frequently-asked-questions) explains that SEC filing acceptance and first public web availability can differ, and it does not supply an EDGAR first-web-public timestamp. Hence SEC accepted time must not be falsely promoted to a historical market-usable availability time.
+
+New `sec-publication-capture` checks accession, original NVIDIA issuer SEC archive URL, SEC form, filing day, source SHA and the complete existing PIT ledger, then reuses any cached SEC original `sec-<accession>-index.html` without downloading it. For uncached sources `--run` explicitly fetches only the missing official SEC filing-index HTML at less than 2 requests per second and saves originals with 0600 create-only protections. Source index metadata must show NVIDIA, accession, filing form/date and SEC accepted header. The separate immutable audit JSON contains source SHA, whether cached, and the accepted header text without assuming its timezone. It NEVER states when this historic document was first public: `historicalFirstPublicAvailabilityAt` and `firstIndependentHistoricalObservedAt` remain null, `trainingReady=false`.
+
+The source content being retrievable today cannot independently prove a 2017–2026 publisher's first publication clock. The genuine future research step is to locate authentic contemporaneous timestamped third-party observation/official dissemination feeds, retain original bytes and authenticated observation timestamp, then compare them to decision cutoffs. Do not backdate modern discovery timestamps. No price outcomes, no model promotion or 24x7.
+
+After merging this PR, user Mac command to capture first 12 preselected source tasks (not all 69) exactly once; preserve existing files:
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-sec-publication-original-index-batch01-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+elif [[ -z "${TRIS_SEC_USER_AGENT:-}" ]]; then
+  echo SEC_USER_AGENT_NOT_CONFIGURED
+else
+  bash scripts/news-learning-review.sh --update sec-publication-capture \
+    --cohort "$DATA/nvda-sec-pit-availability-cohort-2017-2026-v1.json" \
+    --source-dir "$DATA" --limit 12 --run --output "$OUT"
+fi
+```
+
+Preview is deliberately offline cache verification, and fails if any selected HTML has not yet been captured. An actual `--run` may fail due to SEC HTTP/HTML content differences; preserve any validated partial raw cache and do not recreate existing SEC inventory, NVDA/SPY prices, v1/v2 research or 2018 independent SEC event.
