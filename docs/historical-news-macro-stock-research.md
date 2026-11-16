@@ -1166,3 +1166,12 @@ bash scripts/news-learning-review.sh --update sec-semantic-quality \
 ```
 
 If successful, preserve all existing files, keep the private audit JSON local and evaluate flagged *locations* against the original review text. Continue indices 4–6, 7–9 and 10–11 from already downloaded and SHA-pinned SEC primary sources with separate new filenames. Retrospective semantic claims are not price-outcome features; no refetch, historical first-public timestamp leap or stock-direction training.
+
+
+### 2026-11-17: Case 4–6 real Mac failed on unsupported model-owned safety claim
+
+After the original 4 SEC semantic cases passed strict SHA/quote verification and the redacted static triage found three non-conclusive potential causal-language findings, a guarded run for indices 4–6 failed with `SEC_SEMANTIC_UNSUPPORTED_MODEL_CLAIM`. The error combines checks for source accession/SHA identity and three model-generated safety booleans, so the redacted error alone does **not** identify which field disagreed. No 4–6 output and no later 7–11 output or 12-case review packet was created.
+
+The initial Ollama schema previously asked the model to emit three booleans declaring `historical_public_time_verified`, `causal_impact_proven` and `stock_direction_predicted` as false. These are not model-authoritative assessments; they express limitations of the authenticated source and PIT corpus. The initial provider schema now omits these keys entirely, with `additionalProperties=false`, and rejects any model response containing them, even if the value is `false`. The validator deterministically fills the three fields as false **only after** an exact expected field-set check. The full final `_validate_response` remains unchanged, including source accession, SHA identity, exact quotes, citation and hypothesis checks. If the real error was actually model-echoed accession/hash mismatch, this change will not hide it: those still fail closed and require separate diagnosis. Existing first four reports remain immutable and accepted by offline review; no data re-download or production/training/market forecast change.
+
+After CI success and merge, retry only the **failed, create-only** indices 4–6 batch once; do not repeat 0–3 or assume 7–11 were run. If the same or a new error occurs, stop and report the redacted error before further changes. On success, finish 7–9 then 10–11 and regenerate the 12-case human-review and heuristic triage packets in distinct new files.

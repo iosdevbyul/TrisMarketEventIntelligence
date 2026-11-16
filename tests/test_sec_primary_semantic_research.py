@@ -108,9 +108,18 @@ def _response(case: dict) -> dict:
     }
 
 
+
+
+def _without_model_safety_claims(response: dict) -> dict:
+    result = copy.deepcopy(response)
+    for field in ("historical_public_time_verified", "causal_impact_proven", "stock_direction_predicted"):
+        result.pop(field, None)
+    return result
+
+
 def _as_anchored(response: dict, case: dict) -> dict:
     """Stub format intentionally mirrors the new provider wire contract."""
-    anchored = copy.deepcopy(response)
+    anchored = _without_model_safety_claims(response)
     anchors = _quote_anchors(case)
     values = list(anchors)
     anchored["observations"] = [
@@ -140,7 +149,7 @@ class _StubProvider:
             row["quote_id"]: row["verbatimSourceText"]
             for row in self.messages[-1]["quoteAnchors"]
         }
-        anchored = copy.deepcopy(response)
+        anchored = _without_model_safety_claims(response)
         anchored["observations"] = [
             {"quote_id": list(anchor_map)[i], "interpretation": ob["interpretation"]}
             for i, ob in enumerate(response["observations"])
@@ -303,7 +312,7 @@ class _HypothesisCorrectionProvider:
         self.calls.append({"request": request, "schema": schema})
         response = self.responses.pop(0)
         if "quoteAnchors" in request:
-            anchored = copy.deepcopy(response)
+            anchored = _without_model_safety_claims(response)
             ids = [row["quote_id"] for row in request["quoteAnchors"]]
             anchored["observations"] = [
                 {"quote_id": ids[i], "interpretation": ob["interpretation"]}
@@ -485,5 +494,40 @@ def test_anchored_model_cannot_claim_verified_publication(tmp_path: Path) -> Non
                           schema: dict[str, object] | None) -> str:
             return json.dumps(original)
 
-    with pytest.raises(ValueError, match="SEC_SEMANTIC_UNSUPPORTED_MODEL_CLAIM"):
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_RESPONSE_SCHEMA_INVALID"):
         run_semantic_research(prepared, _UntrustedProvider(), limit=1)
+
+
+@pytest.mark.parametrize("unexpected", [
+    "historical_public_time_verified", "causal_impact_proven",
+    "stock_direction_predicted",
+])
+def test_model_safety_claims_rejected_even_if_false(
+    tmp_path: Path, unexpected: str,
+) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    bad = _as_anchored(_response(prepared["cases"][0]), prepared["cases"][0])
+    bad[unexpected] = False
+
+    class _UntrustedProvider:
+        model_id = "fixture"
+        def generate_json(self, *, system: str, user: str,
+                          schema: dict[str, object] | None) -> str:
+            assert unexpected not in schema["properties"]
+            assert unexpected not in schema["required"]
+            return json.dumps(bad)
+
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_RESPONSE_SCHEMA_INVALID"):
+        run_semantic_research(prepared, _UntrustedProvider(), limit=1)
+
+
+def test_source_and_pit_flags_are_code_owned_in_saved_output(tmp_path: Path) -> None:
+    prepared = prepare_primary_cases(_original_packet(tmp_path), "a" * 64, tmp_path)
+    report = run_semantic_research(
+        prepared, _StubProvider([_response(prepared["cases"][0])]), limit=1,
+    )
+    interpretation = report["cases"][0]["interpretation"]
+    assert interpretation["historical_public_time_verified"] is False
+    assert interpretation["causal_impact_proven"] is False
+    assert interpretation["stock_direction_predicted"] is False
+    assert report["trainingReady"] is False
