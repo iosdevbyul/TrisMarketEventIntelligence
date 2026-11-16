@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -90,13 +89,11 @@ def test_prepare_mode_does_not_call_model_or_write_file(
     report = tmp_path / "baseline.json"
     original.write_text(json.dumps(primary), encoding="utf-8")
     report.write_text(json.dumps(baseline[0][0]), encoding="utf-8")
-    sha = hashlib.sha256(original.read_bytes()).hexdigest()
-    baseline_sha = hashlib.sha256(report.read_bytes()).hexdigest()
     def read_pinned(path: Path, limit: int) -> tuple[dict, str]:
         if path == original:
-            return primary, sha
+            return primary, "a" * 64
         if path == report:
-            return baseline[0][0], baseline_sha
+            return baseline[0][0], "b" * 64
         raise AssertionError("Unexpected file")
     monkeypatch.setattr(replay_cli, "_read_json", read_pinned)
     monkeypatch.setattr(
