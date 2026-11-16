@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh [--update] historical-impact-test --input PRIVATE_NEWS_JSON --prepare|--run [--model gemma4:e2b --output NEW_PRIVATE_RESULT_JSON]"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-semantic --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --prepare|--run [--model gemma4:e2b --limit 3 --start-index 1 --body-spans|--multi-passages] --output NEW_PRIVATE_JSON"\n  echo "  bash scripts/news-learning-review.sh [--update] sec-semantic-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_REVIEW_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-claim-review --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --report SEMANTIC_JSON [--report ANOTHER_JSON] --output NEW_PRIVATE_CLAIMS_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-candidate-replay --primary ORIGINAL_JSON --source-dir PRIVATE_DIR --baseline-report ORIGINAL_SEMANTIC_JSON --start-index 0 --limit 1 --prepare|--run [--body-spans|--multi-passages --model gemma4:e2b --output NEW_PRIVATE_JSON]"
@@ -158,6 +159,9 @@ case "$action" in
     ;;
   historical-price-outcomes)
     module="tris_market_event_intelligence.historical_price_outcome_cohort_cli"
+    ;;
+  historical-impact-test)
+    module="tris_market_event_intelligence.historical_news_impact_test_cli"
     ;;
   historical-independent)
     module="tris_market_event_intelligence.historical_independent_news_cli"

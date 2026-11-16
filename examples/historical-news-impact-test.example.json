@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "historical_news_impact_test_v1",
+  "caseId": "DEMO-ONLY-not-real-market-news",
+  "asOf": "2018-07-12T15:00:00Z",
+  "horizonTradingDays": 1,
+  "articles": [
+    {
+      "articleId": "a1",
+      "publishedAt": "2018-07-12T11:00:00Z",
+      "source": "Fictional Example Press",
+      "title": "Fictional Example Devices announces processor production delay",
+      "body": "Fictional Example Devices reported a production delay affecting its flagship processors. The company said that its output would remain below previously planned levels during the current quarter. Customers may experience revised processor shipment schedules."
+    },
+    {
+      "articleId": "a2",
+      "publishedAt": "2018-07-12T14:30:00Z",
+      "source": "Fictional Example Business Update",
+      "title": "Fictional Example Devices clarifies the delayed shipment announcement",
+      "body": "Fictional Example Devices confirmed its earlier production delay report and said shipments may slip by several weeks. The firm clarified that other processor products were not affected by the production disruption. The company did not disclose the potential financial impact."
+    }
+  ],
+  "knownTickers": [
+    {
+      "ticker": "EXDV",
+      "companyName": "Fictional Example Devices",
+      "sector": "SEMICONDUCTORS"
+    }
+  ]
+}
