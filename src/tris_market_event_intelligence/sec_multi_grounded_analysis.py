@@ -64,7 +64,7 @@ def _schema(anchors: dict[str, dict]) -> dict:
         "required": ["observations", "hypotheses", "summary"],
         "properties": {
             "observations": {
-                "type": "array", "minItems": 1, "maxItems": len(anchors),
+                "type": "array", "minItems": 2, "maxItems": len(anchors),
                 "items": {
                     "type": "object", "additionalProperties": False,
                     "required": ["quote_id", "interpretation"],
@@ -135,7 +135,7 @@ def validate_ranked_interpretation(case: dict, interpretation: dict) -> dict:
     observations = interpretation["observations"]
     hypotheses = interpretation["hypotheses"]
     summary = interpretation["summary"]
-    if (not isinstance(observations, list) or not 1 <= len(observations) <= 3
+    if (not isinstance(observations, list) or not 2 <= len(observations) <= 3
             or not isinstance(hypotheses, list) or len(hypotheses) > 1
             or not isinstance(summary, str) or not 15 <= len(summary) <= 900):
         raise ValueError("SEC_MULTI_RESPONSE_CARDINALITY_INVALID")
@@ -185,8 +185,15 @@ def generate_ranked_interpretation(case: dict, provider: object) -> dict:
     anchors = _anchors(case)
     request = {
         "sourceEvidence": [
-            {"quote_id": key, "verbatimSourceText": data["quote"]}
-            for key, data in anchors.items()
+            {
+                "quote_id": key,
+                "verbatimSourceText": data["quote"],
+                "contextWindow": evidence["text"],
+            }
+            for key, data, evidence in (
+                (key, value, case["evidence"][i])
+                for i, (key, value) in enumerate(anchors.items())
+            )
         ],
         "causalQuoteIds": [key for key, data in anchors.items() if data["causalCue"]],
         "independentSectorEvidenceAvailable": False,
