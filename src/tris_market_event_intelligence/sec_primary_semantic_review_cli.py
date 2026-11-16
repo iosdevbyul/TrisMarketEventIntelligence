@@ -23,6 +23,11 @@ from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     _validate_response,
     prepare_primary_cases,
 )
+from tris_market_event_intelligence.sec_ranked_multi_passages import (
+    VERSION as MULTI_VERSION,
+    reverify_ranked_passages,
+    select_ranked_passages,
+)
 from tris_market_event_intelligence.sec_revenue_context_guard import (
     STOP_STATUSES,
     validated_stopped_interpretation,
@@ -72,6 +77,11 @@ def build_review_packet(
                 or not report["modelId"]):
             raise ValueError("SEC_SEMANTIC_REVIEW_REPORT_PROVENANCE_INVALID")
         body_mode = report.get("bodySpanSelectionVersion")
+        multi_mode = report.get("multiPassageVersion")
+        if multi_mode is not None and (
+            multi_mode != MULTI_VERSION or body_mode is not None
+        ):
+            raise ValueError("SEC_MULTI_REPORT_VERSION_INVALID")
         if body_mode is not None and body_mode not in {VERSION, CONTEXT_VERSION}:
             raise ValueError("SEC_BODY_SPAN_SELECTION_VERSION_INVALID")
         corrections = 0
@@ -83,6 +93,21 @@ def build_review_packet(
             if not isinstance(acc, str) or acc not in by_accession or acc in seen:
                 raise ValueError("SEC_SEMANTIC_REVIEW_DUPLICATE_OR_UNKNOWN_CASE")
             index, case = by_accession[acc]
+            if multi_mode == MULTI_VERSION:
+                raw_path = source_dir / f"sec-{acc}-primary.source"
+                if (raw_path.is_symlink() or not raw_path.is_file()
+                        or raw_path.stat().st_size > 8_000_000):
+                    raise ValueError("SEC_MULTI_ORIGINAL_SOURCE_REQUIRED")
+                raw = raw_path.read_bytes()
+                expected_passages = select_ranked_passages(case, raw)
+                if ("sourcePassages" in item) != (len(expected_passages) >= 2):
+                    raise ValueError("SEC_MULTI_SELECTION_MISMATCH")
+                if len(expected_passages) >= 2:
+                    case = reverify_ranked_passages(
+                        case, raw, item["sourcePassages"],
+                    )
+            elif "sourcePassages" in item:
+                raise ValueError("SEC_MULTI_REPORT_VERSION_REQUIRED")
             if body_mode in {VERSION, CONTEXT_VERSION}:
                 raw_path = source_dir / f"sec-{acc}-primary.source"
                 if raw_path.is_symlink() or not raw_path.is_file():
@@ -113,6 +138,7 @@ def build_review_packet(
                     if body_mode == CONTEXT_VERSION else None
                 )
                 expected_status = (
+                    INSUFFICIENT if multi_mode == MULTI_VERSION else
                     expected_context
                     or (INSUFFICIENT if source_evidence_status(
                         case["evidence"][0]["text"]
@@ -137,13 +163,19 @@ def build_review_packet(
                     or source_evidence_status(case["evidence"][0]["text"]) != SUBSTANTIVE
                 ):
                     raise ValueError("SEC_SEMANTIC_ANALYSIS_STATUS_INVALID")
-                validated = _validate_response(
-                    case, json.dumps(item.get("interpretation"), ensure_ascii=False),
+                validated = (
+                    validate_ranked_interpretation(case, item.get("interpretation"))
+                    if multi_mode == MULTI_VERSION else
+                    _validate_response(
+                        case, json.dumps(item.get("interpretation"), ensure_ascii=False),
+                    )
                 )
             seen.add(acc)
             corrections += int(item["hypothesesCorrectionAttempted"])
             entries.append({
                 "caseIndex": index,
+                **({"sourcePassages": case["sourcePassages"]}
+                   if "sourcePassages" in case else {}),
                 **({"sourceSpan": case["sourceSpan"]} if "sourceSpan" in case else {}),
                 **({"analysisStatus": analysis_status} if gated else {}),
                 "accession": acc,
@@ -151,6 +183,11 @@ def build_review_packet(
                 "filingDate": case["filingDate"],
                 "sourceSha256": case["sourceSha256"],
                 "sourceExcerpt": case["evidence"][0]["text"],
+                **({"sourceExcerpts": [
+                    {"evidenceId": evidence["id"], "text": evidence["text"],
+                     "focusText": evidence["focusText"]}
+                    for evidence in case["evidence"]
+                ]} if "sourcePassages" in case else {}),
                 "modelId": report["modelId"],
                 "semanticReportSha256": digest,
                 "observations": [
