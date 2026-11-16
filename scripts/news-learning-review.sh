@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh [--update] sec-primary-semantic --primary SAVED_PRIMARY_JSON --source-dir PRIVATE_DIR --prepare|--run [--model gemma4:e2b --limit 2] --output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-primary-content --cohort PIT_JSON --batch INDEX_BATCH_JSON --source-dir PRIVATE_DIR --limit 12 --preview|--run --output NEW_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-source-lineage --cohort PRIVATE_PIT_JSON --study TEN_CASE_JSON --batch BATCH01_JSON --source-dir PRIVATE_DIR [--witnesses HISTORICAL_WITNESS_JSON] --preview|--output NEW_PRIVATE_JSON"
   echo "  bash scripts/news-learning-review.sh [--update] sec-publication-capture --cohort PRIVATE_JSON --source-dir PRIVATE_DIR --limit 12 --preview|--run --output NEW_PRIVATE_JSON"
@@ -100,6 +101,9 @@ fi
 shift
 
 case "$action" in
+  sec-primary-semantic)
+    module="tris_market_event_intelligence.sec_primary_semantic_research_cli"
+    ;;
   sec-primary-content)
     module="tris_market_event_intelligence.sec_primary_content_research_cli"
     ;;
