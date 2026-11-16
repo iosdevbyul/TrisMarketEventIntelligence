@@ -128,3 +128,20 @@ def test_article_metadata_jsonld_supported() -> None:
     )
     result = fetcher.parse_article(html_text.encode(), URLS[0], AS_OF, "a1")
     assert "independent board investigation" in result["body"]
+
+def test_rich_text_copy_identical_markdown_urls_accepted() -> None:
+    original = URLS[0]
+    assert fetcher._url(f"[{original}]({original})") == original
+    host = "https://techcrunch.com"
+    path = original.removeprefix(host)
+    assert fetcher._url(f"[{host}]({host}){path}") == original
+
+
+def test_rich_text_copy_mismatched_markdown_targets_rejected() -> None:
+    target = URLS[0]
+    with pytest.raises(ValueError, match="NEWS_URL_MARKDOWN_TARGET_MISMATCH"):
+        fetcher._url(f"[https://www.axios.com/story]({target})")
+    with pytest.raises(ValueError, match="NEWS_URL_MARKDOWN_TARGET_MISMATCH"):
+        fetcher._url(
+            "[https://www.axios.com](https://techcrunch.com)/2026/11/08/story"
+        )

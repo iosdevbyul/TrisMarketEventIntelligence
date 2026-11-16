@@ -44,6 +44,24 @@ def _date(raw: str) -> datetime:
 
 
 def _url(value: str) -> str:
+    # A terminal's rich-text copy may turn a literal URL into Markdown.
+    # Accept only an unambiguous exact-label link; never follow arbitrary
+    # displayed text pointing to an unrelated URL.
+    whole = re.fullmatch(r"\[(https://[^\]\s]+)\]\((https://[^)\s]+)\)", value)
+    if whole:
+        if whole.group(1) != whole.group(2):
+            raise ValueError("NEWS_URL_MARKDOWN_TARGET_MISMATCH")
+        value = whole.group(2)
+    else:
+        # Some clients linkify only the host while preserving the URL path.
+        prefix = re.fullmatch(
+            r"\[(https://[A-Za-z0-9.-]+)\]\((https://[A-Za-z0-9.-]+)\)(/[^\s]*)",
+            value,
+        )
+        if prefix:
+            if prefix.group(1) != prefix.group(2):
+                raise ValueError("NEWS_URL_MARKDOWN_TARGET_MISMATCH")
+            value = prefix.group(2) + prefix.group(3)
     p = urlsplit(value)
     if (p.scheme != "https" or p.hostname not in ALLOWED
             or p.username or p.password or p.port not in (None, 443)
