@@ -12,7 +12,7 @@ import hashlib
 import json
 import re
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -20,7 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.llm_runtime import (
-    LLMCapabilities, LLMExecutionError, LLMProvider, LLMSettings,
+    LLMCapabilities,
+    LLMExecutionError,
+    LLMProvider,
+    LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
@@ -108,12 +111,12 @@ class CaseInput(Strict):
 
 def _timestamp(value: str) -> datetime:
     try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("Invalid article UTC datetime") from exc
     if dt.tzinfo is None or dt.utcoffset() is None:
         raise ValueError("News timestamps require timezone offsets")
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 class EventGroup(Strict):
@@ -223,7 +226,7 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
         article_id: group.eventId
         for group in groups for article_id in group.articleIds
     }
-    if set(x.articleId for x in answer.eventStages) != set(articles):
+    if {x.articleId for x in answer.eventStages} != set(articles):
         raise ValueError("NEWS_TEST_STAGE_COVERAGE_INVALID")
     if len(answer.eventStages) != len(articles):
         raise ValueError("NEWS_TEST_DUPLICATE_STAGE_INVALID")
@@ -255,7 +258,11 @@ def _validate_answer(case: CaseInput, answer: ModelAnswer, lookup: dict[str, dic
                     or not TICKER.fullmatch(impact.ticker)):
                 raise ValueError("NEWS_TEST_STOCK_TARGET_INCOMPLETE")
             mapped = known_by_name.get(impact.companyName.casefold())
-            if (mapped is not None and impact.ticker != mapped.ticker):
+            known_ticker = known_by_ticker.get(impact.ticker)
+            if (mapped is not None and impact.ticker != mapped.ticker) or (
+                known_ticker is not None
+                and known_ticker.companyName.casefold() != impact.companyName.casefold()
+            ):
                 raise ValueError("NEWS_TEST_TICKER_MAPPING_CONFLICT")
             if (impact.exposure == "DIRECT"
                     and impact.companyName.casefold() not in article_text):
@@ -424,6 +431,23 @@ def main() -> None:
             "modelCalls": 1,
             "marketPricesRead": False,
             "accuracyVerified": False,
+            "eventResults": report["eventGroups"],
+            "eventLinks": report["eventLinks"],
+            "impactResults": [
+                {
+                    "targetType": row["targetType"],
+                    "companyName": row["companyName"],
+                    "ticker": row["ticker"],
+                    "tickerProvenance": row["tickerProvenance"],
+                    "sector": row["sector"],
+                    "direction": row["direction"],
+                    "intensity": row["intensity"],
+                    "conditionalMovePctRange": row["conditionalMovePctRange"],
+                    "mechanism": row["mechanism"],
+                    "uncertainty": row["uncertainty"],
+                }
+                for row in report["impacts"]
+            ],
             "outputCreated": True,
         }, ensure_ascii=False))
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError,
