@@ -1216,3 +1216,26 @@ bash scripts/news-learning-review.sh --update sec-claim-review \
 ```
 
 The resulting JSON contains PRIVATE SEC source text and model commentary: never commit, paste into logs, or expose over an API. The review packet itself does not record decisions or perform a semantic entailment verdict. `humanDecisionsRecorded=0`, first-public time verification 0, and all training/prediction/promotion gates remain false. Later human reviewers may use the stable field paths to compare supported claims, unsupported specifics, and legitimately uncertain scenarios; no automated success claim is allowed.
+
+
+### 2026-11-17: Same-source SEC baseline/candidate comparison
+
+The opt-in offline `sec-semantic-compare` command takes unchanged original SHA-pinned SEC primary content, one or more baseline semantic reports, and a separately generated candidate report set. Both sides pass the existing source-byte, quote and provenance checks through `build_review_packet`; case sets must match exactly with the same accession and source SHA. A distinct candidate semantic report SHA is mandatory for each case. Original reports are never modified.
+
+The resulting create-only private comparison JSON contains the paired case indices, report SHA references, safe field paths, and `ADDED` / `REMOVED` / `CHANGED` / `UNCHANGED` markers; it intentionally excludes generated model prose and original SEC excerpts. Mechanisms and limitations align by hypothesis category, rather than relying on the model's array order. These metrics are *difference counts only*: lower differences do not imply better or worse semantic accuracy. `semanticQualityImprovementVerified=false` and `humanDecisionsRecorded=0` must stay explicit until independent original-source claim adjudication.
+
+Example after producing a NEW candidate for exact original SEC indices 0-3, without overwriting any baseline:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update sec-semantic-compare \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-cases01-03-v1.json" \
+  --candidate-report "$DATA/NEW_SAME_CASE_CANDIDATE_00.json" \
+  --candidate-report "$DATA/NEW_SAME_CASE_CANDIDATE_01_03.json" \
+  --output "$DATA/nvda-sec-paired-comparison-00-03-v1.json"
+```
+
+The candidate paths above are placeholders, not created artifacts. Future evidence-based human scoring should read the separate private claim review packets, assess source entailment and unsupported detail per matched field, and compare adjudicated labels. No model self-approval, historical PIT upgrade, price training, or live deployment.
