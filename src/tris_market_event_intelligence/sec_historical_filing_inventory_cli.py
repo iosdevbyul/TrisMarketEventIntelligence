@@ -46,9 +46,9 @@ def _get_json(client: httpx.Client, url: str, user_agent: str) -> tuple[dict, st
         }, follow_redirects=False,
     ) as response:
         response.raise_for_status()
-        if response.headers.get("Content-Length", "0").isdigit():
-            if int(response.headers["Content-Length"]) > MAX_SOURCE_BYTES:
-                raise ValueError("SEC page too large")
+        if (response.headers.get("Content-Length", "0").isdigit()
+                and int(response.headers["Content-Length"]) > MAX_SOURCE_BYTES):
+            raise ValueError("SEC page too large")
         raw = bytearray()
         for chunk in response.iter_bytes():
             raw.extend(chunk)
@@ -56,7 +56,7 @@ def _get_json(client: httpx.Client, url: str, user_agent: str) -> tuple[dict, st
                 raise ValueError("SEC page too large")
     packet = json.loads(raw)
     if not isinstance(packet, dict):
-        raise ValueError("SEC page must be object")
+        raise TypeError("SEC page must be object")
     return packet, hashlib.sha256(raw).hexdigest()
 
 
@@ -66,7 +66,7 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
         "primaryDocument", "items",
     )
     if not isinstance(columns, dict):
-        raise ValueError("SEC columns missing")
+        raise TypeError("SEC columns missing")
     values = [columns.get(key) for key in fields]
     if (not all(isinstance(v, list) for v in values)
             or len({len(v) for v in values}) != 1
@@ -186,7 +186,7 @@ def inventory_from_sec(
     names = []
     for ref in files:
         if not isinstance(ref, dict):
-            raise ValueError("Invalid SEC history page")
+            raise TypeError("Invalid SEC history page")
         name = ref.get("name")
         if not isinstance(name, str) or not HISTORY_NAME.fullmatch(name):
             raise ValueError("Unsafe SEC history page name")
