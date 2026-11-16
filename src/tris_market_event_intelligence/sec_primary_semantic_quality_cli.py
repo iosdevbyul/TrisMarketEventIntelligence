@@ -23,20 +23,20 @@ from tris_market_event_intelligence.sec_source_lineage_audit_cli import _read_js
 
 MAX_REVIEW_BYTES = 1_000_000
 CAUSAL = re.compile(
-    r"\\b(?:caused|triggered|drove|driven|guaranteed|proves?|"
-    r"definitely|certainly)\\b",
+    r"\b(?:caused|triggered|drove|driven|guaranteed|proves?|"
+    r"definitely|certainly)\b",
     re.IGNORECASE,
 )
 PRICE = re.compile(
-    r"\\b(?:stock|share|price|returns?)\\s+"
-    r"(?:will|must|is going to|would certainly)\\s+"
-    r"(?:rise|fall|increase|decrease|surge|drop|rally)\\b",
+    r"\b(?:stock|share|price|returns?)\s+"
+    r"(?:will|must|is going to|would certainly)\s+"
+    r"(?:rise|fall|increase|decrease|surge|drop|rally)\b",
     re.IGNORECASE,
 )
 CLOCK = re.compile(
-    r"\\b(?:investors? (?:knew|saw|received)|"
+    r"\b(?:investors? (?:knew|saw|received)|"
     r"publicly available (?:before|at)|"
-    r"already known (?:before|at))\\b",
+    r"already known (?:before|at))\b",
     re.IGNORECASE,
 )
 
