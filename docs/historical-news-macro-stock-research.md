@@ -765,3 +765,80 @@ remain enforced. Run the same guarded official SEC inventory command
 and check whether `quarantinedPrimaryDocumentPaths` is nonzero.
 Then use the prior `sec-coverage-reconcile --preview` as the next
 offline evidence-gap audit.
+
+## Multi-year 8-K original SEC byte-custody + actual price outcomes
+
+As of Nov 16, 2026, real Mac SEC inventory (2017–2026: 136 candidates)
+and source-to-market coverage (one independent 2018-11-15 8-K,
+135 unverified candidates) are complete. User selected the **first
+8-K in each year**, without using future price returns to pick shocks.
+
+The existing source-review manifest
+`research/nvda-multiyear-sec-eight-k-official-review-2018-2026.json`
+contains seven public SEC index-review cases in 2018, 2020, 2021,
+2023, 2024, 2025, 2026. Five are results-of-operations 8-Ks
+(Item 2.02 + EX-99.1); two are *not* earnings (Item 8.01 and 5.02).
+2017, 2019, 2022 remain explicitly unreviewed. A web-reviewed filing
+URL or receipt time is **not** original-byte pinning. Before this
+feature the manifest deliberately had
+`rawIndexAndExhibitSha256Pinned=false`.
+
+New opt-in `sec-multiyear-study` reuses official inventory, the
+source-review manifest and preexisting NVDA/SPY **adjusted daily
+close** CSVs. It validates:
+- Exact NVDA SEC accession against a row in the actual private
+  inventory; only preselected years/forms, never hindsight returns.
+- Real SEC 8-K index HTML by accession, form, date, accepted-at time,
+  and item category; for earnings, EX-99.1 must appear in the index
+  and the exact referenced document must have NVIDIA/revenue content.
+- Raw bytes SHA-256 for seven official index pages and five genuine
+  EX-99.1 pages; local source files are create-only 0600 within the
+  private existing data directory, with no unsafe redirects, query
+  parameters, other domains, or symlinks. Repeated runs re-validate
+  existing local source bytes; they don't redownload those pages.
+- Verified SEC **acceptance** occurs after the filing-day 16:00 NY
+  close and before the next **real, joined** stock/benchmark trading
+  session NY 09:30 decision cutoff.
+- For each of five earnings and two non-earnings 8-Ks, 1/3/5 trading
+  session **previous-close-to-target-close** stock/benchmark/excess
+  realized outcomes. They include the overnight move *before*
+  preopen decision and are not executable post-09:30 trading returns.
+
+No first-publisher-release clock or first market availability is
+inferred from the EDGAR accepted time. No market impact causality,
+sealed prospective prediction, true no-news control, learning-ready
+training features or automatic model promotion is established.
+
+Run once on the Mac, with the already configured genuine SEC
+identification User-Agent. The command has no network operations
+until explicitly provided `--run`; `--preview` only reads previously
+verified local raw HTML evidence. SEC rate is kept below 2 requests/s.
+
+```sh
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+OUT="$DATA/nvda-multiyear-sec-8k-study-v1.json"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  echo OUTPUT_ALREADY_EXISTS
+else
+  bash scripts/news-learning-review.sh --update sec-multiyear-study \
+    --review research/nvda-multiyear-sec-eight-k-official-review-2018-2026.json \
+    --inventory "$DATA/nvda-sec-history-inventory-2017-2026-v1.json" \
+    --stock-csv "$DATA/nvda-eod-2016-2026.csv" \
+    --benchmark-csv "$DATA/spy-eod-2016-2026.csv" \
+    --raw-dir "$DATA" --run --output "$OUT"
+fi
+```
+
+For offline rereads, replace `--run --output "$OUT"` with `--preview`,
+reusing stored SEC HTML sources. Safe stdout lists only aggregate
+event/source counts, not private filenames or credentials.
+If a genuine SEC index or exhibit cannot be fetched and verified,
+the new research report is not created. A partial fetch may leave
+source HTML files for a safe resumption; inspect the reported fixed
+failure status and do not delete or overwrite files.
+
+The next **distinct** step, after actual Mac capture passes, is a
+cross-temporal dataset with a sufficiently broad set of independently
+verified SEC filings (including ordinary/non-earnings days) and a
+properly sealed, time-forward evaluation. Do not equate the new
+retrospective returns with forecasting performance.
