@@ -114,6 +114,11 @@ class _Provider:
         acc = json.loads(user)["accession"]
         self.calls.append(acc)
         anchored = _model(self.by_acc[acc])
+        for key in (
+            "historical_public_time_verified", "causal_impact_proven",
+            "stock_direction_predicted",
+        ):
+            del anchored[key]
         quote_id = next(iter(_quote_anchors(self.by_acc[acc])))
         anchored["observations"] = [{
             "quote_id": quote_id,
