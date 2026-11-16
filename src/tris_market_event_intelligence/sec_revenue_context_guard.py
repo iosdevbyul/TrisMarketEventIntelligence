@@ -45,10 +45,10 @@ DIRECT_REFERENT = re.compile(
 # corporate/sector narrative assertions that cannot be derived from ratios.
 UNSUPPORTED_CAUSES = re.compile(
     r"\b(?:deliberate|strategic\s+decision|management\s+decid|"
-    r"management\s+prioriti|high.margin|resource\s+reallocat|"
+    r"management\s+prioriti|high.margin|resource\s+reallocat\w*|"
     r"allocat(?:ed|ion)\s+of\s+resources|shift\s+in\s+operational\s+focus|"
-    r"targeted\s+growth\s+strategy|macro(?:economic)?\s+(?:shift|pressure)|"
-    r"sector.wide\s+(?:shift|trend)|market\s+contraction|"
+    r"targeted\s+growth\s+strategy|macro(?:economic)?\s+(?:shift\w*|pressure\w*)|"
+    r"sector.wide\s+(?:shift\w*|trend\w*)|market\s+contraction|"
     r"industry\s+dynamics|unexpected\s+expansion)\b",
     re.IGNORECASE,
 )
