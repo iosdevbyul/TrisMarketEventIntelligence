@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from tris_market_event_intelligence.sec_primary_content_research_cli import _source_review
+from tris_market_event_intelligence.sec_primary_semantic_quality_cli import (
+    audit_semantic_quality,
+)
 from tris_market_event_intelligence.sec_primary_semantic_research_cli import (
     _quote_anchors,
     prepare_primary_cases,
@@ -203,3 +206,74 @@ def test_mutated_local_original_or_forged_quote_rejected(tmp_path: Path) -> None
     path.write_bytes(BODY.replace(b"CORPORATION", b"LABORATORY"))
     with pytest.raises(ValueError, match="SEC_SEMANTIC_SOURCE_SHA_MISMATCH"):
         build_review_packet(primary, "a" * 64, tmp_path, [(report, "b" * 64)])
+
+
+def test_semantic_quality_triage_reverifies_input_and_keeps_decisions_pending(
+    tmp_path: Path,
+) -> None:
+    primary = _packet(tmp_path)
+    prepared = prepare_primary_cases(primary, "a" * 64, tmp_path)
+    report = run_semantic_research(prepared, _Provider(prepared["cases"]), limit=2)
+    review = build_review_packet(primary, "a" * 64, tmp_path, [(report, "b" * 64)])
+    audit = audit_semantic_quality(
+        primary, "a" * 64, tmp_path, [(report, "b" * 64)], review, "c" * 64,
+    )
+    assert audit["casesAudited"] == 2
+    assert audit["remainingCaseIndexes"] == [2]
+    assert audit["heuristicFindingCount"] == 0
+    assert audit["humanDecisionsRecorded"] == 0
+    assert audit["zeroHeuristicFindingsDoesNotProveSemanticAccuracy"] is True
+    assert audit["trainingReady"] is False
+    assert audit["reviewApproved"] is False
+    assert "sourceExcerpt" not in json.dumps(audit)
+    assert "NVIDIA CORPORATION" not in json.dumps(audit)
+
+
+def test_semantic_quality_flags_overclaims_without_leaking_unverified_prose(
+    tmp_path: Path,
+) -> None:
+    primary = _packet(tmp_path)
+    prepared = prepare_primary_cases(primary, "a" * 64, tmp_path)
+    report = run_semantic_research(prepared, _Provider(prepared["cases"]), limit=1)
+    interpretation = report["cases"][0]["interpretation"]
+    interpretation["summary"] = "This news definitely caused the stock to rise."
+    interpretation["hypotheses"][0]["mechanism"] = (
+        "Investors knew about this issuer report before the market opened."
+    )
+    review = build_review_packet(primary, "a" * 64, tmp_path, [(report, "b" * 64)])
+    audit = audit_semantic_quality(
+        primary, "a" * 64, tmp_path, [(report, "b" * 64)], review, "c" * 64,
+    )
+    codes = {finding["code"] for finding in audit["heuristicFindings"]}
+    assert "POTENTIAL_UNSUPPORTED_CAUSAL_LANGUAGE" in codes
+    assert "POTENTIAL_UNVERIFIED_PUBLICATION_CLAIM" in codes
+    assert "POTENTIAL_STOCK_DIRECTION_ASSERTION" not in codes
+    assert all(set(finding) == {"caseIndex", "location", "code"}
+               for finding in audit["heuristicFindings"])
+    assert "Investors knew" not in json.dumps(audit)
+    assert "definitely caused" not in json.dumps(audit)
+
+
+def test_semantic_quality_refuses_stale_tampered_or_fake_review(
+    tmp_path: Path,
+) -> None:
+    primary = _packet(tmp_path)
+    prepared = prepare_primary_cases(primary, "a" * 64, tmp_path)
+    report = run_semantic_research(prepared, _Provider(prepared["cases"]), limit=1)
+    review = build_review_packet(primary, "a" * 64, tmp_path, [(report, "b" * 64)])
+    changed = copy.deepcopy(review)
+    changed["cases"][0]["humanReviewComplete"] = True
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_QUALITY_REVIEW_PACKET_MISMATCH"):
+        audit_semantic_quality(
+            primary, "a" * 64, tmp_path, [(report, "b" * 64)], changed, "c" * 64,
+        )
+    changed = copy.deepcopy(report)
+    changed["cases"][0]["sourceSha256"] = "f" * 64
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_REVIEW_CASE_PROVENANCE_INVALID"):
+        audit_semantic_quality(
+            primary, "a" * 64, tmp_path, [(changed, "b" * 64)], review, "c" * 64,
+        )
+    with pytest.raises(ValueError, match="SEC_SEMANTIC_QUALITY_REVIEW_PACKET_MISMATCH"):
+        audit_semantic_quality(
+            primary, "a" * 64, tmp_path, [(report, "b" * 64)], review, "not-sha",
+        )
