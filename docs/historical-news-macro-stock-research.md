@@ -1144,3 +1144,25 @@ After PR #196 merged, the user's Mac `sec-primary-semantic --run --model gemma4:
 The initial semantic model JSON contract now uses an explicit source-owned quote anchor selection: Python derives a bounded set of exact, contiguous, 12–200-character quotations from the already SHA-pinned 1100-character primary source excerpt. The model receives those short quote anchors with stable local IDs and returns only `quote_id` and `interpretation` for each observation; it no longer writes source citations or verbatim quote characters. The application rejects missing/unknown/repeated IDs and unexpected model-supplied quote or citation fields, attaches the selected **original exact source text and established evidence ID**, and applies the full preexisting `_validate_response` gate. This separates original evidence attribution from generative commentary, but does not establish semantic relevance or causation; human review remains mandatory. Evidence IDs for independent, unsupported hypotheses remain empty as in PR195. Existing case-index 0 report remains accepted by the offline review CLI, unchanged. Do not promote the retrieved 2026 SEC content as known to historical traders; first-public time verification remains zero.
 
 After successful CI and squash merge of the quote-anchor change, retry **once** the same new, create-only original indices 1–3 batch output; do not re-download primary SEC documents or overwrite anything. Then use offline `sec-semantic-review` to recheck exact quotes and produce a human-review packet, and inspect answer relevance before proceeding to the remaining cases.
+
+
+### 2026-11-17: Four real SEC cases passed strict source checks; offline semantic quality triage
+
+After PR197 merged, the Mac user successfully generated a new case index 1–3 Gemma4 batch (`cases=3`, `modelCalls=6`, `trainingReady=false`) and combined it with the existing immutable index-0 report into `nvda-sec-primary-semantic-human-review-cases00-03-v1.json`. The existing review command reported `reviewCasesPrepared=4`, `totalPinnedCases=12`, `casesRemaining=8`, and `allSECQuotesReverifiedAgainstPinnedSources=true`. These results establish only source-text and JSON contract validity, **not semantic correctness**.
+
+A new offline `sec-semantic-quality` command takes the original SHA-pinned SEC primary packet, the already saved semantic reports, the untouched offline human-review packet, and the source directory. It **regenerates and byte-for-byte compares the expected review packet** against the saved one, after independent source SHA + quotation checks, before any heuristic quality triage. It checks model-authored interpretations, limitations, mechanisms and summaries for *possible* unverified causal assertions, stock direction claims and assumed historical publication knowledge. Findings include ONLY safe code, source case index and JSON field path, never SEC source quotes, model text, private paths, or unsupported facts. A clean heuristic audit is NOT a human approval. No evaluation score, research gold, trained model, production update, or time-eligibility upgrade is created. If a person edits the unreviewed packet, this integrity-only command fails rather than approving edited decisions. Human judgment must be obtained in a separate, explicitly reviewed workflow.
+
+One-time Mac command after branch merge (each artifact must be new, create-only):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update sec-semantic-quality \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --report "$DATA/nvda-sec-primary-semantic-gemma4-cases01-03-v1.json" \
+  --review "$DATA/nvda-sec-primary-semantic-human-review-cases00-03-v1.json" \
+  --output "$DATA/nvda-sec-primary-semantic-quality-cases00-03-v1.json"
+```
+
+If successful, preserve all existing files, keep the private audit JSON local and evaluate flagged *locations* against the original review text. Continue indices 4–6, 7–9 and 10–11 from already downloaded and SHA-pinned SEC primary sources with separate new filenames. Retrospective semantic claims are not price-outcome features; no refetch, historical first-public timestamp leap or stock-direction training.
