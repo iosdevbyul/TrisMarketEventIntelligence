@@ -416,6 +416,7 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
     request = json.dumps(data, ensure_ascii=False)
     call_count = 0
     retry_reason: str | None = None
+    range_retry_used = False
     for attempt in range(2):
         call_count += 1
         raw = provider.generate_json(
@@ -441,6 +442,11 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
                 for item in exc.errors()[:8]
             ]
             retry_reason = "NEWS_TEST_MODEL_SCHEMA_INVALID"
+            range_retry_used = bool(issues) and all(
+                x["field"].startswith("impacts.")
+                and x["field"].endswith(".conditionalMovePctRange")
+                for x in issues
+            )
             issue = {"validationErrors": issues}
         except ValueError as exc:
             code = str(exc)
@@ -478,7 +484,7 @@ def run_case(case: CaseInput, provider: LLMProvider) -> dict:
         ),
         "modelId": provider.model_id,
         "modelCalls": call_count,
-        "rangeSchemaRetryUsed": bool(retry_reason),
+        "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
         "promptVersion": "historical-news-impact-v3-contract-retry",
         "articleManifest": [
