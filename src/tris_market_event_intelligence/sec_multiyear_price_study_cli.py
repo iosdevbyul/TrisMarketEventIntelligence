@@ -12,7 +12,8 @@ import os
 import re
 import time
 from bisect import bisect_right
-from datetime import UTC, date, datetime, time as clock_time
+from datetime import UTC, date, datetime
+from datetime import time as clock_time
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -109,7 +110,7 @@ def _validated_inputs(review: dict, inventory: dict) -> list[dict]:
     checked: list[dict] = []
     for event in manifest:
         if not isinstance(event, dict):
-            raise ValueError("SEC_EVENT_RECORD_INVALID")
+            raise TypeError("SEC_EVENT_RECORD_INVALID")
         acc = event.get("accession")
         if not isinstance(acc, str) or not ACC.fullmatch(acc) or acc in seen:
             raise ValueError("SEC_EVENT_ACCESSION_INVALID")
@@ -147,10 +148,10 @@ def _verify_index(raw: bytes, event: dict) -> None:
     accepted = datetime.fromisoformat(event["secAcceptedEastern"]).astimezone(NY)
     acc = event["accession"]
     accepted_text = accepted.strftime("%Y-%m-%d %H:%M:%S")
-    if (acc not in text or not re.search(r"\bForm 8-K\b", text, re.I)
-            or not re.search(r"Accepted\s+" + re.escape(accepted_text), text, re.I)
+    if (acc not in text or not re.search(r"\bForm 8-K\b", text, re.IGNORECASE)
+            or not re.search(r"Accepted\s+" + re.escape(accepted_text), text, re.IGNORECASE)
             or not re.search(r"Filing Date\s+" + re.escape(event["filingDate"]),
-                             text, re.I)):
+                             text, re.IGNORECASE)):
         raise ValueError("SEC_INDEX_FACTS_OR_ACCEPTANCE_MISMATCH")
     type_pattern = {"EARNINGS": "Item 2.02", "OTHER_EVENT": "Item 8.01",
                     "GOVERNANCE": "Item 5.02"}[event["category"]]
