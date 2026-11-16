@@ -34,7 +34,7 @@ def select_body_span(case: dict, raw: bytes) -> dict | None:
     # The shared text extractor normalizes whitespace deterministically.
     # Split on sentence punctuation; selected text must be a source substring.
     # A dot in 5.2 or SEC accession references is not a sentence boundary.
-    for match in re.finditer(r".+?(?:[.!?]+(?=\\s|$)|$)", visible, flags=re.DOTALL):
+    for match in re.finditer(r".+?(?:[.!?]+(?=\s|$)|$)", visible, flags=re.DOTALL):
         start, end = match.span()
         segment = match.group().strip()
         if len(segment) < 45 or len(segment) > MAX_SPAN_CHARS:
