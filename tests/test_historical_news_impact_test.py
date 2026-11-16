@@ -430,8 +430,8 @@ def test_invalid_conditional_range_triggers_single_model_authored_regeneration()
     assert result["impacts"][0]["conditionalMovePctRange"] == {
         "minPct": -3.0, "maxPct": -1.0,
     }
-    assert "formatCorrection" not in provider.requests[0]
-    assert "formatCorrection" in provider.requests[1]
+    assert "correctionContext" not in provider.requests[0]
+    assert "correctionContext" in provider.requests[1]
     assert provider.requests[1]["historicalOutcomesAvailable"] is False
     assert "marketPrice" not in json.dumps(provider.requests[1])
 
@@ -448,14 +448,14 @@ def test_persistently_invalid_range_fails_after_one_bounded_retry() -> None:
     assert provider.calls == 2
 
 
-def test_unrelated_schema_error_does_not_trigger_regeneration() -> None:
+def test_other_model_schema_errors_get_only_one_bounded_regeneration() -> None:
     case = cli.CaseInput.model_validate(sample_case())
     malformed = answer(case)
     malformed["eventGroups"] = "invalid"
     provider = RangeRetryProvider([malformed])
     with pytest.raises(ValidationError):
         cli.run_case(case, provider)
-    assert provider.calls == 1
+    assert provider.calls == 2
 
 
 def test_valid_range_retains_single_model_call() -> None:
@@ -465,3 +465,61 @@ def test_valid_range_retains_single_model_call() -> None:
     assert provider.calls == 1
     assert report["rangeSchemaRetryUsed"] is False
     assert report["modelCalls"] == 1
+
+
+def test_duplicate_event_stage_recovers_only_through_model_regeneration() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    duplicate = answer(case)
+    duplicate["eventStages"].append({
+        "articleId": "a2", "stage": "REACTION",
+    })
+    regenerated = answer(case)
+    provider = RangeRetryProvider([duplicate, regenerated])
+    result = cli.run_case(case, provider)
+    assert provider.calls == 2
+    assert result["modelContractRetryReason"] == "NEWS_TEST_DUPLICATE_STAGE_INVALID"
+    assert result["rangeSchemaRetryUsed"] is False
+    assert result["modelCalls"] == 2
+    assert result["eventStages"] == regenerated["eventStages"]
+    correction = provider.requests[1]["correctionContext"]
+    assert correction["validArticleIds"] == ["a1", "a2"]
+    assert correction["problem"] == {
+        "validationCode": "NEWS_TEST_DUPLICATE_STAGE_INVALID",
+    }
+    assert provider.requests[0]["articles"] == provider.requests[1]["articles"]
+    assert provider.requests[0]["sourceQuoteAnchors"] == provider.requests[1]["sourceQuoteAnchors"]
+    assert "futureStockReturn" not in json.dumps(provider.requests[1])
+
+
+def test_persistent_duplicate_stage_is_rejected_after_two_calls() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    duplicate = answer(case)
+    duplicate["eventStages"].append({
+        "articleId": "a2", "stage": "REACTION",
+    })
+    provider = RangeRetryProvider([duplicate])
+    with pytest.raises(ValueError, match="NEWS_TEST_DUPLICATE_STAGE_INVALID"):
+        cli.run_case(case, provider)
+    assert provider.calls == 2
+
+
+def test_invalid_quote_relations_regenerate_not_auto_rewritten() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    malformed = answer(case)
+    malformed["impacts"][0]["evidenceQuoteIds"] = ["invented:q0"]
+    valid = answer(case)
+    provider = RangeRetryProvider([malformed, valid])
+    result = cli.run_case(case, provider)
+    assert provider.calls == 2
+    assert result["modelContractRetryReason"] == "NEWS_TEST_QUOTE_NOT_IN_SOURCE"
+    assert result["impacts"][0]["evidenceQuoteIds"] == valid["impacts"][0]["evidenceQuoteIds"]
+
+
+def test_news_with_unsupported_impact_targets_cannot_be_silently_relabelled() -> None:
+    case = cli.CaseInput.model_validate(sample_case())
+    malformed = answer(case)
+    malformed["impacts"][0]["ticker"] = "HALLUC"
+    provider = RangeRetryProvider([malformed])
+    with pytest.raises(ValueError, match="NEWS_TEST_TICKER_MAPPING_CONFLICT"):
+        cli.run_case(case, provider)
+    assert provider.calls == 2
