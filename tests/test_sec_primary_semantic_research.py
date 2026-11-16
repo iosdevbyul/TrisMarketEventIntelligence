@@ -219,7 +219,9 @@ def test_cli_reports_redacted_model_stage_and_error_code(
         semantic_cli, "build_runtime", lambda *args, **kwargs: object(),
     )
 
-    def fail_model(prepared: dict, provider: object, *, limit: int) -> dict:
+    def fail_model(
+        prepared: dict, provider: object, *, limit: int, start_index: int,
+    ) -> dict:
         raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
 
     monkeypatch.setattr(semantic_cli, "run_semantic_research", fail_model)
