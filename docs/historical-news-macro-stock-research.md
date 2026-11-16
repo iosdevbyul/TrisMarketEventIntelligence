@@ -1285,3 +1285,32 @@ When evidence is substantive, the bounded original hypothesis schema remains in 
 To inspect a previously analyzed case again, run the **same existing** `sec-candidate-replay` action with a **new private output filename**, first `--prepare` and then explicit `--run` if required. The new run may produce an abstention without contacting Ollama. Do not overwrite any existing 12-case baseline or the earlier candidate files. Existing `sec-semantic-compare`, `sec-semantic-review`, `sec-semantic-quality`, and `sec-claim-review` can read abstention records, keeping improvement unverified, historical first-publication unknown, and training/prediction/promotion prohibited.
 
 For meaningful 10-K / 10-Q research, a future separately pinned **substantive excerpt** from original verified filing body may be needed. Never silently substitute text or re-label a document's original first 1,100-character evidence; new source spans must receive their own provenance and review before any experiment.
+
+
+### 2026-11-17: SHA-pinned substantive SEC body spans (opt-in)
+
+The historical first-1,100-character `primarySourceVerbatimExcerpt` is **not modified**. Newly generated semantic analysis may opt into `--body-spans` to scan the *full locally saved original SEC file* for the first bounded issuer-attributed material statement, quantitative result, or explicit issuer-specific risk disclosure. Existing original source SHA-256 is verified before selection. No SEC network requests, external context, stock prices, or future outcomes are used. When nothing substantive is located, the previous conservative `INSUFFICIENT_SUBSTANTIVE_EVIDENCE` abstention remains in force without a model call.
+
+Each selected candidate stores a derived source witness `sourceSpan` containing the SHA-256 of the exact original raw SEC bytes, a SHA of the deterministic normalized visible text, character positions `visibleStart` and `visibleEnd`, and SHA-256 of the selected verbatim visible-text span. **These positions refer to normalized extracted visible characters, NOT raw HTML byte offsets.** The witness is bound to the original accession and exact raw source checksum; quotations are selected from the real span rather than invented by Gemma. The human-review packet recomputes the selection and all hashes directly from the original private SEC source; missing, forged or shifted span IDs fail closed. Only source-vetted details are passed to the model; concrete-claim and sector-cause gates remain enabled. A matching quote and heuristic claim gate do **not** prove the model's semantic interpretation is supported; human claim adjudication remains mandatory.
+
+This is intentionally a **single bounded contiguous source sentence** per filing, not full-file economic interpretation or a complete 10-K section parser. Source body risks may describe contingencies, never confirmed realized business events. In a paired baseline/candidate comparison, `evidenceScopeChanged=true` identifies when the candidate used a substantive body span while the baseline used a cover excerpt; such a comparison is **not** a controlled prompt-only improvement measurement. No legacy baseline is rewritten.
+
+Example safe prepare, then run on Case 00 with a fresh create-only filename (not the existing v1 or v2 candidate):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh --update sec-candidate-replay \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --start-index 0 --limit 1 --body-spans --prepare
+
+bash scripts/news-learning-review.sh --update sec-candidate-replay \
+  --primary "$DATA/nvda-sec-primary-content-batch01-v1.json" \
+  --source-dir "$DATA" \
+  --baseline-report "$DATA/nvda-sec-primary-semantic-gemma4-firstcase-v1.json" \
+  --start-index 0 --limit 1 --body-spans --run --model gemma4:e2b \
+  --output "$DATA/nvda-sec-primary-semantic-gemma4-body-case00-v1.json"
+```
+
+The preview reports only counts and identifiers. Generated report and human-review files stay private and create-only. Original 12 pinned sources, historical first-publication uncertainty, PIT boundaries, no-training/no-prediction/no-promotion and human-decision count zero are unchanged.
