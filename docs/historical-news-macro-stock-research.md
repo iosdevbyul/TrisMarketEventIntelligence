@@ -700,3 +700,33 @@ those new fully verified event packets to the existing universe and
 repeat this coverage audit. Respect SEC fair-use identification,
 copyright conditions and independent source/time evidence. Only
 thereafter evaluate truly time-forward research with sealed outcomes.
+
+## SEC history CIK normalization and safe root-cause categories
+
+User's actual Mac `sec-history-inventory --start 2017-01-01
+--end 2026-11-16` returned `SEC_SCOPE_OR_CIK` before producing
+an inventory file. This error previously combined three different
+conditions: invalid date span, CIK text normalization, and unexpected
+SEC filings object. The requested interval is within the code's
+4000-day limit. SEC submission payloads can represent company CIK as
+a decimal numeric value or a zero-padded string. The previous check
+used `str(cik) == str(int(CIK))`, rejecting legitimate
+`"0001045810"` textual representations of NVIDIA's official CIK.
+
+The downloader now validates exact numeric CIK equivalence while
+rejecting nondecimal, oversized, boolean, or mismatched CIK values.
+The date, CIK, and filings-object failures have distinct safe codes:
+`SEC_DATE_SCOPE_INVALID`, `SEC_CIK_MISMATCH`,
+`SEC_FILINGS_SCHEMA_INVALID`. SEC identity safeguards, hostname
+restrictions, fair-use User-Agent, source-page hashes, filename
+checks, max-download bytes, strict create-only private artifacts,
+timestamp quarantine and model-readiness controls are unchanged.
+
+Use the same existing download command with `--update` and genuine
+operator-configured `TRIS_SEC_USER_AGENT`. Do not duplicate SEC
+downloads if the original private inventory now exists and never
+paste the identifying User-Agent into issue/PR output. Successful
+inventory is **candidate filing metadata only**, not verified
+issuer-exhibit content or independent earliest market-publication
+time. Continue with `sec-coverage-reconcile --preview` only after
+the original download output is confirmed.

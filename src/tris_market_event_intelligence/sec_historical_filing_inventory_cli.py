@@ -127,14 +127,25 @@ def _rows(columns: dict, *, page_id: str, page_sha: str) -> list[dict]:
     return out
 
 
+def _valid_company_cik(value: object) -> bool:
+    """Match SEC's numeric CIK or zero-padded decimal string, never a different filer."""
+    if type(value) is int:
+        return value == int(CIK)
+    if isinstance(value, str):
+        return bool(re.fullmatch(r"\d{1,10}", value)) and int(value) == int(CIK)
+    return False
+
+
 def build_sec_filing_inventory(
     *, main: dict, main_sha: str, histories: list[tuple[str, dict, str]],
     start: date, end: date,
 ) -> dict:
-    if (end < start or (end - start).days > 4000
-            or not isinstance(main, dict) or str(main.get("cik")) != str(int(CIK))
-            or not isinstance(main.get("filings"), dict)):
-        raise ValueError("SEC_SCOPE_OR_CIK")
+    if end < start or (end - start).days > 4000:
+        raise ValueError("SEC_DATE_SCOPE_INVALID")
+    if not isinstance(main, dict) or not _valid_company_cik(main.get("cik")):
+        raise ValueError("SEC_CIK_MISMATCH")
+    if not isinstance(main.get("filings"), dict):
+        raise TypeError("SEC_FILINGS_SCHEMA_INVALID")
     recent = main["filings"].get("recent")
     rows = _rows(recent, page_id=f"CIK{CIK}.json", page_sha=main_sha)
     seen_history = set()
@@ -271,7 +282,8 @@ def main() -> None:
             "SEC_SCHEMA_PAGE_NOT_OBJECT", "SEC_SCHEMA_COLUMNS_NOT_OBJECT",
             "SEC_SCHEMA_COLUMNS", "SEC_SCHEMA_ITEMS", "SEC_FILING_METADATA",
             "SEC_ACCEPTANCE_FORMAT", "SEC_PRIMARY_DOCUMENT_PATH",
-            "SEC_SCOPE_OR_CIK", "SEC_HISTORY_MANIFEST", "SEC_ACCESSION_CONFLICT",
+            "SEC_SCOPE_OR_CIK", "SEC_DATE_SCOPE_INVALID", "SEC_CIK_MISMATCH",
+            "SEC_FILINGS_SCHEMA_INVALID", "SEC_HISTORY_MANIFEST", "SEC_ACCESSION_CONFLICT",
             "SEC_HISTORY_PAGE_LIMIT", "SEC_SOURCE_TOO_LARGE",
             "SEC_UNAPPROVED_SOURCE_URL",
         }

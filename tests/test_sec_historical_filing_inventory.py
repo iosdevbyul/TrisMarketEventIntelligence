@@ -121,7 +121,7 @@ def test_bad_parallel_columns_and_nonhistorical_ranges_fail() -> None:
             main=bad, main_sha="a" * 64, histories=[],
             start=date(2018, 1, 1), end=date(2018, 12, 31),
         )
-    with pytest.raises(ValueError, match="SEC_SCOPE_OR_CIK"):
+    with pytest.raises(ValueError, match="SEC_DATE_SCOPE_INVALID"):
         build_sec_filing_inventory(
             main=_main(), main_sha="a" * 64, histories=[],
             start=date(2000, 1, 1), end=date(2026, 11, 16),
@@ -222,4 +222,38 @@ def test_safe_nested_sec_primary_document_path() -> None:
         build_sec_filing_inventory(
             main=main, main_sha="a" * 64, histories=[],
             start=date(2018, 1, 1), end=date(2023, 12, 31),
+        )
+
+
+def test_accepts_real_sec_zero_padded_cik_and_short_equivalent() -> None:
+    for cik in ("0001045810", "1045810", 1045810):
+        source = _main()
+        source["cik"] = cik
+        report = build_sec_filing_inventory(
+            main=source, main_sha="a" * 64, histories=[],
+            start=date(2017, 1, 1), end=date(2026, 11, 16),
+        )
+        assert report["ticker"] == "NVDA"
+        assert report["companyCik"] == "0001045810"
+        assert report["trainingReady"] is False
+
+
+def test_wrong_company_or_malformed_sec_cik_fails_closed() -> None:
+    for cik in ("0000000001", "1045811", "1045810extra", "", None, True):
+        source = _main()
+        source["cik"] = cik
+        with pytest.raises(ValueError, match="SEC_CIK_MISMATCH"):
+            build_sec_filing_inventory(
+                main=source, main_sha="a" * 64, histories=[],
+                start=date(2017, 1, 1), end=date(2026, 11, 16),
+            )
+
+
+def test_missing_filings_schema_has_distinct_safe_code() -> None:
+    source = _main()
+    source["filings"] = None
+    with pytest.raises(TypeError, match="SEC_FILINGS_SCHEMA_INVALID"):
+        build_sec_filing_inventory(
+            main=source, main_sha="a" * 64, histories=[],
+            start=date(2017, 1, 1), end=date(2026, 11, 16),
         )
