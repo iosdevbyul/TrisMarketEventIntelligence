@@ -13,7 +13,6 @@ from tris_market_event_intelligence.sec_claim_evidence_review_cli import (
 )
 from tris_market_event_intelligence.sec_pinned_body_spans import (
     CONTEXT_VERSION,
-    VERSION,
     apply_body_spans,
 )
 from tris_market_event_intelligence.sec_primary_content_research_cli import (
