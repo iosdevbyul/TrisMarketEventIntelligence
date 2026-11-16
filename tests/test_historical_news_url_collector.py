@@ -175,7 +175,7 @@ def test_standard_mode_reports_offending_article_ordinal_and_host(
     with _mock_session(modified="2026-11-12T12:00:00Z") as session:
         with pytest.raises(
             ValueError,
-            match=r"NEWS_URL_REVISED_AFTER_CUTOFF\\|article=1\\|host=techcrunch.com",
+            match=r"NEWS_URL_REVISED_AFTER_CUTOFF\|article=1\|host=techcrunch\.com",
         ):
             fetcher.collect_urls(
                 URLS, as_of=AS_OF, case_id="nvda-strict",
