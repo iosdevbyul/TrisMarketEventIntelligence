@@ -465,7 +465,9 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
             ):
                 raise ValueError("CROSS_DOMAIN_SAVED_CANDIDATE_INTEGRITY_INVALID")
             try:
-                candidate_model = Explanation.model_validate(candidate).model_dump()
+                candidate_model = Explanation.model_validate({
+                    key: candidate[key] for key in Explanation.model_fields
+                }).model_dump()
             except ValueError as exc:
                 raise ValueError("CROSS_DOMAIN_SAVED_CANDIDATE_INVALID") from exc
             scenario = review_scenario(candidate_model)
