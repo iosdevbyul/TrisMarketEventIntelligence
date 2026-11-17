@@ -455,6 +455,7 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
                     "economicCausalityVerified": False,
                     "semanticAccuracyVerified": False,
                 })
+        accepted_diagnostics: list[dict] = []
         for candidate in prior["researchCandidates"]:
             ids = candidate.get("sourceFactIds")
             if (
@@ -463,6 +464,30 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
                 or candidate.get("target") not in case["allowedEconomicTargets"]
             ):
                 raise ValueError("CROSS_DOMAIN_SAVED_CANDIDATE_INTEGRITY_INVALID")
+            try:
+                candidate_model = Explanation.model_validate({
+                    key: candidate[key] for key in Explanation.model_fields
+                }).model_dump()
+            except ValueError as exc:
+                raise ValueError("CROSS_DOMAIN_SAVED_CANDIDATE_INVALID") from exc
+            scenario = review_scenario(candidate_model)
+            economic = inspect_mechanism(candidate_model, by_id)
+            boundary = inspect_evidence_boundary(candidate_model, case)
+            issues = scenario["blockers"] + economic["blockers"] + boundary["blockers"]
+            accepted_diagnostics.append({
+                "proposal": candidate_model,
+                "currentIssueCodes": issues,
+                "reassessment": (
+                    "PREVIOUS_CANDIDATE_NOW_QUARANTINED"
+                    if issues else "RETAINS_RESEARCH_CANDIDATE_STATUS_ONLY"
+                ),
+                "scenarioReview": scenario,
+                "economicAudit": economic,
+                "sourceBoundaryReview": boundary,
+                "economicCausalityVerified": False,
+                "semanticAccuracyVerified": False,
+                "humanReviewRequired": True,
+            })
         is_negative = case["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
         model_proposals = (
             len(prior["researchCandidates"]) + len(prior["rejectedHypotheses"])
@@ -486,6 +511,7 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
             "originalAcceptedCandidates": len(prior["researchCandidates"]),
             "originalRejectedHypotheses": len(prior["rejectedHypotheses"]),
             "rejectionDiagnostics": diagnostics,
+            "acceptedCandidateReassessment": accepted_diagnostics,
             "recoverableForHumanReview": recoverable,
             "negativeControlModelAbstained": (
                 model_proposals == 0 if is_negative else None
@@ -509,6 +535,11 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
             ),
             "recoverableForHumanReview": sum(
                 len(x["recoverableForHumanReview"]) for x in audit_cases
+            ),
+            "previousCandidatesNowQuarantined": sum(
+                row["reassessment"] == "PREVIOUS_CANDIDATE_NOW_QUARANTINED"
+                for case in audit_cases
+                for row in case["acceptedCandidateReassessment"]
             ),
             "negativeControlFormatViolations": sum(
                 bool(x["abstentionFormatAudit"]["abstentionOutputFormatViolation"])
