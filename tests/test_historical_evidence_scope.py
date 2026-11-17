@@ -20,7 +20,6 @@ from tris_market_event_intelligence.historical_evidence_scope import (
     redact_market_result_sentences,
 )
 
-
 OBSERVED_PRICE = (
     "A drop of 3.1% for Example Devices, previously worth about $5tn, "
     "was the heaviest force pulling the S&P 500 downward recently."
