@@ -144,8 +144,9 @@ def validate_chain(doc: dict) -> None:
             ):
                 raise ValueError("EVENT_CHAIN_CLAIM_INVALID")
             ids.add(c["claimId"])
-        if row["asOfEligibility"] == RETROSPECTIVE and row.get("kind") != (
-            "RETROSPECTIVE_MULTI_DATE_TIMELINE"
+        if (
+            (row["asOfEligibility"] == RETROSPECTIVE)
+            != (row.get("kind") == "RETROSPECTIVE_MULTI_DATE_TIMELINE")
         ):
             raise ValueError("EVENT_CHAIN_RETROSPECTIVE_INVALID")
         sources[name] = row
