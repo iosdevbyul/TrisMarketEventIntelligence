@@ -64,7 +64,7 @@ def inspect_evidence_boundary(proposal: dict, case: dict) -> dict:
     if (
         case["category"] == "PUBLIC_HEALTH_REGULATION"
         and proposal["transmission"] == "REGULATION"
-        and "authorization" in cited.casefold()
+        and re.search(r"\b(?:authoriz(?:ed|ation)|approv(?:ed|al))\b", cited, re.I)
     ):
         warnings.append("AUTHORIZATION_IS_NOT_EVIDENCE_OF_REALIZED_SALES")
     return {
