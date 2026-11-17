@@ -386,7 +386,7 @@ def review_staged_model_output(packet: dict, assessment: dict) -> dict:
     }.get(assessment.get("stageTwoOutputContract"))
     schema_boundary = bool(
         compact_max is not None and len(text) == compact_max
-        and not re.search(r"[.!?][\\s\\\"']*$", text)
+        and not text.rstrip().endswith((".", "!", "?"))
     )
     if schema_boundary:
         issues.append("STAGED_NARRATIVE_SCHEMA_BOUNDARY_TRUNCATION")
