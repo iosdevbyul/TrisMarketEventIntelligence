@@ -130,7 +130,9 @@ def test_cli_persists_explicit_failed_status_and_no_fake_success(
         "--reasoning-mode", "staged", "--run", "--model", "gemma4:e2b",
         "--output", str(output),
     ])
-    chain.main()
+    with pytest.raises(SystemExit) as exited:
+        chain.main()
+    assert exited.value.code == 2
     printed = json.loads(capsys.readouterr().out)
     assert printed["analysisSucceeded"] is False
     assert printed["status"] == "STAGED_DRAFT_EVIDENCE_REJECTED"
@@ -172,7 +174,9 @@ def test_single_cutoff_failure_also_creates_diagnostic_artifact(
         "--as-of", "2023-06-17", "--reasoning-mode", "staged",
         "--run", "--model", "gemma4:e2b", "--output", str(output),
     ])
-    chain.main()
+    with pytest.raises(SystemExit) as exited:
+        chain.main()
+    assert exited.value.code == 2
     result = json.loads(capsys.readouterr().out)
     assert result["analysisSucceeded"] is False
     assert result["modelCallsAttempted"] == 1
