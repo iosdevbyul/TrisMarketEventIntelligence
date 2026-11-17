@@ -46,7 +46,7 @@ RETROSPECTIVE = "EXCLUDED_RETROSPECTIVE"
 EDGE_TYPES = {
     "OFFICIAL_PROCESS_FOLLOWUP", "OVERSIGHT_ESCALATION", "RELATED_SCOPE_CHANGE",
 }
-SOURCE_URL_HOST = "www.faa.gov"
+PUBLISHER_HOSTS = {"FAA": "www.faa.gov", "FDA": "www.fda.gov"}
 _PRICE_OUTCOME = re.compile(
     r"\b(?:stock|shares?|share\s+price)\b.{0,70}"
     r"\b(?:rose|fell|rallied|declined|gained|lost)\b",
@@ -106,7 +106,9 @@ exact sourceId and claimId, and each visible curated edge using its
 exact edgeId and endpoints. Curated edge types indicate only editorial
 sequence and thematic relation; NEVER claim that one release caused the
 other or that Boeing paid airlines' inspection costs.
-For a model-scope change distinguish Boeing 737-900ER from 737-9 MAX.
+Do not conflate separate aircraft models, manufacturers, vaccine products,
+or regulatory scopes. A recommendation, a product authorization, and
+actual commercial sales are distinct kinds of actions.
 The user supplied an as-of date; anything on or after that calendar day
 and the later-edited retrospective timeline has been excluded from your
 input. Do not mention, infer or use subsequently disclosed facts or
@@ -146,6 +148,7 @@ def validate_chain(doc: dict) -> None:
     ):
         raise ValueError("EVENT_CHAIN_INPUT_INVALID")
     sources: dict[str, dict] = {}
+    publishers: set[str] = set()
     for row in doc["sources"]:
         if not isinstance(row, dict):
             raise TypeError("EVENT_CHAIN_SOURCE_INVALID")
@@ -158,9 +161,10 @@ def validate_chain(doc: dict) -> None:
             raise ValueError("EVENT_CHAIN_SOURCE_INVALID") from exc
         if (
             not isinstance(name, str) or not name
-            or name in sources or row.get("publisher") != "FAA"
+            or name in sources or row.get("publisher") not in PUBLISHER_HOSTS
             or not isinstance(link, str)
-            or parsed.scheme != "https" or parsed.hostname != SOURCE_URL_HOST
+            or parsed.scheme != "https"
+            or parsed.hostname != PUBLISHER_HOSTS[row["publisher"]]
             or parsed.port not in (None, 443)
             or parsed.username or parsed.password or parsed.query
             or parsed.fragment or not parsed.path
@@ -186,7 +190,13 @@ def validate_chain(doc: dict) -> None:
         ):
             raise ValueError("EVENT_CHAIN_RETROSPECTIVE_INVALID")
         sources[name] = row
-    if not any(r["asOfEligibility"] == RETROSPECTIVE for r in sources.values()):
+        publishers.add(row["publisher"])
+    if len(publishers) != 1:
+        raise ValueError("EVENT_CHAIN_MIXED_AGENCY_INVALID")
+    if (
+        publishers == {"FAA"}
+        and not any(r["asOfEligibility"] == RETROSPECTIVE for r in sources.values())
+    ):
         raise ValueError("EVENT_CHAIN_RETROSPECTIVE_CONTROL_REQUIRED")
     edges: set[str] = set()
     for edge in doc["curatedEdges"]:
@@ -406,7 +416,7 @@ def run_sequence(doc: dict, cutoffs: list[date], provider: LLMProvider) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="FAA official event chain replay")
+    parser = argparse.ArgumentParser(description="Official agency event chain replay")
     parser.add_argument("--chain", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
