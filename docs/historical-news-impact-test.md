@@ -1190,3 +1190,27 @@ bash scripts/news-learning-review.sh historical-event-chain \
 ```
 
 Evaluate replaySteps[].assessment.stageOneModelDraft, stageTwoChangeItems, modelQuestionStatusReview, explanationQualityAudit and whatRemainsUnknown against the original FDA v2 result. No claimed correctness before the real run. Historical page versions, intraday PIT, semantic truth, financial causality and generalization remain unverified. The immutable FDA cohort and original saved output are not changed.
+
+## Evidence-first real model integrity failure: FDA October 2023
+
+The first real user-local evidence-first staged Gemma4 run *completed four model calls* and correctly emitted two stage-one source changes per cutoff, with the product-specific updated mRNA authorization marked RESOLVED_BY_VISIBLE_SOURCE in October and manufacturer underlying records marked PARTIALLY_RESOLVED.
+
+However, stage-two narrative generation **failed** in the October result: whatChanged was a meaningless modelAuthoredChangeItems_1_2_..._100 identifier chain, both stageTwoChanges were empty, and some stage-one stillUnknown values were malformed strings such as 'false, sourceId: ...'. The old system accepted any JSON string of the right length and returned its generic pipeline success status. Therefore four successful calls are *not* four semantically successful explanations.
+
+The updated staged-only second-stage schema no longer asks Gemma4 to redundantly emit changeItems or unresolvedQuestions that were already covered by phase one; it focuses on source-anchored fact/edge interpretation and two explanations. A new review flags mechanically corrupted field-name/number-chain prose as unusable and labels malformed stillUnknown strings separately. The source-anchored stage-one draft is preserved unchanged. An unusable narrative gives STAGED_NARRATIVE_GENERATION_REJECTED for its cutoff and HISTORICAL_SEQUENCE_CONTAINS_REJECTED_NARRATIVE for the overall sequence, instead of pretending a usable explanation exists. Warnings do not prove valid narrative text is semantically correct, and no synthetic summary replaces the user's raw model text.
+
+The original saved file is already available locally and **need not be regenerated**. Apply the new checks with the existing zero-model offline auditing path (use a fresh output filename):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/fda-covid-vaccine-2023-event-chain.json \
+  --question-tracks research/fda-2023-question-lifecycle.json \
+  --audit-existing "$DATA/fda-evidence-first-staged-v1.json" \
+  --output "$DATA/fda-staged-output-integrity-audit-v1.json"
+```
+
+Review temporalQuestionLifecycleAudit.replayStepAudits[].savedStagedModelOutputReview. This is retrospective failure classification (auditModelCalls=0), not evidence that a newly generated model output improved.
+
+Only after offline classification should a new unique-filename staged run be considered to test whether the slimmer second-stage schema improves real Gemma generation. Do not auto-retry, falsify old responses, or call model success based on schema validity alone. Full historical PIT, economic causality, and cross-domain semantic generalization remain unverified.
