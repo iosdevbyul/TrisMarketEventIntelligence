@@ -374,6 +374,22 @@ def review_staged_model_output(packet: dict, assessment: dict) -> dict:
     ))
     if clipped:
         issues.append("STAGED_NARRATIVE_TRAILING_FRAGMENT")
+    # In the real FAA staged-compact v1 run whatChanged ended 'return a'
+    # at EXACTLY 600 characters (the v1 JSON Schema maxLength), although
+    # Ollama reported done_reason=stop with only 192/4096 output tokens.
+    # Old saved v1 results retain their old boundary; new v2 uses 1200.
+    # A passage reaching the exact constrained-string length without
+    # terminal sentence punctuation is suspicious even when JSON parses.
+    compact_max = {
+        "compact_narrative_two_fields_v1": 600,
+        "compact_narrative_two_fields_v2": 1200,
+    }.get(assessment.get("stageTwoOutputContract"))
+    schema_boundary = bool(
+        compact_max is not None and len(text) == compact_max
+        and not re.search(r"[.!?][\\s\\\"']*$", text)
+    )
+    if schema_boundary:
+        issues.append("STAGED_NARRATIVE_SCHEMA_BOUNDARY_TRUNCATION")
     # This check is intentionally conservative: a valid paraphrase can use
     # synonyms and lack model-authored word overlap. Only reject obvious
     # mechanical gibberish above, not plausible paraphrases.
@@ -412,16 +428,20 @@ def review_staged_model_output(packet: dict, assessment: dict) -> dict:
             if "STAGED_NARRATIVE_MECHANICALLY_CORRUPTED" in issues
             or "STAGED_UNKNOWN_NARRATIVE_MECHANICALLY_CORRUPTED" in issues
             or "STAGED_NARRATIVE_TRAILING_FRAGMENT" in issues
+            or "STAGED_NARRATIVE_SCHEMA_BOUNDARY_TRUNCATION" in issues
             else "REQUIRES_HUMAN_SEMANTIC_REVIEW"
         ),
         "issues": issues,
         "malformedQuestionUnknownFields": bad_unknown,
         "placeholderQuestionUnknownFields": unknown_placeholders,
+        "schemaBoundaryCharacterLimit": compact_max,
+        "narrativeCharacterCount": len(text),
         "stageOneChangeCount": len(changes),
         "stageTwoExplanationUsable": (
             "STAGED_NARRATIVE_MECHANICALLY_CORRUPTED" not in issues
             and "STAGED_UNKNOWN_NARRATIVE_MECHANICALLY_CORRUPTED" not in issues
             and "STAGED_NARRATIVE_TRAILING_FRAGMENT" not in issues
+            and "STAGED_NARRATIVE_SCHEMA_BOUNDARY_TRUNCATION" not in issues
         ),
         "modelTextRewritten": False,
         "semanticAccuracyVerified": False,
