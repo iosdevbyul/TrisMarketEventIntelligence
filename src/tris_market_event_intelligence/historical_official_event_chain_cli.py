@@ -306,27 +306,88 @@ def run_replay(doc: dict, cutoff: date, provider: LLMProvider) -> dict:
     }
 
 
+def compare_replays(early: dict, late: dict) -> dict:
+    """Diff what *source packets* newly permit—not model semantic accuracy."""
+    if (
+        early["eventId"] != late["eventId"]
+        or early["sourceCohortSha256"] != late["sourceCohortSha256"]
+        or early["asOfDateExclusive"] >= late["asOfDateExclusive"]
+    ):
+        raise ValueError("EVENT_CHAIN_REPLAY_COMPARISON_INVALID")
+    old_ids = {x["sourceId"] for x in early["eligibleSources"]}
+    new_ids = {x["sourceId"] for x in late["eligibleSources"]}
+    old_edges = {x["edgeId"] for x in early["visibleCuratedEdges"]}
+    new_edges = {x["edgeId"] for x in late["visibleCuratedEdges"]}
+    if not old_ids <= new_ids or not old_edges <= new_edges:
+        raise ValueError("EVENT_CHAIN_REPLAY_NON_MONOTONIC")
+    return {
+        "fromAsOfExclusive": early["asOfDateExclusive"],
+        "toAsOfExclusive": late["asOfDateExclusive"],
+        "newlyEligibleSourceIds": sorted(new_ids - old_ids),
+        "newlyVisibleEdgeIds": sorted(new_edges - old_edges),
+        "alreadyEligibleSourceIds": sorted(old_ids),
+        "newlyObservedRealizedOutcomes": False,
+        "historicalPITVerified": False,
+        "economicCausalityVerified": False,
+    }
+
+
+def run_sequence(doc: dict, cutoffs: list[date], provider: LLMProvider) -> dict:
+    if len(cutoffs) != 2 or cutoffs[0] >= cutoffs[1]:
+        raise ValueError("EVENT_CHAIN_SEQUENCE_CUTOFF_INVALID")
+    results = [run_replay(doc, cutoff, provider) for cutoff in cutoffs]
+    return {
+        "schemaVersion": "historical_official_event_chain_sequence_v1",
+        "eventId": doc["eventId"],
+        "sourceCohortSha256": _digest(doc),
+        "replaySteps": results,
+        "sourceAvailabilityDiff": compare_replays(*results),
+        "modelCalls": len(results),
+        "status": "HISTORICAL_DATE_ONLY_SEQUENCE_REQUIRES_HUMAN_REVIEW",
+        "historicalPITVerified": False,
+        "causalityProven": False,
+        "semanticAccuracyVerified": False,
+        "generalizationVerified": False,
+        "autoPromotion": False,
+        "marketPricesRead": False,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="FAA official event chain replay")
     parser.add_argument("--chain", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
-    parser.add_argument("--as-of", required=True, type=date.fromisoformat)
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--as-of", type=date.fromisoformat)
+    scope.add_argument(
+        "--sequence", nargs=2, type=date.fromisoformat,
+        metavar=("EARLY_AS_OF", "LATE_AS_OF"),
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
     args = parser.parse_args()
     doc = _read(args.chain)
-    replay = prepare_replay(doc, args.as_of)
+    cutoffs = args.sequence if args.sequence else [args.as_of]
+    if len(cutoffs) == 2 and cutoffs[0] >= cutoffs[1]:
+        raise ValueError("EVENT_CHAIN_SEQUENCE_CUTOFF_INVALID")
+    replays = [prepare_replay(doc, cutoff) for cutoff in cutoffs]
     if args.preview:
         if args.output is not None:
             parser.error("--preview does not support --output")
-        print(json.dumps({
-            "status": "DATE_ONLY_EVENT_CHAIN_PREVIEW",
+        previews = [{
             "asOfDateExclusive": replay["asOfDateExclusive"],
             "eligibleSourceIds": [s["sourceId"] for s in replay["eligibleSources"]],
             "visibleEdgeIds": [e["edgeId"] for e in replay["visibleCuratedEdges"]],
             "excludedSources": replay["excludedSources"],
+        } for replay in replays]
+        print(json.dumps({
+            "status": "DATE_ONLY_EVENT_CHAIN_PREVIEW",
+            **(previews[0] if len(previews) == 1 else {"steps": previews}),
+            **({
+                "sourceAvailabilityDiff": compare_replays(*replays),
+            } if len(replays) == 2 else {}),
             "pointInTimeVerified": False,
             "modelCalls": 0,
         }, ensure_ascii=False))
@@ -342,6 +403,18 @@ def main() -> None:
         ),
     )
     provider = build_runtime(settings, confirm_model=True)
+    if len(cutoffs) == 2:
+        result = run_sequence(doc, cutoffs, provider)
+        _write(args.output, result)
+        print(json.dumps({
+            "status": result["status"],
+            "replaySteps": len(result["replaySteps"]),
+            "sourceAvailabilityDiff": result["sourceAvailabilityDiff"],
+            "historicalPITVerified": False,
+            "modelCalls": result["modelCalls"],
+            "outputCreated": True,
+        }, ensure_ascii=False))
+        return
     result = run_replay(doc, args.as_of, provider)
     _write(args.output, result)
     print(json.dumps({
