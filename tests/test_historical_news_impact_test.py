@@ -498,12 +498,8 @@ def test_persistent_unknown_stage_is_rejected_after_two_calls() -> None:
     duplicate = answer(case)
     duplicate["eventStagesByArticleId"]["made-up"] = "REACTION"
     provider = RangeRetryProvider([duplicate])
-    with pytest.raises(ValidationError) as exc:
+    with pytest.raises(ValueError, match="NEWS_TEST_STAGE_COVERAGE_INVALID"):
         cli.run_case(case, provider)
-    assert any(
-        issue["loc"] == ("eventStagesByArticleId",)
-        for issue in exc.value.errors()
-    )
     assert provider.calls == 2
 
 
@@ -545,6 +541,11 @@ def test_missing_stage_not_filled_or_invented_by_python() -> None:
     missing = answer(case)
     del missing["eventStagesByArticleId"]["a2"]
     provider = RangeRetryProvider([missing])
-    with pytest.raises(ValueError, match="NEWS_TEST_STAGE_COVERAGE_INVALID"):
+    with pytest.raises(ValidationError) as exc:
         cli.run_case(case, provider)
+    assert any(
+        issue["loc"] == ("eventStagesByArticleId",)
+        and issue["type"] == "too_short"
+        for issue in exc.value.errors()
+    )
     assert provider.calls == 2
