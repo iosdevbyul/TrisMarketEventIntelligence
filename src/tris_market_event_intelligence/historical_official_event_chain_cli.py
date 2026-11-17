@@ -32,6 +32,11 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _read,
     _write,
 )
+from tris_market_event_intelligence.historical_staged_reasoning import (
+    compare_model_questions_to_curator,
+    explain_from_draft,
+    produce_draft,
+)
 from tris_market_event_intelligence.historical_temporal_question_lifecycle import (
     audit_saved_temporal,
     audit_temporal_consistency,
@@ -343,6 +348,7 @@ def run_replay(
     doc: dict, cutoff: date, provider: LLMProvider,
     *, previous_source_ids: set[str] | None = None,
     question_tracks: dict | None = None,
+    reasoning_mode: str = "single",
 ) -> dict:
     packet = prepare_replay(doc, cutoff)
     if question_tracks is not None:
@@ -357,11 +363,33 @@ def run_replay(
             "pricesAndOutcomesAvailable", "previouslySeenSourceIds",
         )
     }
-    raw = provider.generate_json(
-        system=SYSTEM, user=json.dumps(model_input, ensure_ascii=False),
-        schema=EventChainAnswer.model_json_schema(),
-    )
+    if reasoning_mode not in {"single", "staged"}:
+        raise ValueError("EVENT_CHAIN_REASONING_MODE_INVALID")
+    draft = None
+    if reasoning_mode == "staged":
+        draft = produce_draft(provider, packet, question_tracks)
+        raw = explain_from_draft(
+            provider, packet, draft, EventChainAnswer.model_json_schema(),
+        )
+    else:
+        raw = provider.generate_json(
+            system=SYSTEM, user=json.dumps(model_input, ensure_ascii=False),
+            schema=EventChainAnswer.model_json_schema(),
+        )
     assessment = assess_answer(packet, raw)
+    if draft is not None:
+        # Stage two can restate or omit changes. Preserve both outputs:
+        # the phase-one model ledger is authoritative as *phase-one text*
+        # for evaluating source-change coverage, never as verified truth.
+        assessment["stageTwoChangeItems"] = assessment["changeItems"]
+        assessment["stageOneModelDraft"] = draft
+        assessment["changeItems"] = draft["modelAuthoredChangeItems"]
+        assessment["modelQuestionAssessments"] = draft[
+            "modelAuthoredQuestionAssessments"
+        ]
+        assessment["modelReasoningProvenance"] = (
+            "STAGED_MODEL_GENERATED_NOT_CURATOR_OR_VERIFIED_SEMANTICS"
+        )
     assessment["explanationQualityAudit"] = audit_explanation(packet, assessment)
     curator_ledger = evidence_ledger(packet)
     lifecycle = (
@@ -371,11 +399,17 @@ def run_replay(
     assessment["temporalConsistencyAudit"] = audit_temporal_consistency(
         packet, assessment, lifecycle,
     )
+    if draft is not None:
+        assessment["modelQuestionStatusReview"] = (
+            compare_model_questions_to_curator(draft, lifecycle)
+        )
     return {
         **packet, "modelId": provider.model_id,
         "curatorEvidenceLedger": curator_ledger,
         "questionLifecycle": lifecycle,
-        "modelCalls": 1, "assessment": assessment,
+        "modelCalls": 2 if draft is not None else 1,
+        "reasoningMode": reasoning_mode,
+        "assessment": assessment,
         "overallStatus": "DATE_ONLY_RECONSTRUCTION_REQUIRES_HUMAN_REVIEW",
     }
 
@@ -409,6 +443,7 @@ def compare_replays(early: dict, late: dict) -> dict:
 def run_sequence(
     doc: dict, cutoffs: list[date], provider: LLMProvider,
     *, question_tracks: dict | None = None,
+    reasoning_mode: str = "single",
 ) -> dict:
     if len(cutoffs) != 2 or cutoffs[0] >= cutoffs[1]:
         raise ValueError("EVENT_CHAIN_SEQUENCE_CUTOFF_INVALID")
@@ -420,6 +455,7 @@ def run_sequence(
         step = run_replay(
             doc, cutoff, provider, previous_source_ids=previously_seen,
             question_tracks=question_tracks,
+            reasoning_mode=reasoning_mode,
         )
         results.append(step)
         previously_seen = {
@@ -427,12 +463,13 @@ def run_sequence(
         }
     return {
         "schemaVersion": "historical_official_event_chain_sequence_v2",
+        "reasoningMode": reasoning_mode,
         "eventId": doc["eventId"],
         "sourceCohortSha256": _digest(doc),
         "replaySteps": results,
         "sourceAvailabilityDiff": compare_replays(*results),
         "questionLifecycleDelta": lifecycle_delta(*results),
-        "modelCalls": len(results),
+        "modelCalls": sum(x["modelCalls"] for x in results),
         "status": "HISTORICAL_DATE_ONLY_SEQUENCE_REQUIRES_HUMAN_REVIEW",
         "historicalPITVerified": False,
         "causalityProven": False,
@@ -448,6 +485,8 @@ def main() -> None:
     parser.add_argument("--chain", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--reasoning-mode", choices=("single", "staged"),
+                        default="single")
     parser.add_argument("--question-tracks", type=Path)
     scope = parser.add_mutually_exclusive_group()
     scope.add_argument("--as-of", type=date.fromisoformat)
@@ -533,6 +572,7 @@ def main() -> None:
     if len(cutoffs) == 2:
         result = run_sequence(
             doc, cutoffs, provider, question_tracks=annotations,
+            reasoning_mode=args.reasoning_mode,
         )
         _write(args.output, result)
         print(json.dumps({
@@ -546,6 +586,7 @@ def main() -> None:
         return
     result = run_replay(
         doc, args.as_of, provider, question_tracks=annotations,
+        reasoning_mode=args.reasoning_mode,
     )
     _write(args.output, result)
     print(json.dumps({
@@ -566,7 +607,7 @@ def main() -> None:
             result["assessment"]["rejectedEdgeExplanations"]
         ),
         "historicalPITVerified": False,
-        "modelCalls": 1, "outputCreated": True,
+        "modelCalls": result["modelCalls"], "outputCreated": True,
     }, ensure_ascii=False))
 
 

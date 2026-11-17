@@ -1163,3 +1163,30 @@ publication-time verified snapshot. Avoid using these source relations
 as market-causality proof or counting structural completeness as
 cross-event generalization. No market prices, realized returns,
 training, financial predictions, auto promotions or trades.
+
+## Opt-in evidence-first staged Gemma4 reasoning
+
+The actual held-out FDA Gemma4 run narrated April/June guidance and September/October updated vaccine authorizations, but both model changeItems arrays were empty. The October narrative also treated an already authorized product formula as undecided while original filing receipts remained unavailable.
+
+With --reasoning-mode staged, model generation now has TWO distinct phases per historical cutoff:
+
+1. A first Gemma4 call emits sourceId+claimId anchored changeItems for EACH newly available official source, plus OPEN/PARTIALLY_RESOLVED/RESOLVED_BY_VISIBLE_SOURCE status for each currently visible research question. Missing source coverage, invalid or duplicate references, missing question statuses, and market-result claims abort generation BEFORE narrative generation. No curator model-output patching.
+2. A second Gemma4 call is conditioned on this validated *model-authored* evidence draft and the same dated visible official sources. The model explains change, chronology, missing evidence, and uncertainty; these explanations remain subject to human semantic review. The first-stage changes retain their own provenance; second-stage changes are preserved separately under stageTwoChangeItems even when empty.
+3. The independent curator question lifecycle remains hidden from BOTH model calls. Only questions whose *initial* anchor is visible are shown, without future transition dates or statuses. A post-generation modelQuestionStatusReview compares model decisions against research annotations, without treating annotations as proof or editing model text.
+
+Default --reasoning-mode single continues unchanged and costs one model call per cutoff. Staged takes two calls per cutoff, four for a two-cutoff run. There is no automatic retry if a draft is incomplete; a failed phase one is an important experimental failure, not an excuse to fabricate a successful response.
+
+### One fresh prospective evaluation, only if needed
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/fda-covid-vaccine-2023-event-chain.json \
+  --question-tracks research/fda-2023-question-lifecycle.json \
+  --sequence 2023-06-17 2023-10-04 \
+  --reasoning-mode staged --run --model gemma4:e2b \
+  --output "$DATA/fda-evidence-first-staged-v1.json"
+```
+
+Evaluate replaySteps[].assessment.stageOneModelDraft, stageTwoChangeItems, modelQuestionStatusReview, explanationQualityAudit and whatRemainsUnknown against the original FDA v2 result. No claimed correctness before the real run. Historical page versions, intraday PIT, semantic truth, financial causality and generalization remain unverified. The immutable FDA cohort and original saved output are not changed.
