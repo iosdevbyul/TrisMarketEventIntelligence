@@ -104,3 +104,17 @@ def test_issuer_news_is_not_sector_wide_evidence() -> None:
     assert has_sector_wide_source_evidence([
         "Industry suppliers and chipmakers may face additional costs.",
     ])
+
+
+def test_sector_name_or_supplier_mention_alone_does_not_prove_exposure() -> None:
+    assert not has_sector_wide_source_evidence([
+        "A former executive worked at a Singapore-based chip company.",
+        "Nvidia's customer list includes other suppliers and chipmakers.",
+    ])
+    assert has_sector_wide_source_evidence([
+        "Other chipmakers could face export restrictions and increased compliance costs.",
+    ])
+    assert not has_sector_wide_source_evidence([
+        "Industry suppliers attended an event.",
+        "Nvidia faces a separate reputation risk.",
+    ])
