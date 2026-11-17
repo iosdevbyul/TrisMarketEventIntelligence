@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from test_historical_official_event_chain import ChainProvider, load
+
 from tris_market_event_intelligence import historical_official_event_chain_cli as chain
 from tris_market_event_intelligence.historical_event_chain_explanation_quality import (
     audit_explanation,
