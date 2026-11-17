@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from tris_market_event_intelligence.historical_evidence_scope import is_observed_market_result
+
 _MARKET_OUTCOME = re.compile(
     r"\b(?:stock|stocks|shares|index|indices|nasdaq|s&p\s*500|market)\b"
     r".{0,100}\b(?:fell|dropped|declined|slumped|plunged|rallied|rose|"
@@ -80,6 +82,12 @@ def verify_claims(
         # Exact substring, preserving the original source text verbatim.
         if item.sourceExcerpt not in quote["text"]:
             errors.append({"claimIndex": index, "reason": "EXCERPT_NOT_IN_SOURCE"})
+            continue
+        if is_observed_market_result(item.sourceExcerpt):
+            errors.append({
+                "claimIndex": index,
+                "reason": "OBSERVED_MARKET_RESULT_SOURCE_INELIGIBLE",
+            })
             continue
         if item.epistemicType == "REPORTED_FACT" and re.search(
             r"\b(?:alleged|allegedly|suspected|rumou?red|reportedly|"
