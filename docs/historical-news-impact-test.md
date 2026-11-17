@@ -1299,3 +1299,26 @@ bash scripts/news-learning-review.sh historical-staged-transfer \
 ```
 
 The transfer audit first checks each saved sequence's event ID, original SHA, cutoff-local eligible sources and visible edges against the immutable source cohort, requires distinct original events and the same selected model ID, and re-evaluates source-change coverage, actual model question-state disagreements, stage-two mechanical integrity and narrow evidence-decision contradictions. It retains the original model responses. Editorial status disagreements are diagnostic, not objective semantic ground truth. `auditModelCalls=0`, `historicalPITVerified=false`, and `generalizationVerified=false` remain explicit even if there are no detected issues. FAA is an independent event, but its official claims and question annotations were curated, not historically archived or truly sealed gold.
+
+## Independent FAA v1: actual clipped narrative and N/A sentinel
+
+After PR #245, actual local Gemma4 staged analysis completed the FAA January 13 and January 25 cutoffs (four model calls), followed by zero-model FDA-v3 vs FAA-v1 comparison. FDA question-status disagreements numbered two; FAA numbered one. FAA first-stage reasoning correctly separated aircraft 737-900ER from grounded 737-9 MAX, an inspection-procedure approval from per-aircraft completion, and the production expansion restriction from completed manufacturing audit findings. The Jan 25 model marked the audit-record question OPEN where the independent editor had PARTIALLY_RESOLVED: progress-vs-document-completeness granularity differs, and curator labels are not objective ground truth.
+
+The actual Jan 25 model `whatChanged` ended mid-sentence: `... making them eligible to return to service after the required work is 1`. The prior saved staged review emitted `issues=[]` for this truncated prose. Separately, an inspection-procedure question marked RESOLVED had `stillUnknown=N/A_RESOLVED_BY_VISIBLE_SOURCE`, although individual aircraft inspection completion records were not provided.
+
+The common staged review now flags the specifically observed dangling grammar-plus-digit pattern as `STAGED_NARRATIVE_TRAILING_FRAGMENT` and rejects that stage-two narrative as mechanically unusable; it separately reports `STAGED_QUESTION_REMAINDER_PLACEHOLDER` for N/A status sentinels. Both original model strings remain unchanged. The prompt also asks for complete prose and actual separate unknown evidence rather than a status placeholder. These narrow checks cannot diagnose the actual token-stop cause from text or prove that any unflagged sentence is semantically complete.
+
+### Zero-model re-audit of saved original FAA v1
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --question-tracks research/faa-2024-question-lifecycle.json \
+  --audit-existing "$DATA/faa-independent-staged-v1.json" \
+  --output "$DATA/faa-narrative-integrity-audit-v1.json"
+jq '{auditModelCalls,steps:[.temporalQuestionLifecycleAudit.replayStepAudits[]|{asOfDateExclusive,review:.savedStagedModelOutputReview}]}' "$DATA/faa-narrative-integrity-audit-v1.json"
+```
+
+Expected later Jan 25: `stageTwoExplanationUsable=false`, `STAGED_NARRATIVE_TRAILING_FRAGMENT` and `STAGED_QUESTION_REMAINDER_PLACEHOLDER`, with original FAA v1 saved result unchanged. New model calls are not needed to validate detection. The retained claims remain date-only, not verified historical point-in-time publisher snapshots.
