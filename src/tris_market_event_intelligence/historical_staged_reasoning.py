@@ -72,7 +72,17 @@ that is NOT in previouslySeenSourceIds. Put at least one changeItems entry
 for each required new sourceId. Include exact claimId from that SAME source;
 do not use future IDs, invent IDs or combine source IDs in one change.
 For EVERY supplied research question return precisely one question assessment
-using OPEN, PARTIALLY_RESOLVED, RESOLVED_BY_VISIBLE_SOURCE. Anchor the answer
+using OPEN, PARTIALLY_RESOLVED, RESOLVED_BY_VISIBLE_SOURCE. OPEN means
+the required answer evidence has not been established and no meaningful
+intermediate part of THAT question is evidenced. PARTIALLY_RESOLVED means
+there is a dated official intermediate answer or decision within the
+question's explicit scope, but a final outcome or separately required
+document remains unavailable. RESOLVED_BY_VISIBLE_SOURCE means a currently
+visible claim directly answers the exact question; unrelated future records
+may remain unknown. In the explanation identify WHICH portion is directly
+observed, and in stillUnknown name the missing remaining portion. This is
+not a blanket rule that a press release about agency action proves internal
+audit completion. Anchor the answer
 to an actual currently-visible supporting sourceId + claimId. A later
 authorization can resolve a product-authorization question while underlying
 filing receipts and internal review files are still unknown. NEVER mark those
