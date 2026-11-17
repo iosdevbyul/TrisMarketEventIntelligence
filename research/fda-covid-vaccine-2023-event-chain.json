@@ -101,5 +101,56 @@
       "relation": "RELATED_SCOPE_CHANGE",
       "basis": "September FDA approvals and authorizations covered mRNA vaccines made by ModernaTX and Pfizer, whereas October's further authorization covered the distinct Novavax adjuvanted product."
     }
+  ],
+  "questionTracks": [
+    {
+      "questionId": "fda-2023-xbb15-authorized-formula",
+      "question": "Which updated 2023–2024 COVID-19 vaccine formula will receive FDA product-specific authorization?",
+      "scope": "2023–2024 FDA update, ModernaTX/Pfizer mRNA products",
+      "transitions": [
+        {
+          "sourceId": "fda-20230418-bivalent",
+          "claimId": "fall-formula-pending",
+          "status": "OPEN",
+          "interpretation": "FDA planned later advisory input; updated fall formulation and product-specific authorization were not decided by the April statement.",
+          "stillUnknown": "Recommended formula and product-specific FDA authorization"
+        },
+        {
+          "sourceId": "fda-20230616-formula",
+          "claimId": "xbb-recommendation",
+          "status": "PARTIALLY_RESOLVED",
+          "interpretation": "FDA recommended monovalent XBB.1.5 composition; product-specific authorization had not yet been announced.",
+          "stillUnknown": "Updated vaccine manufacturer submissions and final product-specific authorization"
+        },
+        {
+          "sourceId": "fda-20230911-mrna",
+          "claimId": "mrna-authorization",
+          "status": "RESOLVED_BY_LATER_SOURCE",
+          "interpretation": "The FDA authorized and approved specific updated 2023–2024 ModernaTX/Pfizer mRNA products containing XBB.1.5, resolving this product-specific formula authorization question.",
+          "stillUnknown": "Underlying detailed advisory minutes, manufacturer submission records and eventual distribution or realized uptake"
+        }
+      ]
+    },
+    {
+      "questionId": "fda-2023-manufacturer-filings-evidence",
+      "question": "What records establish the receipt and full FDA review of manufacturer submissions for updated vaccines?",
+      "scope": "Specific manufacturer submissions and FDA internal review evidence",
+      "transitions": [
+        {
+          "sourceId": "fda-20230616-formula",
+          "claimId": "filing-still-needed",
+          "status": "OPEN",
+          "interpretation": "FDA expected manufacturer supporting data and filings for later regulatory review, but these records were not provided in the announcement.",
+          "stillUnknown": "Actual manufacturer submission receipts and agency review records"
+        },
+        {
+          "sourceId": "fda-20230911-mrna",
+          "claimId": "mrna-authorization",
+          "status": "PARTIALLY_RESOLVED",
+          "interpretation": "FDA product authorizations show a later regulatory decision occurred, but the curated announcement does not supply the underlying manufacturer filing receipts or review records.",
+          "stillUnknown": "Exact submitted datasets, receipt dates and completed FDA review record details"
+        }
+      ]
+    }
   ]
 }
