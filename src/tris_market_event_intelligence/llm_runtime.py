@@ -125,6 +125,13 @@ class ConfiguredLLMProvider:
                  client: httpx.Client | None = None) -> None:
         self.settings = settings
         self.client = client
+        self._last_generation_diagnostics: dict[str, object] | None = None
+
+    @property
+    def last_generation_diagnostics(self) -> dict[str, object] | None:
+        # No raw model text, prompts, credentials, or network identifiers.
+        return (dict(self._last_generation_diagnostics)
+                if self._last_generation_diagnostics is not None else None)
 
     @property
     def model_id(self) -> str:
@@ -162,6 +169,7 @@ class ConfiguredLLMProvider:
         self, *, system: str, user: str, schema: dict[str, object] | None,
     ) -> str:
         cfg = self.settings
+        self._last_generation_diagnostics = None
         if schema is not None and not cfg.capabilities.json_schema:
             raise LLMExecutionError("STRUCTURED_OUTPUT_UNSUPPORTED")
         messages = [
@@ -205,8 +213,39 @@ class ConfiguredLLMProvider:
             response = session.post(endpoint, json=payload, headers=headers)
             response.raise_for_status()
             result = response.json()
-            if cfg.kind == "ollama" and result.get("done_reason") == "length":
-                raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
+            if cfg.kind == "ollama":
+                self._last_generation_diagnostics = {
+                    "provider": "ollama",
+                    "doneReason": result.get("done_reason"),
+                    "promptTokenCount": result.get("prompt_eval_count"),
+                    "generatedTokenCount": result.get("eval_count"),
+                    "configuredOutputTokenLimit": (
+                        cfg.capabilities.max_output_tokens
+                    ),
+                    "generatedOutputLimitReached": (
+                        result.get("done_reason") == "length"
+                    ),
+                    "diagnosticMetadataFromProvider": True,
+                    "semanticAccuracyVerified": False,
+                }
+                if result.get("done_reason") == "length":
+                    raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
+            else:
+                choice = result["choices"][0]
+                self._last_generation_diagnostics = {
+                    "provider": "openai-compatible",
+                    "finishReason": choice.get("finish_reason"),
+                    "configuredOutputTokenLimit": (
+                        cfg.capabilities.max_output_tokens
+                    ),
+                    "generatedOutputLimitReached": (
+                        choice.get("finish_reason") == "length"
+                    ),
+                    "diagnosticMetadataFromProvider": True,
+                    "semanticAccuracyVerified": False,
+                }
+                if choice.get("finish_reason") == "length":
+                    raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
             if cfg.kind == "ollama":
                 content = result["message"]["content"]
             else:
