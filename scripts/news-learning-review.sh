@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh historical-staged-transfer --reference-chain FDA_JSON --reference-run SAVED_FDA_STAGED_JSON --reference-tracks FDA_QUESTIONS --challenge-chain FAA_JSON --challenge-run SAVED_FAA_STAGED_JSON --challenge-tracks FAA_QUESTIONS --output NEW_PRIVATE_COMPARISON_JSON [zero model calls]"
   echo "  bash scripts/news-learning-review.sh historical-event-chain --chain research/faa-7379max-january-2024-event-chain.json --as-of YYYY-MM-DD --preview|--run [--model gemma4:e2b --output NEW_JSON]"
   echo "  bash scripts/news-learning-review.sh historical-event-chain --chain FAA_CHAIN_JSON --audit-existing SAVED_REPLAY_JSON --output NEW_PRIVATE_AUDIT_JSON [zero model calls]"
   echo "  bash scripts/news-learning-review.sh [--update] historical-impact-test --url NEWS_URL --url NEWS_URL [--url NEWS_URL] --case-id CASE_ID --as-of ISO_TIME --horizon 1 --run --source-output NEW_SOURCE_JSON --output NEW_RESULT_JSON [--model gemma4:e2b]"
@@ -177,6 +178,9 @@ case "$action" in
     ;;
   historical-event-chain)
     module="tris_market_event_intelligence.historical_official_event_chain_cli"
+    ;;
+  historical-staged-transfer)
+    module="tris_market_event_intelligence.historical_cross_event_staged_transfer_cli"
     ;;
   historical-cross-event)
     module="tris_market_event_intelligence.historical_cross_event_validation_cli"
