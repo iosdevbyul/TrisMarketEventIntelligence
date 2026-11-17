@@ -364,3 +364,36 @@ retain `semanticallyVerified=false`, `causalityProven=false`, and
 `sourceQuotesExistAtAsOfVerified=false` makes the missing historical
 snapshot proof explicit. No future price data or realization labels may
 enter scoring, calibration, promotion, or training from this case.
+
+## v14: layout-safe evidence matching and unsupported sector expansion
+
+The real pinned Gemma4 v14 report correctly quarantined the post-cutoff
+price observation `a2:q7`; there were no accepted final stock/sector impacts.
+Its source-anchored Nvidia company hypothesis survived as explicitly
+`semanticallyVerified=false`, `causalityProven=false`. One semiconductor
+recovery was rejected as `EXCERPT_NOT_IN_SOURCE` because a publisher
+inserted invisible formatting characters in the archived input body
+(e.g. before `October` and `had`), but the model reproduced the same
+readable words without those layout marks.
+
+Atomic quote matching now accepts **only** exact substrings or matching after
+removal of a narrowly enumerated set of invisible layout characters
+(U+200B, U+200C, U+200D, U+2060, U+FEFF) and whitespace collapse. It
+never case-folds, translates, changes punctuation, changes numbers,
+reorders tokens, or fills gaps. Every accepted match records its method
+(`EXACT_SUBSTRING` or `LAYOUT_NORMALIZED_SUBSTRING`) and retains
+`originalSourceQuote` verbatim for audit. The source-quote price
+quarantine still runs against the original quote; a modified or
+price-bearing quote cannot enter the factual-evidence set.
+
+Sector scope now requires both an explicit industry/multi-firm source
+context and an exposure/cost/demand/regulatory implication **in the same
+quoted passage**; merely mentioning an industry, a supplier, or Nvidia's
+executive issue cannot establish industry-wide effects. Plausible but
+unsupported sector propositions remain in `sectorImpactHypotheses`
+and the rejected-claim audit, not in validated `impacts`.
+
+These checks reduce both format-induced false negatives and unsupported
+sector extrapolation; neither establishes publisher truth, semantic
+entailment, real-market causality, or historical as-of availability
+for post-cutoff-revised sources.
