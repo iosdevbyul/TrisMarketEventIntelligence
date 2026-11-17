@@ -32,6 +32,9 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _read,
     _write,
 )
+from tris_market_event_intelligence.historical_evidence_decision_consistency import (
+    review_evidence_decisions,
+)
 from tris_market_event_intelligence.historical_staged_reasoning import (
     StagedDraftEvidenceError,
     compare_model_questions_to_curator,
@@ -392,6 +395,9 @@ def run_replay(
         assessment["modelQuestionAssessments"] = draft[
             "modelAuthoredQuestionAssessments"
         ]
+        assessment["evidenceDecisionConsistencyReview"] = (
+            review_evidence_decisions(packet, draft)
+        )
         assessment["stagedModelOutputReview"] = review_staged_model_output(
             packet, assessment,
         )
