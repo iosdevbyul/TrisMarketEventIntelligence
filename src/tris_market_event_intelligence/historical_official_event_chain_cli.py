@@ -500,14 +500,51 @@ def run_replay(
         )
         # Independent termination attribution; preserve all prior saved
         # fields and never reinterpret normal stop as verified completeness.
-        assessment["generationTerminationAnalysis"] = diagnose_termination(
-            stage_two_generation,
-            narrative=assessment["whatChanged"],
-            schema_character_limit={
-                "compact_narrative_two_fields_v1": 600,
-                "compact_narrative_two_fields_v2": 1200,
-            }.get(assessment.get("stageTwoOutputContract")),
-        )
+        if reasoning_mode == "staged-composed":
+            # In composed mode, the LAST provider call assesses questions:
+            # never attribute that call's tokens/stop to source prose.
+            source_rows = assessment["sourceScopedComposition"]
+            source_calls = source_rows["sourceGenerationDiagnostics"]
+            source_explanations = source_rows["sourceExplanations"]
+            source_ids = source_rows["sourceCoverage"]["requiredSourceIds"]
+            assessment["generationTerminationBySource"] = [
+                {
+                    "sourceId": source_id,
+                    "claims": [
+                        {
+                            "claimId": row["claimId"],
+                            "diagnostic": diagnose_termination(
+                                metadata,
+                                narrative=row["explanation"],
+                                schema_character_limit=310,
+                            ),
+                        }
+                        for row in source_explanations
+                        if row["sourceId"] == source_id
+                    ],
+                }
+                for source_id, metadata in zip(source_ids, source_calls)
+            ]
+            assessment["generationTerminationAnalysis"] = diagnose_termination(
+                stage_two_generation,
+                narrative=" ".join(
+                    row["explanation"] for row in
+                    assessment["independentQuestionAxes"]["questionAssessments"]
+                ),
+                schema_character_limit=None,
+            )
+            assessment["generationTerminationAnalysis"]["callRole"] = (
+                "QUESTION_AXES_GENERATION"
+            )
+        else:
+            assessment["generationTerminationAnalysis"] = diagnose_termination(
+                stage_two_generation,
+                narrative=assessment["whatChanged"],
+                schema_character_limit={
+                    "compact_narrative_two_fields_v1": 600,
+                    "compact_narrative_two_fields_v2": 1200,
+                }.get(assessment.get("stageTwoOutputContract")),
+            )
         assessment["modelReasoningProvenance"] = (
             "STAGED_MODEL_GENERATED_NOT_CURATOR_OR_VERIFIED_SEMANTICS"
         )
