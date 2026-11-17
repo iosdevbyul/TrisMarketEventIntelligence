@@ -79,6 +79,11 @@ def _response(case: news.CaseInput, *, contaminated: bool = False) -> dict:
                 "excerpt": a2, "kind": "FACT", "eventStage": "REACTION",
             },
         ],
+        "events": [{
+            "eventId": "event1",
+            "claimIds": ["fact1", "fact2", "fact3"],
+            "summary": "The initial disruption and later company update concern one event.",
+        }],
         "eventEdges": [
             {
                 "earlierClaimId": "fact1", "laterClaimId": "fact3",
@@ -141,6 +146,8 @@ def test_atomic_decomposition_multiple_claims_same_quote_still_verifies() -> Non
     assert provider.calls == 1
     assert len(result["atomicClaims"]) == 3
     assert result["atomicClaims"][0]["quoteId"] == result["atomicClaims"][1]["quoteId"]
+    assert len(result["events"]) == 1
+    assert not result["ungroupedAtomicClaimIds"]
     assert len(result["eventEdges"]) == 1
     assert len(result["economicMechanisms"]) == 1
     assert result["economicMechanisms"][0]["claimVerification"]["status"] == (
