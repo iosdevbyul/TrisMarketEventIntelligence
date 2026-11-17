@@ -597,3 +597,77 @@ rejection reasons, immutable source text, scenario warnings and
 The original `rejectedEconomicMechanisms` log remains intact. The
 cross-case report counts these research candidates separately from accepted
 mechanisms; it does not claim historical or causal generalization.
+
+## Historical cross-domain evidence: FAA, FDA and NASA negative control
+
+This phase intentionally stops re-running the same NVIDIA experiment or
+only restudying the 2023 Microsoft/Alphabet/AMD earnings paraphrases.
+Instead, an independently source-checked research cohort includes three
+distinct historical U.S. agency actions:
+
+1. **FAA — Jan 6, 2024**: emergency grounding and inspection directive
+   following the Alaska Airlines 737-9 MAX door-plug incident.
+   Official source: https://www.faa.gov/newsroom/updates-boeing-737-9-max-aircraft
+   **Important**: the FAA page is a *retrospectively updated* timeline;
+   its current content is NOT a preserved 2024-01-06 version. We
+   explicitly mark `retrospectivePage=true`.
+2. **FDA — Sep 11, 2023**: authorization and approval actions for
+   2023-2024 mRNA COVID-19 vaccines and the XBB.1.5 formulation.
+   Official source:
+   https://www.fda.gov/news-events/press-announcements/fda-takes-action-updated-mrna-covid-19-vaccines-better-protect-against-currently-circulating
+3. **NASA — Sep 24, 2023**: Bennu sample capsule returned to Utah.
+   Official source:
+   https://www.nasa.gov/news-release/nasas-first-asteroid-sample-has-landed-now-secure-in-clean-room/
+   This is deliberately a **negative-control event**. Without any
+   commercially exposed target in its official facts, Gemma4 must
+   **abstain** from claiming a company economic impact rather than
+   fabricating a rocket manufacturer or tradable security.
+
+The new versioned `research/cross-domain-official-events-2023-2024.json`
+contains three curator fact paraphrases per event, original official URL,
+sourceId, event date, publisher, category and strictly bounded eligible
+economic targets. Its facts are *not* verbatim, archived publication
+snapshots. Date-only primary pages do not demonstrate the first precise
+dissemination time; `historicalPageVersionVerified=false` and
+`publisherClockVerified=false` apply throughout. No external claim
+of blind real-time historical replay, measured price effect or verified
+economic causality is made.
+
+The new `historical-cross-domain` runner sends exactly one event at a
+time with explicit public fact IDs, eligible targets, and date-only
+uncertainty; it requests all three fact interpretations, explicit
+economic transmission justification, conditional effects, an
+alternative explanation, missing economic evidence and a source
+boundary. It *can* produce zero hypotheses, and tracks NASA abstention.
+Source-ID and target gates, entire-scenario reasoning checks, economic
+channel quality checks, and fabricated numbers/price-outcome
+quarantine are reused. Pairwise outcomes, returns, trading, training
+and model promotion are out of scope. The cross-domain counts are
+**audit metrics**, not proof of semantic correctness or generalization.
+
+Prepare without Ollama or private output:
+
+```bash
+bash scripts/news-learning-review.sh historical-cross-domain \
+  --cohort research/cross-domain-official-events-2023-2024.json --preview
+```
+
+Run on the existing Mac installation, using an unused output filename
+(three independent Ollama requests):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-cross-domain \
+  --cohort research/cross-domain-official-events-2023-2024.json \
+  --run --model gemma4:e2b \
+  --output "$DATA/cross-domain-official-research-v1.json"
+```
+
+Check `review.negativeControlAbstained`, per-case `researchCandidates`
+and `rejectedHypotheses`, `mechanismJustification`, `evidenceBoundary`
+and `missingEvidence`. Model-authored explanations must still be
+independently human reviewed. The curated input is stored in git; only
+source-checked public claims are present, no keys, raw private investor
+data, outcome leaks or ticker guessing. True temporal replay will
+require immutable originally published archive captures and their
+independently verified first-availability timestamps.

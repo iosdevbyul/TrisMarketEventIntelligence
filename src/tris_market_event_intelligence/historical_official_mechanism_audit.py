@@ -13,13 +13,16 @@ _REGULATORY_FACT = re.compile(
     r"\b(?:regulat(?:ion|or|ory|ed|ing)|compliance|"
     r"legislation|statut(?:e|ory)|law(?:s)?|tariff(?:s)?|"
     r"sanction(?:s)?|export\s+control(?:s)?|"
+    r"airworthiness\s+directive|ordered\s+(?:temporary\s+)?grounding|"
     r"government\s+(?:ban|order|restriction))\b",
     re.IGNORECASE,
 )
 _REGULATORY_MECHANISM = re.compile(
     r"\b(?:regulat(?:ion|or|ory|ed|ing)|compliance|"
     r"tariff(?:s)?|sanction(?:s)?|export\s+control(?:s)?|"
-    r"law(?:s)?|legislation|government\s+restriction)\b",
+    r"law(?:s)?|legislation|government\s+restriction|"
+    r"mandatory\s+(?:safety\s+)?inspection(?:s)?|"
+    r"mandated\s+inspection(?:s)?|airworthiness\s+directive)\b",
     re.IGNORECASE,
 )
 _UNGROUNDED_EVALUATION = re.compile(
