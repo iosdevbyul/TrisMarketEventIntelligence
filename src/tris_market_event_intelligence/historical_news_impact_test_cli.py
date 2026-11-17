@@ -23,6 +23,7 @@ from tris_market_event_intelligence.historical_article_understanding import extr
 from tris_market_event_intelligence.historical_claim_verification import verify_claims
 from tris_market_event_intelligence.historical_evidence_scope import (
     filter_evidence_quotes,
+    has_sector_wide_source_evidence,
     redact_market_result_sentences,
 )
 from tris_market_event_intelligence.historical_impact_recovery import recover_impact_hypotheses
@@ -686,6 +687,7 @@ def run_case(
     initial_rejected_impacts = list(reviewed["rejectedImpacts"])
     impact_recovery_used = False
     recovered_company_hypotheses: list[dict] = []
+    sector_impact_hypotheses: list[dict] = []
     rejected_company_hypotheses: list[dict] = []
     recovered_claim_checks: list[dict] = []
     impact_recovery_error: str | None = None
@@ -776,6 +778,21 @@ def run_case(
                     or _observed_outcome_claim(hypothesis.uncertainty)
                 ):
                     reason = "UNSUPPORTED_OBSERVED_MARKET_OUTCOME"
+                elif not has_sector_wide_source_evidence([
+                    item["sourceExcerpt"] for item in check["evidence"]
+                ]):
+                    # A company-specific article does not establish a
+                    # sector-level transmission channel. Preserve the
+                    # plausible explanation as an unverified hypothesis.
+                    sector_impact_hypotheses.append({
+                        **hypothesis.model_dump(),
+                        "verification": check,
+                        "sectorEvidenceScope": "ISSUER_ONLY_NO_SECTOR_WIDE_SOURCE",
+                        "verifiedSectorImpact": False,
+                        "returnIsObserved": False,
+                        "humanReviewRequired": True,
+                    })
+                    reason = "SECTOR_SCOPE_NOT_SOURCE_GROUNDED"
                 else:
                     reason = None
                 if reason is not None:
@@ -896,6 +913,7 @@ def run_case(
             and impact_recovery_error is None
         )
     reviewed["companyImpactHypotheses"] = recovered_company_hypotheses
+    reviewed["sectorImpactHypotheses"] = sector_impact_hypotheses
     reviewed["rejectedCompanyImpactHypotheses"] = rejected_company_hypotheses
     reviewed["impactClaimChecks"] = recovered_claim_checks
     reviewed["initialRejectedImpacts"] = initial_rejected_impacts
@@ -1084,6 +1102,7 @@ def main() -> None:
             "rejectedImpacts": report["rejectedImpacts"],
             "targetSelection": report["targetSelection"],
             "companyImpactHypotheses": report["companyImpactHypotheses"],
+            "sectorImpactHypotheses": report["sectorImpactHypotheses"],
             "rejectedCompanyImpactHypotheses": report["rejectedCompanyImpactHypotheses"],
             "impactRecoveryUsed": report["impactRecoveryUsed"],
             "impactRecoveryError": report["impactRecoveryError"],
