@@ -33,6 +33,7 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _write,
 )
 from tris_market_event_intelligence.historical_staged_reasoning import (
+    StagedDraftEvidenceError,
     compare_model_questions_to_curator,
     explain_from_draft,
     produce_draft,
@@ -465,11 +466,22 @@ def run_sequence(
     results = []
     previously_seen: set[str] = set()
     for cutoff in cutoffs:
-        step = run_replay(
-            doc, cutoff, provider, previous_source_ids=previously_seen,
-            question_tracks=question_tracks,
-            reasoning_mode=reasoning_mode,
-        )
+        try:
+            step = run_replay(
+                doc, cutoff, provider, previous_source_ids=previously_seen,
+                question_tracks=question_tracks,
+                reasoning_mode=reasoning_mode,
+            )
+        except StagedDraftEvidenceError as exc:
+            # Preserve validated previous cutoff work but do not fabricate
+            # an explanation or claim the failed model call succeeded.
+            exc.completed_replay_steps = results
+            exc.diagnostic["failedAsOfDateExclusive"] = cutoff.isoformat()
+            exc.diagnostic["completedCutoffCount"] = len(results)
+            exc.diagnostic["modelCallsAttempted"] = (
+                sum(result["modelCalls"] for result in results) + 1
+            )
+            raise
         results.append(step)
         previously_seen = {
             s["sourceId"] for s in step["eligibleSources"]
@@ -588,10 +600,53 @@ def main() -> None:
     )
     provider = build_runtime(settings, confirm_model=True)
     if len(cutoffs) == 2:
-        result = run_sequence(
-            doc, cutoffs, provider, question_tracks=annotations,
-            reasoning_mode=args.reasoning_mode,
-        )
+        try:
+            result = run_sequence(
+                doc, cutoffs, provider, question_tracks=annotations,
+                reasoning_mode=args.reasoning_mode,
+            )
+        except StagedDraftEvidenceError as exc:
+            # Private create-only failure checkpoint: contains IDs/status,
+            # not rejected model text. Never claim a two-cutoff success.
+            failure = {
+                "schemaVersion": "historical_staged_sequence_failure_v1",
+                "status": "STAGED_DRAFT_EVIDENCE_REJECTED",
+                "eventId": doc["eventId"],
+                "sourceCohortSha256": _digest(doc),
+                "reasoningMode": "staged",
+                "completedReplaySteps": exc.completed_replay_steps,
+                "failure": {"code": exc.code, **exc.diagnostic},
+                "modelCallsAttempted": exc.diagnostic[
+                    "modelCallsAttempted"
+                ],
+                "allStepsCompleted": False,
+                "historicalPITVerified": False,
+                "semanticAccuracyVerified": False,
+                "generalizationVerified": False,
+                "modelResultRewritten": False,
+            }
+            _write(args.output, failure)
+            print(json.dumps({
+                "status": failure["status"],
+                "failedAsOfDateExclusive": exc.diagnostic[
+                    "failedAsOfDateExclusive"
+                ],
+                "reasonCodes": exc.diagnostic["reasonCodes"],
+                "missingNewSourceIds": exc.diagnostic["missingNewSourceIds"],
+                "invalidSourceClaimIds": exc.diagnostic[
+                    "invalidSourceClaimIds"
+                ],
+                "completedCutoffCount": exc.diagnostic[
+                    "completedCutoffCount"
+                ],
+                "modelCallsAttempted": exc.diagnostic[
+                    "modelCallsAttempted"
+                ],
+                "outputCreated": True,
+                "analysisSucceeded": False,
+                "historicalPITVerified": False,
+            }, ensure_ascii=False))
+            return
         _write(args.output, result)
         print(json.dumps({
             "status": result["status"],
@@ -602,10 +657,36 @@ def main() -> None:
             "outputCreated": True,
         }, ensure_ascii=False))
         return
-    result = run_replay(
-        doc, args.as_of, provider, question_tracks=annotations,
-        reasoning_mode=args.reasoning_mode,
-    )
+    try:
+        result = run_replay(
+            doc, args.as_of, provider, question_tracks=annotations,
+            reasoning_mode=args.reasoning_mode,
+        )
+    except StagedDraftEvidenceError as exc:
+        failure = {
+            "schemaVersion": "historical_staged_replay_failure_v1",
+            "status": "STAGED_DRAFT_EVIDENCE_REJECTED",
+            "eventId": doc["eventId"],
+            "sourceCohortSha256": _digest(doc),
+            "failedAsOfDateExclusive": args.as_of.isoformat(),
+            "failure": {"code": exc.code, **exc.diagnostic},
+            "modelCallsAttempted": 1,
+            "analysisSucceeded": False,
+            "historicalPITVerified": False,
+            "semanticAccuracyVerified": False,
+        }
+        _write(args.output, failure)
+        print(json.dumps({
+            "status": failure["status"],
+            "asOfDateExclusive": args.as_of.isoformat(),
+            "reasonCodes": exc.diagnostic["reasonCodes"],
+            "missingNewSourceIds": exc.diagnostic["missingNewSourceIds"],
+            "invalidSourceClaimIds": exc.diagnostic["invalidSourceClaimIds"],
+            "modelCallsAttempted": 1,
+            "outputCreated": True,
+            "analysisSucceeded": False,
+        }, ensure_ascii=False))
+        return
     _write(args.output, result)
     print(json.dumps({
         "status": result["overallStatus"],
