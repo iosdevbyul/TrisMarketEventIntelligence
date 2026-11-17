@@ -231,3 +231,56 @@ def audit_temporal_consistency(
         "semanticAccuracyVerified": False,
         "historicalPITVerified": False,
     }
+
+
+
+def audit_saved_temporal(doc: dict, saved: dict, annotations: dict) -> dict:
+    """Recheck old real saved model outputs: no inference, zero model calls."""
+    from datetime import date
+
+    from tris_market_event_intelligence.historical_event_chain_explanation_quality import (
+        audit_sequence,
+    )
+    from tris_market_event_intelligence.historical_official_event_chain_cli import (
+        prepare_replay,
+    )
+
+    # audit_sequence fully validates original cohort SHA, dates, source/edge
+    # availability and refusal of forged publisher-time/PIT flags first.
+    audit_sequence(doc, saved)
+    validate_question_tracks(doc, annotations)
+    old_ids: set[str] = set()
+    output = []
+    previous_step = None
+    for step in saved["replaySteps"]:
+        packet = prepare_replay(doc, date.fromisoformat(step["asOfDateExclusive"]))
+        packet["previouslySeenSourceIds"] = sorted(old_ids)
+        current = question_snapshot(annotations, packet)
+        output.append({
+            "asOfDateExclusive": step["asOfDateExclusive"],
+            "curatorEvidenceLedger": evidence_ledger(packet),
+            "questionLifecycle": current,
+            "modelTemporalAudit": audit_temporal_consistency(
+                packet, step["assessment"], current,
+            ),
+            "questionLifecycleDelta": (
+                lifecycle_delta(previous_step, {"questionLifecycle": current})
+                if previous_step is not None else []
+            ),
+        })
+        old_ids = {source["sourceId"] for source in packet["eligibleSources"]}
+        previous_step = {"questionLifecycle": current}
+    return {
+        "schemaVersion": "historical_temporal_question_lifecycle_audit_v1",
+        "status": "CURATED_TEMPORAL_EVIDENCE_HUMAN_REVIEW_REQUIRED",
+        "originalEventId": doc["eventId"],
+        "questionTrackCount": len(annotations["tracks"]),
+        "replayStepAudits": output,
+        "auditModelCalls": 0,
+        "originalSavedArtifactUnchanged": True,
+        "originalSourceCohortUnchanged": True,
+        "temporalConsistencyVerified": False,
+        "historicalPITVerified": False,
+        "causalityProven": False,
+        "modelTextAutomaticallyCorrected": False,
+    }
