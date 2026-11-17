@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from test_historical_news_impact_test import sample_case
 
 from tris_market_event_intelligence import historical_news_impact_test_cli as news
