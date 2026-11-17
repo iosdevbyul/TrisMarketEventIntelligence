@@ -7,6 +7,7 @@ quotes or verified intraday publisher snapshots. No realized market outcomes.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 from dataclasses import replace
@@ -21,6 +22,10 @@ from tris_market_event_intelligence.historical_claim_verification import (
 )
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
+)
+from tris_market_event_intelligence.historical_official_mechanism_audit import (
+    inspect_interpretation,
+    inspect_mechanism,
 )
 from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
@@ -101,6 +106,15 @@ QUALIFIES, CONTRAST or SAME_DISCLOSURE; these are logical topic relations,
 NOT chronological reporting stages or proven causality.
 
 Explain plausible issuer fundamentals with conditions and alternatives.
+Classify the economic transmission channel by the ACTUAL causal mechanism:
+REVENUE means sales/revenue, COSTS means expenses or operating margins,
+DEMAND means customer uptake, SUPPLY means production or availability,
+REGULATION means documented policy/rules/compliance; NEVER select REGULATION
+for ordinary cloud revenue, profitability or product-launch explanations.
+Do not invent numerical benchmark thresholds (such as 10% growth or $400m
+profit) not supplied by the cited fact. If a numeric threshold is an
+exploratory assumption rather than a source fact, omit it and state which
+unavailable evidence would establish it. No guessed high-margin description.
 Use sourceFactIds exactly; do not invent external facts, a second issuer,
 industry-wide impacts or future regulatory action. A mechanism is a
 HYPOTHESIS: state IF triggerCondition, could/may/might/would economic
@@ -165,6 +179,9 @@ def run_case(case: dict, provider: LLMProvider) -> dict:
             continue
         accepted.append({
             **item.model_dump(),
+            "interpretationQualityFlags": inspect_interpretation(
+                item.explanation, statement,
+            ),
             "originalSourceFact": statement,
             "sourceId": case["source"]["sourceId"],
             "textProvenance": "CURATED_PARAPHRASE_NOT_VERBATIM",
@@ -221,13 +238,21 @@ def run_case(case: dict, provider: LLMProvider) -> dict:
             reason = "UNCONDITIONAL_NEW_ECONOMIC_FACT"
         else:
             reason = None
+        quality = (
+            inspect_mechanism(item.model_dump(), fact_by_id)
+            if reason is None else None
+        )
+        if quality is not None and quality["blockers"]:
+            reason = "ECONOMIC_MECHANISM_QUALITY_GATE"
         if reason:
             rejected_mechanisms.append({
                 "reason": reason, "proposal": item.model_dump(),
+                **({"qualityAudit": quality} if quality is not None else {}),
             })
             continue
         mechanisms.append({
             **item.model_dump(),
+            "qualityAudit": quality,
             "issuer": case["issuer"],
             "sourceId": case["source"]["sourceId"],
             "hypothesisOnly": True,
@@ -294,6 +319,12 @@ def compare_cohort(results: list[dict], *, cohort_sha: str) -> dict:
         },
         "rejectedMechanismCounts": {
             r["caseId"]: len(r["rejectedEconomicMechanisms"]) for r in results
+        },
+        "qualityGateRejectionCounts": {
+            r["caseId"]: sum(
+                row["reason"] == "ECONOMIC_MECHANISM_QUALITY_GATE"
+                for row in r["rejectedEconomicMechanisms"]
+            ) for r in results
         },
         "comparisons": pairs,
         "actualIssuerCasesUsed": True,
