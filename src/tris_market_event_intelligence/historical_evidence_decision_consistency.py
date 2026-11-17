@@ -41,10 +41,6 @@ def review_evidence_decisions(packet: dict, draft: dict) -> dict:
     because *some* remaining uncertainty exists.
     """
     questions = {q["questionId"]: q for q in draft.get("visibleQuestions", [])}
-    facts = {
-        (s["sourceId"], c["claimId"]): c["text"]
-        for s in packet["eligibleSources"] for c in s["claims"]
-    }
     vacuous = []
     for change in draft.get("modelAuthoredChangeItems", []):
         action = change["changedAction"]
