@@ -81,6 +81,25 @@ _SECTOR_WIDE_LANGUAGE = re.compile(
 )
 
 
+_SECTOR_EXPOSURE_LANGUAGE = re.compile(
+    r"\b(?:affect|affected|impact|impacted|exposed|exposure|"
+    r"disrupt|disruption|constraints?|restrictions?|"
+    r"supplies|shortage|higher|lower|increas\w*|reduc\w*|"
+    r"costs?|revenue|demand|risk|threat|uncertainty|"
+    r"delays?|facing|face)\b",
+    re.IGNORECASE,
+)
+
+
 def has_sector_wide_source_evidence(excerpts: list[str]) -> bool:
-    """Conservative sector-scope cue; not proof of financial causality."""
-    return any(_SECTOR_WIDE_LANGUAGE.search(text) for text in excerpts)
+    """Require industry scope AND an exposure statement in the same quote.
+
+    A mere passing mention of a supplier/competitor must not promote an
+    issuer's incident to an industry-level causal conclusion. This lexical
+    filter remains an eligibility check, NOT semantic entailment.
+    """
+    return any(
+        _SECTOR_WIDE_LANGUAGE.search(text)
+        and _SECTOR_EXPOSURE_LANGUAGE.search(text)
+        for text in excerpts
+    )
