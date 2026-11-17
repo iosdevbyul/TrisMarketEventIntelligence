@@ -24,6 +24,9 @@ from tris_market_event_intelligence.historical_event_chain_explanation_quality i
     audit_explanation,
     audit_sequence,
 )
+from tris_market_event_intelligence.historical_evidence_decision_consistency import (
+    review_evidence_decisions,
+)
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
@@ -31,9 +34,6 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
     _read,
     _write,
-)
-from tris_market_event_intelligence.historical_evidence_decision_consistency import (
-    review_evidence_decisions,
 )
 from tris_market_event_intelligence.historical_staged_reasoning import (
     StagedDraftEvidenceError,
