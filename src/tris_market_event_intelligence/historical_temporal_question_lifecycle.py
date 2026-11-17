@@ -8,7 +8,6 @@ into an earlier replay. This is not historical archived-page PIT proof.
 from __future__ import annotations
 
 import re
-from datetime import date
 
 STATES = {"OPEN", "PARTIALLY_RESOLVED", "RESOLVED_BY_LATER_SOURCE"}
 STATE_ORDER = {
@@ -26,10 +25,16 @@ def _claims(doc: dict) -> dict[tuple[str, str], tuple[str, dict]]:
     }
 
 
-def validate_question_tracks(doc: dict) -> None:
+def validate_question_tracks(doc: dict, annotations: dict) -> None:
     refs = _claims(doc)
     ids: set[str] = set()
-    tracks = doc.get("questionTracks", [])
+    if (
+        not isinstance(annotations, dict)
+        or annotations.get("schemaVersion") != "historical_curated_question_tracks_v1"
+        or annotations.get("eventId") != doc["eventId"]
+    ):
+        raise ValueError("QUESTION_TRACK_ARTIFACT_INVALID")
+    tracks = annotations.get("tracks", [])
     if not isinstance(tracks, list) or len(tracks) > 20:
         raise ValueError("QUESTION_TRACKS_INVALID")
     for track in tracks:
@@ -94,14 +99,14 @@ def evidence_ledger(packet: dict) -> list[dict]:
     ]
 
 
-def question_snapshot(doc: dict, packet: dict) -> list[dict]:
+def question_snapshot(annotations: dict, packet: dict) -> list[dict]:
     """Only transitions whose source facts are visible may change a question."""
     visible = {
         (s["sourceId"], c["claimId"]) for s in packet["eligibleSources"]
         for c in s["claims"]
     }
     result = []
-    for question in doc.get("questionTracks", []):
+    for question in annotations["tracks"]:
         visible_transitions = [
             t for t in question["transitions"]
             if (t["sourceId"], t["claimId"]) in visible
