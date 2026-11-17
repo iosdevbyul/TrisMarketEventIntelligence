@@ -167,6 +167,9 @@ case "$action" in
   historical-reasoning-study)
     module="tris_market_event_intelligence.historical_reasoning_study_cli"
     ;;
+  historical-official-research)
+    module="tris_market_event_intelligence.historical_official_fact_reasoning_cli"
+    ;;
   historical-independent)
     module="tris_market_event_intelligence.historical_independent_news_cli"
     ;;
