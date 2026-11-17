@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "historical_official_event_chain_v1",
+  "eventId": "FDA-2023-COVID-VACCINE-FORMULA",
+  "eventSubject": "FDA 2023 COVID-19 vaccine formula selection and manufacturer authorization",
+  "curationMethod": "Independent dated FDA press releases verified by public FDA pages; curator paraphrases not publication-time snapshots",
+  "allPublisherClocksVerified": false,
+  "historicalPageVersionsVerified": false,
+  "sources": [
+    {
+      "sourceId": "fda-20230418-bivalent",
+      "publisher": "FDA",
+      "sourceDate": "2023-04-18",
+      "url": "https://www.fda.gov/news-events/press-announcements/coronavirus-covid-19-update-fda-authorizes-changes-simplify-use-bivalent-mrna-covid-19-vaccines",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "schedule-simplified",
+          "text": "FDA amended the emergency use authorizations of the Moderna and Pfizer-BioNTech bivalent mRNA COVID-19 vaccines to simplify dose schedules for most people."
+        },
+        {
+          "claimId": "fall-formula-pending",
+          "text": "FDA said an advisory committee would discuss fall 2023 strain composition in June before decisions on updated vaccines and future formulations."
+        }
+      ]
+    },
+    {
+      "sourceId": "fda-20230616-formula",
+      "publisher": "FDA",
+      "sourceDate": "2023-06-16",
+      "url": "https://www.fda.gov/news-events/press-announcements/fda-roundup-june-16-2023",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "xbb-recommendation",
+          "text": "FDA advised manufacturers developing updated 2023-2024 COVID-19 vaccines to use a monovalent XBB.1.5 composition, incorporating advisory committee input."
+        },
+        {
+          "claimId": "filing-still-needed",
+          "text": "FDA anticipated manufacturers submitting supporting data and filings for future agency action on updated vaccines before fall availability."
+        }
+      ]
+    },
+    {
+      "sourceId": "fda-20230911-mrna",
+      "publisher": "FDA",
+      "sourceDate": "2023-09-11",
+      "url": "https://www.fda.gov/news-events/press-announcements/fda-takes-action-updated-mrna-covid-19-vaccines-better-protect-against-currently-circulating",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "mrna-authorization",
+          "text": "FDA approved and authorized updated 2023-2024 mRNA COVID-19 vaccines for ModernaTX and Pfizer with a monovalent Omicron XBB.1.5 component."
+        },
+        {
+          "claimId": "old-bivalent-replaced",
+          "text": "FDA said earlier bivalent Moderna and Pfizer-BioNTech vaccines were no longer authorized in the United States after the updated formula action."
+        }
+      ]
+    },
+    {
+      "sourceId": "fda-20231003-novavax",
+      "publisher": "FDA",
+      "sourceDate": "2023-10-03",
+      "url": "https://www.fda.gov/news-events/press-announcements/fda-authorizes-updated-novavax-covid-19-vaccine-formulated-better-protect-against-currently",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "novavax-authorization",
+          "text": "FDA amended the Novavax adjuvanted COVID-19 vaccine emergency use authorization for the 2023-2024 monovalent XBB.1.5 formula for people 12 years and older."
+        },
+        {
+          "claimId": "distinct-technology",
+          "text": "FDA presented the updated Novavax protein-based vaccine authorization as another option following the separate ModernaTX and Pfizer mRNA authorizations."
+        }
+      ]
+    }
+  ],
+  "curatedEdges": [
+    {
+      "edgeId": "fda-18-to-june-formula",
+      "fromSourceId": "fda-20230418-bivalent",
+      "toSourceId": "fda-20230616-formula",
+      "relation": "OFFICIAL_PROCESS_FOLLOWUP",
+      "basis": "April's announcement left fall strain formulation to future advisory discussions, while FDA's June update subsequently recommended a specific XBB.1.5 composition."
+    },
+    {
+      "edgeId": "fda-june-to-sep-mrna",
+      "fromSourceId": "fda-20230616-formula",
+      "toSourceId": "fda-20230911-mrna",
+      "relation": "OFFICIAL_PROCESS_FOLLOWUP",
+      "basis": "June's manufacturer formula guidance anticipated data submissions and agency decisions, and September FDA announcements authorized specific updated mRNA products."
+    },
+    {
+      "edgeId": "fda-sep-to-oct-novavax",
+      "fromSourceId": "fda-20230911-mrna",
+      "toSourceId": "fda-20231003-novavax",
+      "relation": "RELATED_SCOPE_CHANGE",
+      "basis": "September FDA approvals and authorizations covered mRNA vaccines made by ModernaTX and Pfizer, whereas October's further authorization covered the distinct Novavax adjuvanted product."
+    }
+  ]
+}
