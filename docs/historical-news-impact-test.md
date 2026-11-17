@@ -505,3 +505,48 @@ publisher snapshots. Synthetic manufacturing, energy and transport
 cases remain regression tests only. Official sources and original cohort
 are read-only; results are created in a new private file, never auto-train,
 auto-promote, request price data or execute orders.
+
+## Real three-case semantic-quality audit after the first Gemma4 run
+
+A live Microsoft/Alphabet/AMD research run classified **all five**
+conditional business mechanisms as `REGULATION`, even though the cited
+facts covered Microsoft and Google Cloud growth, Alphabet Cloud
+profitability, AMD operating loss and MI300 product guidance; no cited
+official source fact established regulatory measures. Its schema gate
+reported zero rejected mechanisms. Alphabet proposals also introduced
+unsupported quantitative thresholds (10%, 15% and USD 400m/350m), and
+one Microsoft fact interpretation called the cloud business
+`high-margin` although the quoted curated fact did not support this
+assertion. This is a structural pass but an economic reasoning failure.
+
+The research pipeline now keeps the *original model-authored channel
+unchanged* and quarantines any `REGULATION` transmission lacking
+both primary-source regulation evidence and actual regulation-related
+mechanism language. Numeric thresholds absent from cited source facts
+are isolated as `UNSOURCED_NUMERIC_THRESHOLD` rather than silently
+promoted into evidence. Unsupported superlatives such as
+`high-margin` on factual interpretations receive human-review flags
+without rewriting historical source statements. These are conservative
+lexical audit checks, **not** proof of semantic entailment; accepted
+hypotheses remain human-review required. Python never relabels
+`REGULATION` as `REVENUE` or another category by guessing.
+
+To audit the previously generated **real Gemma4 v1** result without
+rerunning the model, use the new create-only audit mode:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-official-research \
+  --cohort research/independent-historical-news-2023.json \
+  --audit-existing "$DATA/official-three-case-reasoning-v1.json" \
+  --output "$DATA/official-three-case-reasoning-audit-v2.json"
+```
+
+The cohort SHA, distinct case IDs, official source IDs and original
+curated fact statements are rechecked before any reinterpretation.
+The prior v1 JSON is **never modified**. The new audit artifact
+contains original rejected proposals and independent quality gate
+reasons, with `auditModelCalls=0`; its cross-event comparison excludes
+unsupported channels. These new quality checks also run on all future
+`--run` outputs. Neither the v1 report nor this audit establishes
+historical PIT validity, source semantic truth or market causation.
