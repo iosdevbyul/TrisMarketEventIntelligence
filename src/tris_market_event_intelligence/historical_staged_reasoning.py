@@ -144,14 +144,25 @@ def produce_draft(
 ) -> dict:
     """One factual stage. Reject incomplete or unavailable claims; no auto-fill."""
     questions = visible_questions(annotations, packet)
+    fresh = {
+        s["sourceId"] for s in packet["eligibleSources"]
+        if s["sourceId"] not in packet["previouslySeenSourceIds"]
+    }
     envelope = {
         "visibleHistoricalEvidence": _model_packet(packet),
         "visibleResearchQuestions": questions,
+        "requiredNewSourceIds": sorted(fresh),
     }
+    schema = EvidenceFirstDraft.model_json_schema()
+    # Schema cardinality is cutoff-local. It helps constrained JSON models
+    # allocate all required evidence slots, but cannot replace ID validation.
+    schema["properties"]["changeItems"]["minItems"] = max(1, len(fresh))
+    schema["properties"]["questionAssessments"]["minItems"] = len(questions)
+    schema["properties"]["questionAssessments"]["maxItems"] = len(questions)
     raw = provider.generate_json(
         system=STAGE_ONE_SYSTEM,
         user=json.dumps(envelope, ensure_ascii=False),
-        schema=EvidenceFirstDraft.model_json_schema(),
+        schema=schema,
     )
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > 24_000:
         raise ValueError("STAGED_DRAFT_GENERATION_INVALID")
@@ -159,10 +170,6 @@ def produce_draft(
     refs = {
         (s["sourceId"], c["claimId"])
         for s in packet["eligibleSources"] for c in s["claims"]
-    }
-    fresh = {
-        s["sourceId"] for s in packet["eligibleSources"]
-        if s["sourceId"] not in packet["previouslySeenSourceIds"]
     }
     accepted = [x.model_dump() for x in draft.changeItems]
     referenced = [(x["sourceId"], x["claimId"]) for x in accepted]
