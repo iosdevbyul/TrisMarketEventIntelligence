@@ -19,6 +19,13 @@ _FAA_COST_REVERSE = re.compile(
     r".{0,50}?\b(?:airline|inspection|compliance|grounding)\b",
     re.IGNORECASE,
 )
+_FAA_MANUFACTURER_DIRECT_COST = re.compile(
+    r"\b(?:impos(?:e|es|ed|ing)|require(?:s|d)?)\b.{0,110}?"
+    r"\b(?:costs?|expenses?|downtime|maintenance|modifications?)\b"
+    r".{0,160}?\b(?:on|upon|for|borne\s+by)\s+"
+    r"(?:the\s+)?(?:manufacturer|boeing)\b",
+    re.IGNORECASE,
+)
 _FAA_OPERATOR = re.compile(
     r"\b(?:airlines?|operators?|airplanes?\s+operated\s+by)\b",
     re.IGNORECASE,
@@ -52,7 +59,9 @@ def inspect_evidence_boundary(proposal: dict, case: dict) -> dict:
         and proposal["target"] == "Boeing"
         and _FAA_OPERATOR.search(cited)
         and (
-            _FAA_COST.search(explanation) or _FAA_COST_REVERSE.search(explanation)
+            _FAA_COST.search(explanation)
+            or _FAA_COST_REVERSE.search(explanation)
+            or _FAA_MANUFACTURER_DIRECT_COST.search(explanation)
         )
     ):
         # FAA grounded airplanes operated by airlines. This source alone
