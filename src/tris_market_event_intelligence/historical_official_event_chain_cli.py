@@ -33,6 +33,9 @@ from tris_market_event_intelligence.historical_evidence_decision_consistency imp
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
+from tris_market_event_intelligence.historical_generation_termination import (
+    diagnose_termination,
+)
 from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
     _read,
@@ -451,6 +454,16 @@ def run_replay(
         )
         assessment["stagedModelOutputReview"] = review_staged_model_output(
             packet, assessment,
+        )
+        # Independent termination attribution; preserve all prior saved
+        # fields and never reinterpret normal stop as verified completeness.
+        assessment["generationTerminationAnalysis"] = diagnose_termination(
+            stage_two_generation,
+            narrative=assessment["whatChanged"],
+            schema_character_limit={
+                "compact_narrative_two_fields_v1": 600,
+                "compact_narrative_two_fields_v2": 1200,
+            }.get(assessment.get("stageTwoOutputContract")),
         )
         assessment["modelReasoningProvenance"] = (
             "STAGED_MODEL_GENERATED_NOT_CURATOR_OR_VERIFIED_SEMANTICS"
