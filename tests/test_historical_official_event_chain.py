@@ -223,3 +223,43 @@ def test_preview_and_occupied_output_have_no_model_calls(
     with pytest.raises(ValueError, match="Expected new private output"):
         chain.main()
     assert existing.read_text(encoding="utf-8") == '{"keep":true}'
+
+
+def test_paired_cutoff_sequence_records_only_new_publication_evidence() -> None:
+    doc = load()
+    provider = ChainProvider()
+    sequence = chain.run_sequence(
+        doc, [date(2024, 1, 13), date(2024, 1, 25)], provider,
+    )
+    assert provider.calls == 2
+    assert sequence["modelCalls"] == 2
+    diff = sequence["sourceAvailabilityDiff"]
+    assert diff["newlyEligibleSourceIds"] == [
+        "faa-20240121-900er-inspection", "faa-20240124-production",
+    ]
+    assert len(diff["newlyVisibleEdgeIds"]) == 3
+    assert sequence["historicalPITVerified"] is False
+    assert sequence["causalityProven"] is False
+
+
+def test_paired_cutoff_sequence_requires_strict_order() -> None:
+    doc = load()
+    with pytest.raises(ValueError, match="SEQUENCE_CUTOFF_INVALID"):
+        chain.run_sequence(
+            doc, [date(2024, 1, 25), date(2024, 1, 13)], ChainProvider(),
+        )
+
+
+def test_paired_preview_without_models(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "argv", [
+        "historical-event-chain", "--chain", str(COHORT),
+        "--sequence", "2024-01-13", "2024-01-25", "--preview",
+    ])
+    chain.main()
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["modelCalls"] == 0
+    assert len(packet["steps"]) == 2
+    assert len(packet["sourceAvailabilityDiff"]["newlyVisibleEdgeIds"]) == 3
+    assert packet["pointInTimeVerified"] is False
