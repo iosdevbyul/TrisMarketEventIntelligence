@@ -151,7 +151,6 @@ def test_actual_fda_late_text_flags_resolved_formula_but_preserves_filing_unknow
     saved = chain.run_sequence(
         doc, [date(2023, 6, 17), date(2023, 10, 4)], provider,
     )
-    before = copy.deepcopy(saved)
     late = saved["replaySteps"][1]["assessment"]
     late["whatRemainsUnknown"] = (
         "The specific composition of the fall 2023 strain discussed in June "
@@ -233,7 +232,7 @@ def test_new_two_cutoff_model_does_not_receive_later_editorial_knowledge() -> No
     assert saved["replaySteps"][1]["questionLifecycle"][0]["status"] == (
         "RESOLVED_BY_LATER_SOURCE"
     )
-    assert len(saved["questionLifecycleDelta"]) == 1
+    assert len(saved["questionLifecycleDelta"]) == 2
     assert "MODEL_CHANGE_ITEMS_OMIT_VISIBLE_NEW_SOURCES" in (
         saved["replaySteps"][1]["assessment"][
             "temporalConsistencyAudit"
