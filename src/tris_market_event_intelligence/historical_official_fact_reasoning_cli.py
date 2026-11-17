@@ -23,15 +23,15 @@ from tris_market_event_intelligence.historical_claim_verification import (
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
-from tris_market_event_intelligence.historical_official_mechanism_audit import (
-    inspect_interpretation,
-    inspect_mechanism,
-)
 from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
     _read,
     _write,
     validate_cohort,
+)
+from tris_market_event_intelligence.historical_official_mechanism_audit import (
+    inspect_interpretation,
+    inspect_mechanism,
 )
 from tris_market_event_intelligence.llm_runtime import (
     LLMCapabilities,
