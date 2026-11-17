@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "cross_domain_official_event_research_v1",
+  "purpose": "Cross-domain official historical disclosures; causal hypotheses only, no observed prices or point-in-time publisher clocks",
+  "publisherClockVerified": false,
+  "historicalPageVersionVerified": false,
+  "cases": [
+    {
+      "caseId": "FAA-2024-01-06-7379MAX",
+      "category": "AVIATION_SAFETY_REGULATION",
+      "eventDate": "2024-01-06",
+      "subject": "FAA Boeing 737-9 MAX emergency grounding",
+      "allowedEconomicTargets": [
+        "Boeing"
+      ],
+      "source": {
+        "sourceId": "faa-7379-max-2024-01-06",
+        "url": "https://www.faa.gov/newsroom/updates-boeing-737-9-max-aircraft",
+        "publisher": "Federal Aviation Administration",
+        "kind": "OFFICIAL_REGULATOR_UPDATE",
+        "retrospectivePage": true,
+        "dateOnly": true
+      },
+      "facts": [
+        {
+          "factId": "faa-incident",
+          "statement": "The FAA's retrospective update identifies a January 5, 2024 door plug incident on Alaska Airlines Flight 1282.",
+          "claimType": "REPORTED_EVENT"
+        },
+        {
+          "factId": "faa-grounding",
+          "statement": "On January 6, 2024, the FAA ordered temporary grounding of certain Boeing 737-9 MAX airplanes operated by US airlines or in US territory.",
+          "claimType": "OFFICIAL_ACTION"
+        },
+        {
+          "factId": "faa-inspections",
+          "statement": "The FAA emergency airworthiness directive required inspections before further flight and said approximately 171 aircraft worldwide would be affected.",
+          "claimType": "OFFICIAL_ACTION"
+        }
+      ]
+    },
+    {
+      "caseId": "FDA-2023-09-11-MRNA",
+      "category": "PUBLIC_HEALTH_REGULATION",
+      "eventDate": "2023-09-11",
+      "subject": "FDA updated 2023-24 mRNA COVID-19 vaccine authorizations",
+      "allowedEconomicTargets": [
+        "ModernaTX",
+        "Pfizer"
+      ],
+      "source": {
+        "sourceId": "fda-2023-mrna-vaccines",
+        "url": "https://www.fda.gov/news-events/press-announcements/fda-takes-action-updated-mrna-covid-19-vaccines-better-protect-against-currently-circulating",
+        "publisher": "US Food and Drug Administration",
+        "kind": "OFFICIAL_REGULATOR_RELEASE",
+        "retrospectivePage": false,
+        "dateOnly": true
+      },
+      "facts": [
+        {
+          "factId": "fda-authorization",
+          "statement": "On September 11, 2023, the FDA approved and authorized for emergency use updated 2023-2024 mRNA COVID-19 vaccines manufactured by ModernaTX and Pfizer.",
+          "claimType": "OFFICIAL_ACTION"
+        },
+        {
+          "factId": "fda-formula",
+          "statement": "The updated monovalent mRNA vaccines included a component corresponding to the Omicron XBB.1.5 variant.",
+          "claimType": "REPORTED_EVENT"
+        },
+        {
+          "factId": "fda-previous",
+          "statement": "The FDA said the prior bivalent Moderna and Pfizer-BioNTech COVID-19 vaccines were no longer authorized for use in the United States after that action.",
+          "claimType": "OFFICIAL_ACTION"
+        }
+      ]
+    },
+    {
+      "caseId": "NASA-2023-09-24-BENNU",
+      "category": "SCIENTIFIC_MISSION_NEGATIVE_CONTROL",
+      "eventDate": "2023-09-24",
+      "subject": "NASA Bennu asteroid sample landing",
+      "allowedEconomicTargets": [],
+      "source": {
+        "sourceId": "nasa-bennu-2023-09-24",
+        "url": "https://www.nasa.gov/news-release/nasas-first-asteroid-sample-has-landed-now-secure-in-clean-room/",
+        "publisher": "National Aeronautics and Space Administration",
+        "kind": "OFFICIAL_AGENCY_RELEASE",
+        "retrospectivePage": false,
+        "dateOnly": true
+      },
+      "facts": [
+        {
+          "factId": "nasa-arrival",
+          "statement": "NASA announced that the Bennu asteroid sample return capsule landed on September 24, 2023, at Utah Test and Training Range.",
+          "claimType": "REPORTED_EVENT"
+        },
+        {
+          "factId": "nasa-recovery",
+          "statement": "NASA reported that the returned capsule was taken by helicopter to a temporary clean room on the Utah range.",
+          "claimType": "REPORTED_EVENT"
+        },
+        {
+          "factId": "nasa-history",
+          "statement": "NASA stated that the asteroid samples were collected by OSIRIS-REx in October 2020, before their September 2023 return.",
+          "claimType": "REPORTED_EVENT"
+        }
+      ]
+    }
+  ]
+}
