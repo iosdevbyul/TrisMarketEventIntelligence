@@ -162,7 +162,10 @@ def test_fake_market_results_cannot_be_smuggled_into_mechanism() -> None:
     result = official.run_case(_cohort()["cases"][0], MarketOutcome())
     assert result["economicMechanisms"] == []
     assert result["rejectedEconomicMechanisms"][0]["reason"] == (
-        "EFFECT_NOT_CONDITIONAL"
+        "SCENARIO_STRUCTURE_UNSUPPORTED"
+    )
+    assert "OBSERVED_MARKET_RESULT_NOT_SUPPORTED" in (
+        result["rejectedEconomicMechanisms"][0]["scenarioReview"]["blockers"]
     )
 
 
