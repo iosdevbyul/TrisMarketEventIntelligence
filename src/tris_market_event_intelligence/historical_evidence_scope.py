@@ -67,3 +67,20 @@ def redact_market_result_sentences(text: str) -> str:
         if is_observed_market_result(segment) else segment
         for segment in sentences if segment
     )
+
+
+# Source evidence naming one issuer is not in itself evidence that
+# comparable businesses face the same economic exposure.
+_SECTOR_WIDE_LANGUAGE = re.compile(
+    r"\b(?:industry(?:-wide)?|sector(?:-wide)?|"
+    r"across\s+(?:chip|technology|tech|semiconductor)\s+companies|"
+    r"other\s+(?:chipmakers|chip\s+firms|technology\s+companies|"
+    r"semiconductor\s+companies)|chipmakers|competitors|suppliers|"
+    r"supply\s+chain|multiple\s+(?:firms|companies))\b",
+    re.IGNORECASE,
+)
+
+
+def has_sector_wide_source_evidence(excerpts: list[str]) -> bool:
+    """Conservative sector-scope cue; not proof of financial causality."""
+    return any(_SECTOR_WIDE_LANGUAGE.search(text) for text in excerpts)
