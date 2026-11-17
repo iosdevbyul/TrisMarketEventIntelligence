@@ -33,6 +33,26 @@ _CONDITIONAL = re.compile(
     re.IGNORECASE,
 )
 
+# Publishers can insert invisible Unicode formatting marks or unusual
+# whitespace. These few layout-only code points do not change wording;
+# NEVER casefold, remove punctuation, change numbers, or fuzzy-match text.
+_LAYOUT_MARKS = frozenset("\u200b\u200c\u200d\u2060\ufeff")
+
+
+def _normalize_source_layout(text: str) -> str:
+    return " ".join(
+        "".join(" " if ch.isspace() else ch for ch in text
+                if ch not in _LAYOUT_MARKS).split()
+    )
+
+
+def _source_match_kind(excerpt: str, original: str) -> str | None:
+    if excerpt in original:
+        return "EXACT_SUBSTRING"
+    if _normalize_source_layout(excerpt) in _normalize_source_layout(original):
+        return "LAYOUT_NORMALIZED_SUBSTRING"
+    return None
+
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -79,11 +99,15 @@ def verify_claims(
         if quote is None or item.quoteId not in allowed:
             errors.append({"claimIndex": index, "reason": "CLAIM_QUOTE_NOT_ALLOWED"})
             continue
-        # Exact substring, preserving the original source text verbatim.
-        if item.sourceExcerpt not in quote["text"]:
+        # Character-level original check first, then a tightly bounded
+        # normalization for invisible layout marks and whitespace only.
+        # Keep original text for forensic review; never rewrite an excerpt.
+        match_kind = _source_match_kind(item.sourceExcerpt, quote["text"])
+        if match_kind is None:
             errors.append({"claimIndex": index, "reason": "EXCERPT_NOT_IN_SOURCE"})
             continue
-        if is_observed_market_result(item.sourceExcerpt):
+        if (is_observed_market_result(item.sourceExcerpt)
+                or is_observed_market_result(quote["text"])):
             errors.append({
                 "claimIndex": index,
                 "reason": "OBSERVED_MARKET_RESULT_SOURCE_INELIGIBLE",
@@ -100,7 +124,8 @@ def verify_claims(
             "quoteId": item.quoteId,
             "sourceExcerpt": item.sourceExcerpt,
             "epistemicType": item.epistemicType,
-            "sourceMatch": "EXACT_SUBSTRING",
+            "sourceMatch": match_kind,
+            "originalSourceQuote": quote["text"],
             "semanticEntailmentVerified": False,
         })
     if claimed_name is not None and not any(
