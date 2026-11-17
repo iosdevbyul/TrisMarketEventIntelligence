@@ -360,6 +360,74 @@ def run_cohort(doc: dict, provider: LLMProvider) -> dict:
     }
 
 
+def audit_existing(cohort: dict, existing: dict) -> dict:
+    """Reassess a saved model run without changing its original output."""
+    validate_cohort(cohort)
+    if (
+        existing.get("schemaVersion") != "historical_official_fact_reasoning_cohort_v1"
+        or existing.get("sourceCohortSha256") != _digest(cohort)
+        or existing.get("marketPricesRead") is not False
+        or existing.get("historicalPITVerified") is not False
+        or existing.get("trainingPerformed") is not False
+        or existing.get("promotionAllowed") is not False
+        or existing.get("tradesPlaced") is not False
+        or not isinstance(existing.get("cases"), list)
+        or len(existing["cases"]) != len(cohort["cases"])
+    ):
+        raise ValueError("OFFICIAL_STUDY_PRIOR_ARTIFACT_INTEGRITY_INVALID")
+    result = copy.deepcopy(existing)
+    for case, prior in zip(cohort["cases"], result["cases"], strict=True):
+        facts = {fact["factId"]: fact for fact in case["facts"]}
+        if (
+            prior.get("caseId") != case["caseId"]
+            or prior.get("issuer") != case["issuer"]
+            or prior.get("source") != case["source"]
+            or prior.get("sourceFactsSha256") != _digest({"facts": case["facts"]})
+            or not isinstance(prior.get("factInterpretations"), list)
+            or not isinstance(prior.get("economicMechanisms"), list)
+            or not isinstance(prior.get("rejectedEconomicMechanisms"), list)
+        ):
+            raise ValueError("OFFICIAL_STUDY_PRIOR_CASE_OR_SOURCE_INVALID")
+        for fact in prior["factInterpretations"]:
+            if (
+                fact.get("factId") not in facts
+                or fact.get("originalSourceFact")
+                != facts[fact["factId"]]["statement"]
+                or fact.get("sourceId") != case["source"]["sourceId"]
+            ):
+                raise ValueError("OFFICIAL_STUDY_PRIOR_FACT_TAMPERED")
+            fact["interpretationQualityFlags"] = inspect_interpretation(
+                fact["explanation"], facts[fact["factId"]]["statement"],
+            )
+        approved = []
+        for proposal in prior["economicMechanisms"]:
+            audit = inspect_mechanism(proposal, facts)
+            if audit["blockers"]:
+                prior["rejectedEconomicMechanisms"].append({
+                    "reason": "ECONOMIC_MECHANISM_QUALITY_GATE",
+                    "proposal": proposal,
+                    "qualityAudit": audit,
+                    "auditSource": "PRIOR_MODEL_OUTPUT",
+                })
+            else:
+                proposal["qualityAudit"] = audit
+                approved.append(proposal)
+        prior["economicMechanisms"] = approved
+        prior["qualityAuditPerformed"] = True
+    result["crossEventReview"] = compare_cohort(
+        result["cases"], cohort_sha=_digest(cohort),
+    )
+    result["schemaVersion"] = "historical_official_fact_reasoning_audit_v1"
+    result["status"] = "REAL_PRIMARY_CASE_MECHANISM_AUDIT_REQUIRES_HUMAN_REVIEW"
+    result["originalModelCalls"] = existing["modelCalls"]
+    result["auditModelCalls"] = 0
+    result["semanticEntailmentVerified"] = False
+    result["trainingPerformed"] = False
+    result["promotionAllowed"] = False
+    result["tradesPlaced"] = False
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Real official-source Microsoft, Alphabet, AMD research"
@@ -370,6 +438,7 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
+    mode.add_argument("--audit-existing", type=Path)
     args = parser.parse_args()
     data = _read(args.cohort)
     validate_cohort(data)
@@ -385,7 +454,26 @@ def main() -> None:
         }))
         return
     if args.output is None:
-        parser.error("--run requires --output")
+        parser.error("--run or --audit-existing requires --output")
+    if args.audit_existing is not None:
+        report = audit_existing(data, _read(args.audit_existing))
+        _write(args.output, report)
+        print(json.dumps({
+            "status": report["status"],
+            "caseCount": len(report["cases"]),
+            "auditModelCalls": 0,
+            "qualifiedMechanisms": sum(
+                len(row["economicMechanisms"]) for row in report["cases"]
+            ),
+            "qualityGateRejections": sum(
+                sum(item["reason"] == "ECONOMIC_MECHANISM_QUALITY_GATE"
+                    for item in row["rejectedEconomicMechanisms"])
+                for row in report["cases"]
+            ),
+            "generalizationVerified": False,
+            "outputCreated": True,
+        }, ensure_ascii=False))
+        return
     settings = replace(
         LLMSettings.from_environment(explicit=True), model_id=args.model,
         capabilities=LLMCapabilities(
