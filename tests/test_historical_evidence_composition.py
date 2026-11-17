@@ -23,26 +23,28 @@ class ComposedProvider(StageProvider):
 
     def generate_json(self, *, system: str, user: str, schema: dict) -> str:
         properties = schema["properties"]
-        if "sourceId" in properties and "explanation" in properties:
+        if "items" in properties:
             self.calls += 1
             envelope = json.loads(user)
             self.inputs.append(envelope)
             self.composed_inputs.append(envelope)
             source = envelope["source"]
             return json.dumps({
-                "sourceId": (
-                    "future-invalid-source" if self.wrong_scope
-                    else source["sourceId"]
-                ),
-                "claimId": source["claims"][0]["claimId"],
-                "explanation": (
-                    "The official regulator documented a specific decision "
-                    "for this source's named product and agency process."
-                ),
-                "limitation": (
-                    "The document does not establish subsequent completed "
-                    "implementation or underlying internal review records."
-                ),
+                "items": [{
+                    "sourceId": (
+                        "future-invalid-source" if self.wrong_scope
+                        else source["sourceId"]
+                    ),
+                    "claimId": claim["claimId"],
+                    "explanation": (
+                        "The official regulator documented a specific decision "
+                        "for this source's named product and agency process."
+                    ),
+                    "limitation": (
+                        "The document does not establish subsequent completed "
+                        "implementation or underlying internal review records."
+                    ),
+                } for claim in source["claims"]],
             })
         if "assessments" in properties:
             self.calls += 1
@@ -83,11 +85,14 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
     for step in run["replaySteps"]:
         assessment = step["assessment"]
         composition = assessment["sourceScopedComposition"]
-        assert len(composition["sourceExplanations"]) == 2
+        assert len(composition["sourceExplanations"]) == 4
         assert composition["sourceCoverage"]["requiredSourceIds"] == (
             composition["sourceCoverage"]["explainedSourceIds"]
         )
         assert "VERBATIM_SOURCE_MODEL_SENTENCES" == composition["narrativeAssembly"]
+        assert composition["sourceCoverage"]["requiredClaimRefs"] == (
+            composition["sourceCoverage"]["explainedClaimRefs"]
+        )
         axes = assessment["independentQuestionAxes"]["questionAssessments"]
         assert axes
         assert all(x["requestedEvidenceStatus"] == "NOT_OBSERVED" for x in axes)
@@ -104,7 +109,7 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
 
 def test_invalid_source_output_is_never_composed_or_filled_in() -> None:
     provider = ComposedProvider(wrong_scope=True)
-    with pytest.raises(ComposedEvidenceError, match="COMPOSED_SOURCE_EXPLANATION_INVALID"):
+    with pytest.raises(ComposedEvidenceError, match="COMPOSED_SOURCE_CLAIM_COVERAGE_INVALID"):
         chain.run_replay(
             fda(), date(2023, 6, 17), provider,
             question_tracks=tracks(), reasoning_mode="staged-composed",
