@@ -671,3 +671,47 @@ source-checked public claims are present, no keys, raw private investor
 data, outcome leaks or ticker guessing. True temporal replay will
 require immutable originally published archive captures and their
 independently verified first-availability timestamps.
+
+## Existing real cross-domain Gemma4 v1: offline fault diagnosis
+
+The first user-local `cross-domain-official-research-v1.json` was created,
+but a repeated `--run` targeting the same path wasted model computation and
+failed at the final create-only `_write` with
+`ValueError: Expected new private output`. The runner now checks that
+the destination path is new, writable within an existing regular parent
+directory, and not a symlink **before** starting an LLM runtime. The
+original safety-preserving `os.O_EXCL` create-only write stays in place
+against races. Never delete, overwrite or silently reuse a previous result.
+
+The saved real v1 summary reported three official sources, three domains,
+nine fact assessments, **zero** research candidates, **four** rejected
+hypotheses (FAA 1, FDA 2, NASA 1), and
+`negativeControlAbstained=false`. This is an actual failed
+model-abstention trial for NASA, *even though the target gate correctly
+quarantined the fabricated or unsupported hypothesis*. The precise FAA/FDA
+rejection texts and semantic validity are **not** established by aggregate
+counts alone.
+
+To inspect original rejected proposals and re-evaluate the same immutable
+JSON **without a single additional Gemma4 call**, run once after updating
+main, using a new output path:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-cross-domain \
+  --cohort research/cross-domain-official-events-2023-2024.json \
+  --audit-existing "$DATA/cross-domain-official-research-v1.json" \
+  --output "$DATA/cross-domain-official-research-audit-v2.json"
+```
+
+This new create-only audit verifies the original cohort SHA, case IDs,
+source IDs, original curated fact texts, model candidates and NASA
+abstention consistency. It saves *the complete original proposal* for
+every rejection, previous reason codes, newly assessed scenario/economic
+issue codes and classifications. A formerly syntax-rejected proposal may
+be recorded as `recoverableForHumanReview` only, never as a verified
+cause or approved candidate. Any NASA hypothesis remains a
+`NEGATIVE_CONTROL_MODEL_ABSTENTION_FAILURE` even when the deterministic
+target gate rejects it. `auditModelCalls=0`, source facts are never
+rewritten, the v1 artifact remains untouched, and semantic/PIT/causal
+accuracy flags remain false.

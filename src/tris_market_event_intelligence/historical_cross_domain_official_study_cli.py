@@ -310,6 +310,175 @@ def study_cohort(doc: dict, provider: LLMProvider) -> dict:
     }
 
 
+
+def _require_new_output(path: Path) -> None:
+    """Refuse occupied/unsafe destinations *before* invoking expensive models."""
+    if (
+        path.is_symlink()
+        or path.exists()
+        or not path.parent.is_dir()
+        or path.parent.is_symlink()
+    ):
+        raise ValueError("Expected new private output")
+
+
+def audit_saved_research(cohort: dict, existing: dict) -> dict:
+    """Review all saved rejected claims, preserving the original evidence."""
+    validate_cohort(cohort)
+    if (
+        existing.get("schemaVersion") != RESULT_VERSION
+        or existing.get("sourceCohortSha256") != _digest(cohort)
+        or existing.get("originalOfficialPagesCaptured") is not False
+        or existing.get("historicalPublisherTimeVerified") is not False
+        or existing.get("actualPricesRead") is not False
+        or existing.get("trainingPerformed") is not False
+        or existing.get("promotionAllowed") is not False
+        or existing.get("tradesPlaced") is not False
+        or not isinstance(existing.get("cases"), list)
+        or len(existing["cases"]) != len(cohort["cases"])
+    ):
+        raise ValueError("CROSS_DOMAIN_SAVED_RESEARCH_INTEGRITY_INVALID")
+    audit_cases = []
+    for case, prior in zip(cohort["cases"], existing["cases"], strict=True):
+        if (
+            prior.get("caseId") != case["caseId"]
+            or prior.get("category") != case["category"]
+            or prior.get("source") != case["source"]
+            or prior.get("caseInputSha256") != _digest(case)
+            or not isinstance(prior.get("factAssessments"), list)
+            or not isinstance(prior.get("researchCandidates"), list)
+            or not isinstance(prior.get("rejectedHypotheses"), list)
+        ):
+            raise ValueError("CROSS_DOMAIN_SAVED_CASE_INTEGRITY_INVALID")
+        by_id = {f["factId"]: f for f in case["facts"]}
+        assessments = prior["factAssessments"]
+        if (
+            len(assessments) != 3
+            or {a.get("factId") for a in assessments} != set(by_id)
+            or any(
+                a.get("sourceStatement") != by_id[a["factId"]]["statement"]
+                for a in assessments
+            )
+        ):
+            raise ValueError("CROSS_DOMAIN_SAVED_FACT_PROVENANCE_INVALID")
+        diagnostics: list[dict] = []
+        recoverable: list[dict] = []
+        for rejection in prior["rejectedHypotheses"]:
+            proposal = rejection.get("proposal")
+            if not isinstance(proposal, dict):
+                raise TypeError("CROSS_DOMAIN_SAVED_PROPOSAL_INVALID")
+            try:
+                item = Explanation.model_validate(proposal).model_dump()
+            except ValueError as exc:
+                raise ValueError("CROSS_DOMAIN_SAVED_PROPOSAL_INVALID") from exc
+            ids = item["sourceFactIds"]
+            issues = []
+            if len(ids) != len(set(ids)) or any(fid not in by_id for fid in ids):
+                issues.append("UNKNOWN_OR_DUPLICATE_SOURCE_FACT")
+            if item["target"] not in case["allowedEconomicTargets"]:
+                issues.append("TARGET_NOT_SUPPORTED_BY_OFFICIAL_SOURCE")
+            scenario = review_scenario(item)
+            economic = inspect_mechanism(item, by_id)
+            issues.extend(scenario["blockers"])
+            issues.extend(economic["blockers"])
+            classification = (
+                "NEGATIVE_CONTROL_MODEL_ABSTENTION_FAILURE"
+                if case["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
+                else "SOURCE_OR_TARGET_INVALID" if any(
+                    issue in {
+                        "UNKNOWN_OR_DUPLICATE_SOURCE_FACT",
+                        "TARGET_NOT_SUPPORTED_BY_OFFICIAL_SOURCE",
+                    } for issue in issues
+                )
+                else "UNSUPPORTED_ECONOMIC_CLAIM" if issues
+                else "ELIGIBLE_FOR_HUMAN_REVIEW_ONLY"
+            )
+            diagnostics.append({
+                "originalRejectionCodes": rejection.get("reasonCodes"),
+                "currentIssueCodes": issues,
+                "classification": classification,
+                "scenarioReview": scenario,
+                "economicAudit": economic,
+                "proposal": item,
+                "semanticAccuracyVerified": False,
+                "humanReviewRequired": True,
+            })
+            if classification == "ELIGIBLE_FOR_HUMAN_REVIEW_ONLY":
+                recoverable.append({
+                    "proposal": item,
+                    "originalRejectionCodes": rejection.get("reasonCodes"),
+                    "sourceCaseSha256": _digest(case),
+                    "recoverability": "REVIEW_ONLY_NOT_APPROVED",
+                    "humanReviewRequired": True,
+                    "economicCausalityVerified": False,
+                    "semanticAccuracyVerified": False,
+                })
+        for candidate in prior["researchCandidates"]:
+            ids = candidate.get("sourceFactIds")
+            if (
+                not isinstance(ids, list)
+                or any(fid not in by_id for fid in ids)
+                or candidate.get("target") not in case["allowedEconomicTargets"]
+            ):
+                raise ValueError("CROSS_DOMAIN_SAVED_CANDIDATE_INTEGRITY_INVALID")
+        is_negative = case["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
+        model_proposals = (
+            len(prior["researchCandidates"]) + len(prior["rejectedHypotheses"])
+        )
+        if (
+            is_negative
+            and prior.get("negativeControlAbstention") != (model_proposals == 0)
+        ):
+            raise ValueError("CROSS_DOMAIN_SAVED_ABSTENTION_INTEGRITY_INVALID")
+        audit_cases.append({
+            "caseId": case["caseId"],
+            "category": case["category"],
+            "source": case["source"],
+            "inputSha256": _digest(case),
+            "modelHypothesesProposed": model_proposals,
+            "originalAcceptedCandidates": len(prior["researchCandidates"]),
+            "originalRejectedHypotheses": len(prior["rejectedHypotheses"]),
+            "rejectionDiagnostics": diagnostics,
+            "recoverableForHumanReview": recoverable,
+            "negativeControlModelAbstained": (
+                model_proposals == 0 if is_negative else None
+            ),
+            "economicCausalityVerified": False,
+            "semanticAccuracyVerified": False,
+            "humanReviewRequired": True,
+        })
+    return {
+        "schemaVersion": "cross_domain_official_event_audit_v1",
+        "status": "CROSS_DOMAIN_EXISTING_MODEL_AUDIT_REQUIRES_HUMAN_REVIEW",
+        "originalSourceCohortSha256": _digest(cohort),
+        "originalResearchModelId": existing.get("modelId"),
+        "originalResearchModelCalls": existing.get("modelCalls"),
+        "auditModelCalls": 0,
+        "cases": audit_cases,
+        "summary": {
+            "originalRejectedHypotheses": sum(
+                x["originalRejectedHypotheses"] for x in audit_cases
+            ),
+            "recoverableForHumanReview": sum(
+                len(x["recoverableForHumanReview"]) for x in audit_cases
+            ),
+            "negativeControlModelAbstained": next(
+                x["negativeControlModelAbstained"] for x in audit_cases
+                if x["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
+            ),
+            "semanticAccuracyVerified": False,
+            "generalizationVerified": False,
+            "historicalPITVerified": False,
+            "causalityProven": False,
+        },
+        "originalArtifactUnchanged": True,
+        "marketPricesRead": False,
+        "trainingPerformed": False,
+        "promotionAllowed": False,
+        "tradesPlaced": False,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Official cross-domain real events")
     parser.add_argument("--cohort", type=Path, required=True)
@@ -318,6 +487,7 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
+    mode.add_argument("--audit-existing", type=Path)
     args = parser.parse_args()
     cohort = _read(args.cohort)
     validate_cohort(cohort)
@@ -335,7 +505,18 @@ def main() -> None:
         }))
         return
     if args.output is None:
-        parser.error("--run requires --output")
+        parser.error("--run or --audit-existing requires --output")
+    _require_new_output(args.output)
+    if args.audit_existing is not None:
+        result = audit_saved_research(cohort, _read(args.audit_existing))
+        _write(args.output, result)
+        print(json.dumps({
+            "status": result["status"],
+            "auditModelCalls": 0,
+            **result["summary"],
+            "outputCreated": True,
+        }, ensure_ascii=False))
+        return
     settings = replace(
         LLMSettings.from_environment(explicit=True), model_id=args.model,
         capabilities=LLMCapabilities(
