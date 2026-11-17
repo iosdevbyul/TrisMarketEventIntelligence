@@ -295,3 +295,33 @@ verification false and `humanReviewRequired=true`. The original two
 post-cutoff-revised publisher pages remain exploratory, never a strict
 historical accuracy benchmark. No stock prices or later outcomes enter the
 model or Claim Verification.
+
+## Universal Claim Verification gate (v12 live finding)
+
+The pinned v12 local Gemma4 run showed a semantic bypass: one syntactically
+accepted TECH sector proposal caused the recovery-only verifier to skip
+verification altogether (`modelCalls=3`, `impactRecoveryUsed=false`,
+`impactClaimChecks=[]`). The existing evidenceQuoteIds proved only that
+the quotes existed, not that the proposed mechanism was supported by them.
+
+In normal `--run` mode, all initially accepted impacts now require a
+separate, bounded atomic-claim explanation pass, even when the first impact
+pass produced one or more apparently valid records. Claims which fail the
+source-excerpt and conditional-mechanism checks are excluded from final
+`impacts` with `NEWS_TEST_CLAIM_VERIFICATION_MISSING` and remain visible
+in `initialAcceptedImpacts` and `rejectedImpacts`. Independently
+substantiated sector explanations replace the original unverified sector
+proposal; explicit verified issuer mappings can preserve stock identities
+only when that issuer receives an accepted atomic company explanation.
+
+`verifyAllImpacts=true` and `impactClaimChecks` expose the verification
+path; `impactRecoveryUsed` now indicates the additional pass for **both**
+initially accepted and initially rejected impacts. Existing programmatic
+legacy behavior is available only when verification is deliberately disabled;
+the CLI `--legacy-single-pass` option retains its historical compatibility
+behavior. No new market prices or post-cutoff results are read.
+
+Mechanical source-excerpt membership is still NOT semantic entailment,
+publisher truth, or demonstrated financial causation. Accepted explanations
+remain uncalibrated, human-review-required scenarios. The post-cutoff revised
+NVDA documents remain exploratory rather than eligible historical replay.
