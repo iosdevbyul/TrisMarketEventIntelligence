@@ -21,7 +21,6 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _write,
 )
 from tris_market_event_intelligence.historical_official_event_chain_cli import (
-    prepare_replay,
     validate_chain,
 )
 
