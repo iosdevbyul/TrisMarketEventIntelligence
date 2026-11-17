@@ -911,3 +911,89 @@ Explanation**, verified **Temporal Replay/PIT**, learned generalizable
 rules, and **Cross-Event Validation** remain separate future research
 milestones. No sealed outcomes, market prices, auto promotion or trading
 are touched.
+
+## Event-chain semantic explanation quality (actual FAA January replay review)
+
+The first **actual** user-local Gemma4 FAA two-cutoff sequence returned
+**4/4 source facts** for January 13, **8/8 source facts** for January 25,
+and **3/3 curated relationship IDs** without structural rejection. These
+counts demonstrate *reference coverage*, **not** causal understanding.
+
+Review of actual generated text identified three meaningful omissions:
+
+- January 13 `whatRemainsUnknown` minimized still-unresolved FAA audit
+  work, final inspection-process approval, supplier oversight outcomes
+  and necessary evidence (the initial announcement alone did not
+  establish that later approval had occurred).
+- All three January 25 link `missingEvidence` fields repeated the
+  already provided curated relationship descriptions rather than
+  identifying inspection results, audit findings, costs, or decisions
+  needed to support an independent causal account.
+- January 25 `whatChanged` omitted the separate 737-900ER inspection
+  recommendation, even though the model had mentioned that change
+  in one edge.
+
+### Offline evidence-quality auditing of the original result
+
+**Do not repeat the previous two Ollama calls.** The CLI can directly
+inspect the original immutable `...-v1.json` as saved on the user's
+Mac. It first verifies the original cohort SHA, each cutoff's complete
+eligible source set, edge set and conservative PIT flags. It then
+reports inspectable findings for (1) known pending decisions without
+specific follow-up questions, (2) statements minimizing remaining
+uncertainty, (3) missing new-source change coverage, and (4) edge
+evidence fields that merely paraphrase the editorial basis.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --audit-existing "$DATA/faa-event-chain-replay-two-cutoffs-v1.json" \
+  --output "$DATA/faa-event-chain-explanation-audit-v1.json"
+```
+
+The full private audit output includes `replayStepAudits[]`,
+`warningCounts`, individual affected `sourceId` and `claimId`
+pairs, per-edge issue codes and pending-question references.
+`auditModelCalls=0`. It does **not** silently rewrite, approve or
+overwrite the model's old explanations.
+
+### Subsequent source-grounded explanation research
+
+The v2 model response also asks for:
+
+- `changeItems[]` with each changed official action, exact visible
+  `sourceId`+`claimId`, and specific aircraft/decision scope.
+  Combined two-cutoff replay explicitly tells the second invocation
+  which source IDs were already available, without sharing later
+  sources in the first prompt.
+- `unresolvedQuestions[]`, grounded in a visible source and claim,
+  containing an open question and a *concrete absent* record/document
+  needed to resolve it.
+- Actual independent `missingEvidence` per relationship rather than
+  rephrasing the curator-provided source-to-source link.
+
+The new `explanationQualityAudit` identifies missing newly eligible
+source coverage, unsupported claim IDs, unresolved decisions with no
+documented follow-up question, and circular link evidence. Structural
+acceptance and semantic quality warnings remain separate. Passing
+the rules never marks semantic entailment, accurate historical
+publication-time availability, financial causality, or economic
+generalization as verified. Neither source bytes nor realized
+financial outcomes were acquired by this work.
+
+Run **only when a new real-model assessment is actually needed**, using
+a new output filename:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --sequence 2024-01-13 2024-01-25 --run --model gemma4:e2b \
+  --output "$DATA/faa-event-chain-replay-two-cutoffs-v2.json"
+```
+
+This is an explanation-evaluation milestone on **one** documented FAA
+chain. Generalization remains unproven until additional truly
+independent historical event chains are sourced and tested with the
+same quality evaluation contract.
