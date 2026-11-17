@@ -197,7 +197,7 @@ class FourStageProvider:
 
 
 def test_full_four_stage_recovery_keeps_company_unverified_without_ticker() -> None:
-    case, _, lookup = _quote_case()
+    _, _, lookup = _quote_case()
     provider = FourStageProvider(_recovery_response(lookup))
     # A named company without the explicit issuer mapping remains unverified.
     data = sample_case()
