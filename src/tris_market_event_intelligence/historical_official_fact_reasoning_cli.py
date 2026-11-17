@@ -29,6 +29,9 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _write,
     validate_cohort,
 )
+from tris_market_event_intelligence.historical_official_conditional_scenarios import (
+    review_scenario,
+)
 from tris_market_event_intelligence.historical_official_mechanism_audit import (
     inspect_interpretation,
     inspect_mechanism,
@@ -117,8 +120,12 @@ exploratory assumption rather than a source fact, omit it and state which
 unavailable evidence would establish it. No guessed high-margin description.
 Use sourceFactIds exactly; do not invent external facts, a second issuer,
 industry-wide impacts or future regulatory action. A mechanism is a
-HYPOTHESIS: state IF triggerCondition, could/may/might/would economic
-consequence, counterHypothesis and missingEvidence that would be required
+HYPOTHESIS: give a trigger assumption (may be a concise noun phrase),
+an effect with explicit could/may/might/would and an IF/when antecedent
+either in the trigger or effect; give an alternative counterHypothesis,
+explicitly conditional if possible. A counter that is a declarative
+alternative will be preserved as an UNVERIFIED assumption rather than
+proved as history. Include missingEvidence that would be required
 to evaluate it. Abstain with an empty mechanisms array if there is no
 support. Do not forecast a precise price, assert actual returns, or use
 unknown contemporaneous news, stock prices or knowledge after the release.
@@ -219,25 +226,11 @@ def run_case(case: dict, provider: LLMProvider) -> dict:
         ids = item.sourceFactIds
         if len(set(ids)) != len(ids) or any(i not in accepted_ids for i in ids):
             reason = "UNSUPPORTED_OR_REJECTED_SOURCE_FACT"
-        elif not _CONDITIONAL.search(item.triggerCondition):
-            reason = "TRIGGER_NOT_CONDITIONAL"
-        elif not _CONDITIONAL.search(item.conditionalEffect):
-            reason = "EFFECT_NOT_CONDITIONAL"
-        elif not _CONDITIONAL.search(item.counterHypothesis):
-            reason = "COUNTER_HYPOTHESIS_NOT_CONDITIONAL"
-        elif any(_quality_screen(value) for value in (
-            item.triggerCondition, item.conditionalEffect,
-            item.counterHypothesis, item.missingEvidence,
-        )):
-            reason = "OBSERVED_MARKET_RESULT_NOT_SUPPORTED"
-        elif any(
-            _FACT_ASSERTION.search(sentence)
-            and not _CONDITIONAL.search(sentence)
-            for sentence in re.split(r"(?<=[.!?])\s+", item.conditionalEffect)
-        ):
-            reason = "UNCONDITIONAL_NEW_ECONOMIC_FACT"
         else:
             reason = None
+        scenario = review_scenario(item.model_dump()) if reason is None else None
+        if scenario is not None and scenario["blockers"]:
+            reason = "SCENARIO_STRUCTURE_UNSUPPORTED"
         quality = (
             inspect_mechanism(item.model_dump(), fact_by_id)
             if reason is None else None
@@ -248,10 +241,12 @@ def run_case(case: dict, provider: LLMProvider) -> dict:
             rejected_mechanisms.append({
                 "reason": reason, "proposal": item.model_dump(),
                 **({"qualityAudit": quality} if quality is not None else {}),
+                **({"scenarioReview": scenario} if scenario is not None else {}),
             })
             continue
         mechanisms.append({
             **item.model_dump(),
+            "scenarioReview": scenario,
             "qualityAudit": quality,
             "issuer": case["issuer"],
             "sourceId": case["source"]["sourceId"],
