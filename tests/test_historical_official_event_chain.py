@@ -186,11 +186,10 @@ def test_malformed_sources_and_chronology_cannot_be_forged() -> None:
     src = load()
     invalid = copy.deepcopy(src)
     invalid["sources"][0]["asOfEligibility"] = "DATE_ONLY_CONSERVATIVE"
-    assert chain.prepare_replay(invalid, date(2024, 1, 25))[
-        "eligibleSources"
-    ][0]["sourceId"] == "faa-20240106-grounding"
-    # A future-looking use of a retrospective page cannot be promoted via
-    # changing the eligibility label while keeping its metadata; add gate.
+    with pytest.raises(ValueError, match="EVENT_CHAIN_RETROSPECTIVE_INVALID"):
+        chain.validate_chain(invalid)
+    # A retrospectively updated timeline cannot be made date-eligible
+    # by changing only the source eligibility label.
     invalid = copy.deepcopy(src)
     invalid["curatedEdges"][0]["fromSourceId"] = "faa-20240124-production"
     with pytest.raises(ValueError, match="EVENT_CHAIN_EDGE_INVALID"):
