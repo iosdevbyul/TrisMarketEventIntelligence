@@ -57,6 +57,12 @@ class Atom(Strict):
     ]
 
 
+class ReconstructedEvent(Strict):
+    eventId: str = Field(min_length=2, max_length=32)
+    claimIds: list[str] = Field(min_length=1, max_length=32)
+    summary: str = Field(min_length=20, max_length=400)
+
+
 class EventEdge(Strict):
     earlierClaimId: str
     laterClaimId: str
@@ -76,6 +82,7 @@ class Mechanism(Strict):
 
 class ReasoningAnswer(Strict):
     atomicClaims: list[Atom] = Field(min_length=2, max_length=32)
+    events: list[ReconstructedEvent] = Field(min_length=1, max_length=12)
     eventEdges: list[EventEdge] = Field(max_length=20)
     economicMechanisms: list[Mechanism] = Field(max_length=12)
 
@@ -89,7 +96,10 @@ claimId, articleId and allowed quoteId for each claim; the excerpt MUST
 appear verbatim in the corresponding quote (publisher formatting marks may
 differ). Do not invent a quote or a claim; classify FACT as a report about
 a statement/action, not proof that the content of an allegation is true.
-Create eventEdges only between supported atomic claims and express chronology
+Group related claims into events with eventId, claimIds, and a sober summary.
+Every atomic claim should belong to one event only. Distinct company incidents
+must not be clustered merely because they share a sector. Create eventEdges
+only between supported claims IN THE SAME EVENT and express chronology
 or reported response, not proven market causation. Do not join unrelated
 events merely because they share an organization. Do not assert unreported
 official actions. Then create conditional economicMechanisms only when their
@@ -177,6 +187,36 @@ def study_case(case: CaseInput, provider: LLMProvider) -> dict:
         }
         atom_lookup[item.claimId] = entry
         accepted_atoms.append(entry)
+    accepted_events: list[dict] = []
+    rejected_events: list[dict] = []
+    by_event: dict[str, str] = {}
+    seen_event_ids: set[str] = set()
+    for proposed in response.events:
+        refs = proposed.claimIds
+        if proposed.eventId in seen_event_ids or not _VALID_ID.fullmatch(
+            proposed.eventId
+        ):
+            reason = "DUPLICATE_OR_INVALID_EVENT_ID"
+        elif len(set(refs)) != len(refs):
+            reason = "DUPLICATE_EVENT_CLAIM"
+        elif any(cid not in atom_lookup for cid in refs):
+            reason = "EVENT_HAS_UNKNOWN_ATOMIC_CLAIM"
+        elif any(cid in by_event for cid in refs):
+            reason = "ATOMIC_CLAIM_IN_MULTIPLE_EVENTS"
+        else:
+            reason = None
+        if reason:
+            rejected_events.append({
+                "reason": reason, "proposal": proposed.model_dump(),
+            })
+            continue
+        seen_event_ids.add(proposed.eventId)
+        for cid in refs:
+            by_event[cid] = proposed.eventId
+        accepted_events.append({
+            **proposed.model_dump(),
+            "historicalTruthVerified": False,
+        })
     accepted_edges: list[dict] = []
     rejected_edges: list[dict] = []
     seen_edges: set[tuple[str, str]] = set()
@@ -188,6 +228,8 @@ def study_case(case: CaseInput, provider: LLMProvider) -> dict:
             reason = "UNKNOWN_OR_REJECTED_CLAIM"
         elif key[0] == key[1] or key in seen_edges:
             reason = "SELF_OR_DUPLICATE_RELATION"
+        elif not by_event.get(key[0]) or by_event.get(key[0]) != by_event.get(key[1]):
+            reason = "CROSS_EVENT_OR_UNGROUPED_CLAIM"
         elif _timestamp(known_articles[early["articleId"]].publishedAt) > (
             _timestamp(known_articles[late["articleId"]].publishedAt)
         ):
@@ -305,6 +347,11 @@ def study_case(case: CaseInput, provider: LLMProvider) -> dict:
         "withheldMarketOutcomeQuotes": withheld,
         "atomicClaims": accepted_atoms,
         "rejectedAtomicClaims": rejected_atoms,
+        "events": accepted_events,
+        "rejectedEvents": rejected_events,
+        "ungroupedAtomicClaimIds": [
+            cid for cid in atom_lookup if cid not in by_event
+        ],
         "eventEdges": accepted_edges,
         "rejectedEventEdges": rejected_edges,
         "economicMechanisms": accepted_mechanisms,
