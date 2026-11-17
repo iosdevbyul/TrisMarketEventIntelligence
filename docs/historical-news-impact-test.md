@@ -397,3 +397,49 @@ These checks reduce both format-induced false negatives and unsupported
 sector extrapolation; neither establishes publisher truth, semantic
 entailment, real-market causality, or historical as-of availability
 for post-cutoff-revised sources.
+
+## Multi-event atomic reasoning study
+
+A separate command `historical-reasoning-study` implements a complete research
+analysis of multiple distinct source cases, one bounded model call per case.
+It does not modify the legacy `historical-impact-test` output contract.
+
+1. **Atomic Claim Decomposition**: Model outputs separate, provenance-bound
+   FACT, ALLEGATION, DENIAL, OPINION and FORECAST excerpts. Multiple claims
+   from the same quote are valid when their excerpts match the source.
+   Unsupported or allegation-as-fact proposals are quarantined.
+2. **Event Reconstruction**: The model groups atomic claim IDs into
+   event nodes and describes chronological follow-up, correction, and
+   reactions. The validator checks claim references, distinct membership,
+   cross-event links and chronological ordering; relationships are never
+   considered proven causal history.
+3. **Economic Mechanism Reasoning**: Each source-named company or
+   evidence-scoped sector hypothesis cites accepted claim IDs, describes
+   a conditional trigger, named economic channel, conditional consequence
+   and counter-hypothesis. No output is treated as confirmed price impact.
+4. **Cross-Event Comparison**: Compares claim counts, eligible hypotheses,
+   and quarantined proposals across at least two distinct case IDs. This
+   is structural coverage only, not proof of generalization or predictive
+   historical accuracy.
+
+Command (provide two different immutable cases):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-reasoning-study \
+  --input "$DATA/first-case-original.json" \
+  --input "$DATA/second-distinct-case-original.json" \
+  --model gemma4:e2b \
+  --output "$DATA/multi-event-reasoning-v1.json"
+```
+
+Create-only output safety, source quote integrity, price-result redaction
+and source hash provenance are retained. Offline tests cover three
+**synthetic** incident domains (manufacturing, energy and transport), plus
+unknown atomic claims and ungrounded sector extrapolation. Synthetic
+fixtures are not genuine past episodes. Real Cross-Event Validation needs
+independently timestamped *actual historical* publisher snapshots from
+different events and separate assessments of outcomes; this module
+correctly emits `generalizationVerified=false` and
+`outcomeAccuracyVerified=false`. It neither trades, trains, nor
+auto-promotes any hypothesis.
