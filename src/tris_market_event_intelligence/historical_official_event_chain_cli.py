@@ -33,6 +33,10 @@ from tris_market_event_intelligence.historical_evidence_decision_consistency imp
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
+from tris_market_event_intelligence.historical_evidence_composition import (
+    assess_question_axes,
+    generate_composed_explanation,
+)
 from tris_market_event_intelligence.historical_generation_termination import (
     diagnose_termination,
 )
@@ -377,17 +381,48 @@ def run_replay(
             "pricesAndOutcomesAvailable", "previouslySeenSourceIds",
         )
     }
-    if reasoning_mode not in {"single", "staged", "staged-compact"}:
+    if reasoning_mode not in {"single", "staged", "staged-compact", "staged-composed"}:
         raise ValueError("EVENT_CHAIN_REASONING_MODE_INVALID")
     draft = None
     stage_one_generation = None
     stage_two_generation = None
-    if reasoning_mode in {"staged", "staged-compact"}:
+    if reasoning_mode in {"staged", "staged-compact", "staged-composed"}:
         draft = produce_draft(provider, packet, question_tracks)
         stage_one_generation = getattr(
             provider, "last_generation_diagnostics", None,
         )
-        if reasoning_mode == "staged-compact":
+        if reasoning_mode == "staged-composed":
+            composed = generate_composed_explanation(provider, packet, draft)
+            question_axes = assess_question_axes(provider, packet, draft)
+            assessment = {
+                "acceptedFactInterpretations": [],
+                "rejectedFactInterpretations": [],
+                "acceptedEdgeExplanations": [],
+                "rejectedEdgeExplanations": [],
+                "sourceClaimCoverage": 0,
+                "availableSourceClaimCount": sum(
+                    len(source["claims"]) for source in packet["eligibleSources"]
+                ),
+                "visibleEdgeCoverage": 0,
+                "visibleEdgeCount": len(packet["visibleCuratedEdges"]),
+                "whatChanged": composed["whatChanged"],
+                "whatRemainsUnknown": composed["whatRemainsUnknown"],
+                "changeItems": [],
+                "unresolvedQuestions": [],
+                "narrativeContainsUncheckedSourceClaims": True,
+                "semanticAccuracyVerified": False,
+                "economicCausalityVerified": False,
+                "historicalPITVerified": False,
+                "humanReviewRequired": True,
+                "individualFactInterpretationsGenerated": False,
+                "individualEdgeExplanationsGenerated": False,
+                "compactNarrativeRawFieldsPreserved": True,
+                "stageTwoOutputContract": "source_scoped_composed_narrative_v1",
+                "sourceScopedComposition": composed,
+                "independentQuestionAxes": question_axes,
+                "questionAxesDoNotOverwriteLegacyStatuses": True,
+            }
+        elif reasoning_mode == "staged-compact":
             narrative = generate_compact_narrative(provider, packet, draft)
             # The model did NOT generate fact/edge interpretations in
             # compact mode. Empty collections are explicit non-generation,
@@ -433,6 +468,14 @@ def run_replay(
         assessment = assess_answer(packet, raw)
     if draft is not None:
         assessment["generationDiagnostics"] = {
+            "sourceScopedCalls": (
+                assessment["sourceScopedComposition"]["sourceGenerationDiagnostics"]
+                if reasoning_mode == "staged-composed" else []
+            ),
+            "questionAxesCall": (
+                assessment["independentQuestionAxes"]["generationDiagnostics"]
+                if reasoning_mode == "staged-composed" else None
+            ),
             "stageOne": stage_one_generation,
             "stageTwo": stage_two_generation,
             "metadataUnavailable": (
@@ -485,7 +528,12 @@ def run_replay(
         **packet, "modelId": provider.model_id,
         "curatorEvidenceLedger": curator_ledger,
         "questionLifecycle": lifecycle,
-        "modelCalls": 2 if draft is not None else 1,
+        "modelCalls": (
+            1 + len(assessment["sourceScopedComposition"]["sourceExplanations"])
+            + int(bool(draft["visibleQuestions"]))
+            if reasoning_mode == "staged-composed" else
+            2 if draft is not None else 1
+        ),
         "reasoningMode": reasoning_mode,
         "assessment": assessment,
         "overallStatus": (
@@ -594,7 +642,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument(
-        "--reasoning-mode", choices=("single", "staged", "staged-compact"),
+        "--reasoning-mode", choices=("single", "staged", "staged-compact", "staged-composed"),
                         default="single")
     parser.add_argument("--question-tracks", type=Path)
     scope = parser.add_mutually_exclusive_group()
