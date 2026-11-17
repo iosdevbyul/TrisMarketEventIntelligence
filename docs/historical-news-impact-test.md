@@ -1259,3 +1259,43 @@ jq '{auditModelCalls,steps:[.temporalQuestionLifecycleAudit.replayStepAudits[]|{
 ```
 
 This confirms detection of *already observed* model errors, not a new generative improvement. A separate fresh model run on a unique filename is needed to measure whether new prompting corrects actual model decisions and changedAction content. The independent curator lifecycle and official source cohort are not rewritten, earlier saved outputs remain intact, historical point-in-time versions/semantic accuracy/generalization/economic causality remain unverified.
+
+## Independent FAA transfer challenge after FDA staged v3
+
+FDA v3 showed a real within-case improvement: concrete stage-one regulatory changes, no content-free 'Included in visible historical evidence' items, and removal of its earlier resolved-with-missing-submission self-contradiction. Yet two model-vs-curator disagreements remain on OPEN vs PARTIALLY_RESOLVED and FDA has already been inspected repeatedly. Further FDA-specific tuning risks overfitting.
+
+The next challenge is the independently curated FAA Boeing 737-9 MAX Jan 2024 chain already in the repository, **without changing the model prompts, validation, or original FAA source cohort**. A new separate `research/faa-2024-question-lifecycle.json` records two source-anchored questions before real Gemma output is observed. They contrast approval of a required inspection process (Jan 12 OPEN -> Jan 24 RESOLVED_BY_LATER_SOURCE) with Boeing production audit/quality oversight findings (Jan 12 OPEN -> Jan 24 PARTIALLY_RESOLVED because a concrete restriction was announced but the final audit findings are not present). The same release also recommends inspections of **737-900ER**, which is a *different aircraft model* than the grounded 737-9 MAX. A later approval of a process is not proof that every aircraft actually completed inspections.
+
+The FAA original Jan 6 evidence is a retrospectively edited FAA timeline, so it is excluded from every replay. Jan 12 and Jan 24 are **date-only** cutoffs, not verified archived intraday/PIT captures. The model receives only visible source facts and the question text/scope and initial anchor at each cutoff; **never** the independently annotated later question transitions. No prices, stock returns, trading rules, predictions or economic causal proof are part of this test.
+
+### Run one fresh FAA staged study on existing local Gemma4
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --question-tracks research/faa-2024-question-lifecycle.json \
+  --sequence 2024-01-13 2024-01-25 \
+  --reasoning-mode staged --run --model gemma4:e2b \
+  --output "$DATA/faa-independent-staged-v1.json"
+```
+
+If the first-stage source coverage fails, a private failure checkpoint is saved with `STAGED_DRAFT_EVIDENCE_REJECTED`, the exact missing source IDs and nonzero shell exit; **do not blindly rerun**. If finished, inspect the saved source-anchored changeItems, model question statuses, context-aware wording of 737-900ER vs 737-9 MAX, and staged narrative/decision reviews before claiming any transfer improvement.
+
+### Offline cross-event comparison, without additional model calls
+
+Only after the independently generated FAA result exists, use the existing saved user-local FDA v3 run and the newly created FAA run:
+
+```bash
+bash scripts/news-learning-review.sh historical-staged-transfer \
+  --reference-chain research/fda-covid-vaccine-2023-event-chain.json \
+  --reference-run "$DATA/fda-evidence-first-staged-v3.json" \
+  --reference-tracks research/fda-2023-question-lifecycle.json \
+  --challenge-chain research/faa-7379max-january-2024-event-chain.json \
+  --challenge-run "$DATA/faa-independent-staged-v1.json" \
+  --challenge-tracks research/faa-2024-question-lifecycle.json \
+  --output "$DATA/fda-faa-staged-transfer-v1.json"
+```
+
+The transfer audit first checks each saved sequence's event ID, original SHA, cutoff-local eligible sources and visible edges against the immutable source cohort, requires distinct original events and the same selected model ID, and re-evaluates source-change coverage, actual model question-state disagreements, stage-two mechanical integrity and narrow evidence-decision contradictions. It retains the original model responses. Editorial status disagreements are diagnostic, not objective semantic ground truth. `auditModelCalls=0`, `historicalPITVerified=false`, and `generalizationVerified=false` remain explicit even if there are no detected issues. FAA is an independent event, but its official claims and question annotations were curated, not historically archived or truly sealed gold.

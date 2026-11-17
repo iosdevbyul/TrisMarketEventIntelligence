@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "historical_curated_question_tracks_v1",
+  "eventId": "FAA-7379MAX-2024-01",
+  "curationMethod": "Independent retrospective research questions grounded only in the original FAA source-claim IDs; annotated after the fact. The model sees only initially visible question and scope, never future transitions. Date-only source eligibility is not archived PIT.",
+  "tracks": [
+    {
+      "questionId": "faa-2024-7379-inspection-process-approval",
+      "question": "Has the FAA approved the inspection and maintenance process needed for the grounded Boeing 737-9 MAX aircraft to become eligible to return to service?",
+      "scope": "Boeing 737-9 MAX approval of return-to-service inspection procedures, distinct from completed inspections on each aircraft",
+      "transitions": [
+        {
+          "sourceId": "faa-20240112-inspection-process",
+          "claimId": "additional-data",
+          "status": "OPEN",
+          "interpretation": "FAA required additional Boeing data before approving the process. At the January 12 release the inspection-and-maintenance process was not approved.",
+          "stillUnknown": "FAA approval of inspection procedures and completion of aircraft-specific inspections"
+        },
+        {
+          "sourceId": "faa-20240124-production",
+          "claimId": "return-to-service",
+          "status": "RESOLVED_BY_LATER_SOURCE",
+          "interpretation": "FAA announced approval of inspection and maintenance procedures; grounded 737-9 MAX aircraft could become eligible for return to service after completion, but this is not proof that every aircraft actually completed inspections.",
+          "stillUnknown": "Aircraft-by-aircraft completion, operational restoration and independent inspection outcomes"
+        }
+      ]
+    },
+    {
+      "questionId": "faa-2024-boeing-production-oversight-outcome",
+      "question": "What official decisions and audit findings establish the progress and completion of the FAA's Boeing production and supplier quality oversight?",
+      "scope": "Boeing MAX production line and supplier audit, separate from inspection procedure approval and actual audit completion",
+      "transitions": [
+        {
+          "sourceId": "faa-20240112-oversight",
+          "claimId": "production-audit",
+          "status": "OPEN",
+          "interpretation": "FAA announced it would audit the Boeing 737-9 MAX production line and suppliers, but audit findings and conclusion had not been announced.",
+          "stillUnknown": "Completed FAA production quality audit findings, supplier-compliance review and final oversight assessment"
+        },
+        {
+          "sourceId": "faa-20240124-production",
+          "claimId": "no-production-expansion",
+          "status": "PARTIALLY_RESOLVED",
+          "interpretation": "FAA announced it would not grant MAX production expansion while increasing oversight, a concrete regulatory restriction, but the original announcement still does not provide completed production-line audit findings.",
+          "stillUnknown": "Full audit findings, corrective action verification and final production quality-control conclusions"
+        }
+      ]
+    }
+  ]
+}
