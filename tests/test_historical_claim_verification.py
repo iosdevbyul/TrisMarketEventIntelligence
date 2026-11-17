@@ -315,3 +315,69 @@ def test_primary_accepted_impact_rejected_when_atomic_claim_is_fabricated() -> N
     assert report["impactClaimChecks"][0]["verification"]["status"] == (
         "REJECTED_UNSUPPORTED_CLAIM"
     )
+
+
+def test_v14_invisible_publisher_layout_marks_match_without_changing_quote() -> None:
+    original = (
+        "The New York Times reported in \u200bOctober that Donald Trump "
+        "had been briefed last year on intelligence that Huang \u200chad a "
+        "close relationship \u200cwith a Chinese businesswoman."
+    )
+    proposed = (
+        "The New York Times reported in October that Donald Trump "
+        "had been briefed last year on intelligence that Huang had a "
+        "close relationship with a Chinese businesswoman."
+    )
+    quote = {"a2:q2": {"quoteId": "a2:q2", "articleId": "a2", "text": original}}
+    check = verify_claims(
+        evidence=[EvidenceClaim(
+            quoteId="a2:q2", sourceExcerpt=proposed,
+            epistemicType="ALLEGATION",
+        )],
+        causal=_causal(), quote_lookup=quote, permitted_quote_ids=["a2:q2"],
+    )
+    assert check["status"] == "SOURCE_QUOTE_MATCHED_CONDITIONAL"
+    assert check["evidence"][0]["sourceMatch"] == "LAYOUT_NORMALIZED_SUBSTRING"
+    assert check["evidence"][0]["originalSourceQuote"] == original
+    assert "\u200b" in check["evidence"][0]["originalSourceQuote"]
+    assert check["semanticallyVerified"] is False
+
+
+def test_normalization_does_not_allow_changed_facts_or_punctuation() -> None:
+    original = (
+        "The New York Times reported in \u200bOctober that Donald Trump "
+        "had been briefed last year on intelligence."
+    )
+    quote = {"a2:q2": {"quoteId": "a2:q2", "articleId": "a2", "text": original}}
+    for altered in (
+        "The New York Times reported in October that Donald Trump "
+        "had been briefed this year on intelligence.",
+        "The New York Times reported in October that Donald Trump "
+        "had been briefed last year on intelligence!",
+    ):
+        check = verify_claims(
+            evidence=[EvidenceClaim(
+                quoteId="a2:q2", sourceExcerpt=altered,
+                epistemicType="ALLEGATION",
+            )],
+            causal=_causal(), quote_lookup=quote, permitted_quote_ids=["a2:q2"],
+        )
+        assert check["status"] == "REJECTED_UNSUPPORTED_CLAIM"
+        assert check["claimChecks"][0]["reason"] == "EXCERPT_NOT_IN_SOURCE"
+
+
+def test_normalized_observed_price_quote_still_rejected() -> None:
+    original = "Nvidia shares \u200bfell by 3.1% as the market declined."
+    quote = {"a2:q7": {"quoteId": "a2:q7", "articleId": "a2", "text": original}}
+    check = verify_claims(
+        evidence=[EvidenceClaim(
+            quoteId="a2:q7",
+            sourceExcerpt="Nvidia shares fell by 3.1% as the market declined.",
+            epistemicType="REPORTED_FACT",
+        )],
+        causal=_causal(), quote_lookup=quote, permitted_quote_ids=["a2:q7"],
+    )
+    assert check["status"] == "REJECTED_UNSUPPORTED_CLAIM"
+    assert check["claimChecks"][0]["reason"] == (
+        "OBSERVED_MARKET_RESULT_SOURCE_INELIGIBLE"
+    )
