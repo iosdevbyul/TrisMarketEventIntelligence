@@ -51,12 +51,12 @@ def review_scenario(proposal: dict) -> dict:
         reasons.append("POTENTIAL_EFFECT_LACKS_UNCERTAINTY")
     if _FACT_ASSERTION.search(effect) and not _CONDITIONAL.search(effect):
         reasons.append("UNCONDITIONAL_NEW_ECONOMIC_FACT")
-    if not _CONDITIONAL.search(trigger):
+    if not _ANTECEDENT.search(trigger):
         if _ANTECEDENT.search(effect) and _EXPLICIT_UNCERTAINTY.search(effect):
             notes.append("IMPLICIT_TRIGGER_CONDITION_SCOPED_BY_EFFECT")
         else:
             reasons.append("TRIGGER_UNCONDITIONAL_WITHOUT_DOWNSTREAM_IF")
-    if not _CONDITIONAL.search(counter):
+    if not _ANTECEDENT.search(counter):
         # A statement in the counterHypothesis *slot* is an alternative
         # proposition, not an observed fact. Preserve author wording, mark it
         # unverified and demand human review. It is not promoted to fact.
@@ -68,9 +68,9 @@ def review_scenario(proposal: dict) -> dict:
         ),
         "blockers": reasons,
         "warnings": notes,
-        "triggerIsExplicitlyConditional": bool(_CONDITIONAL.search(trigger)),
+        "triggerIsExplicitlyConditional": bool(_ANTECEDENT.search(trigger)),
         "effectContainsAntecedent": bool(_ANTECEDENT.search(effect)),
-        "counterIsExplicitlyConditional": bool(_CONDITIONAL.search(counter)),
+        "counterIsExplicitlyConditional": bool(_ANTECEDENT.search(counter)),
         "allStatementsAreAssumptions": True,
         "semanticEntailmentVerified": False,
         "causalityProven": False,
