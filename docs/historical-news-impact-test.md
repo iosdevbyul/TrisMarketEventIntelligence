@@ -1236,3 +1236,26 @@ bash scripts/news-learning-review.sh historical-event-chain \
 ```
 
 If `STAGED_DRAFT_EVIDENCE_REJECTED` is printed, inspect the newly written JSON's `failure` object; do **not** rerun blindly. A generated failure checkpoint is **not** a successful model experiment. `historicalPITVerified=false`, `semanticAccuracyVerified=false` remain unverified.
+
+## Evidence-to-decision and substantive action consistency
+
+The real user-local staged FDA v2 run generated clear two-stage narratives and correct October Moderna/Pfizer and Novavax authorizations, but it still contained two independent reasoning errors. For BOTH June newly eligible source changes, stage-one `changedAction` was literally `Included in visible historical evidence.`: syntactically valid with IDs but does not describe an FDA regulatory action. The June filing-records question was marked `RESOLVED_BY_VISIBLE_SOURCE` even though the same model's explanation said receipt/full-review records were **not yet available** and its `stillUnknown` confirmed they could not be observed. The researcher question state remained OPEN, producing a real disagreement. These are model-quality mistakes, not failures of the official-source input.
+
+Staged generation now explicitly asks the model to state substantive action in changedAction and to select OPEN when a question requests unavailable primary documents, rather than confusing proof of their absence with proof of their receipt. A concrete content-free evidence-presence placeholder fails first-stage validation with `VACUOUS_MODEL_CHANGE_ACTION`, retaining the original rejection diagnostic and nonzero exit status instead of silently substituting a curator phrase.
+
+A separate conservative `evidenceDecisionConsistencyReview` flags an overt self-contradiction only when (a) the question itself asks for documentary records/evidence, (b) the model marks that question RESOLVED_BY_VISIBLE_SOURCE, and (c) the MODEL's own explanation states that the relevant records are not available. This is a **human-review warning** rather than an automatic status correction. Do not reject a properly resolved authorization decision just because separate meeting minutes or filing receipts remain unknown. Avoid claiming that this narrow check proves general semantic entailment. When any consistency issue appears in a new staged run, the overall status is `HISTORICAL_SEQUENCE_EVIDENCE_DECISION_REVIEW_REQUIRED`; narrative mechanical corruption continues to have higher priority.
+
+Existing real FDA v2 saved output can be re-audited with ZERO new Gemma calls and new private output:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/fda-covid-vaccine-2023-event-chain.json \
+  --question-tracks research/fda-2023-question-lifecycle.json \
+  --audit-existing "$DATA/fda-evidence-first-staged-v2.json" \
+  --output "$DATA/fda-evidence-decision-audit-v1.json"
+jq '{auditModelCalls,steps:[.temporalQuestionLifecycleAudit.replayStepAudits[]|{asOfDateExclusive,consistency:.savedEvidenceDecisionConsistencyReview}]}' "$DATA/fda-evidence-decision-audit-v1.json"
+```
+
+This confirms detection of *already observed* model errors, not a new generative improvement. A separate fresh model run on a unique filename is needed to measure whether new prompting corrects actual model decisions and changedAction content. The independent curator lifecycle and official source cohort are not rewritten, earlier saved outputs remain intact, historical point-in-time versions/semantic accuracy/generalization/economic causality remain unverified.

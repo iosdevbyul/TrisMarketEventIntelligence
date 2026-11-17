@@ -24,6 +24,9 @@ from tris_market_event_intelligence.historical_event_chain_explanation_quality i
     audit_explanation,
     audit_sequence,
 )
+from tris_market_event_intelligence.historical_evidence_decision_consistency import (
+    review_evidence_decisions,
+)
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
@@ -392,6 +395,9 @@ def run_replay(
         assessment["modelQuestionAssessments"] = draft[
             "modelAuthoredQuestionAssessments"
         ]
+        assessment["evidenceDecisionConsistencyReview"] = (
+            review_evidence_decisions(packet, draft)
+        )
         assessment["stagedModelOutputReview"] = review_staged_model_output(
             packet, assessment,
         )
@@ -423,6 +429,10 @@ def run_replay(
             if draft is not None and not assessment[
                 "stagedModelOutputReview"
             ]["stageTwoExplanationUsable"]
+            else "STAGED_EVIDENCE_DECISION_REQUIRES_REVIEW"
+            if draft is not None and assessment[
+                "evidenceDecisionConsistencyReview"
+            ]["issueCodes"]
             else "DATE_ONLY_RECONSTRUCTION_REQUIRES_HUMAN_REVIEW"
         ),
     }
@@ -499,6 +509,10 @@ def run_sequence(
             "HISTORICAL_SEQUENCE_CONTAINS_REJECTED_NARRATIVE"
             if any(step["overallStatus"] == "STAGED_NARRATIVE_GENERATION_REJECTED"
                    for step in results)
+            else "HISTORICAL_SEQUENCE_EVIDENCE_DECISION_REVIEW_REQUIRED"
+            if any(step["overallStatus"] == (
+                "STAGED_EVIDENCE_DECISION_REQUIRES_REVIEW"
+            ) for step in results)
             else "HISTORICAL_DATE_ONLY_SEQUENCE_REQUIRES_HUMAN_REVIEW"
         ),
         "historicalPITVerified": False,
