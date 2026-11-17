@@ -529,7 +529,7 @@ def run_replay(
         "curatorEvidenceLedger": curator_ledger,
         "questionLifecycle": lifecycle,
         "modelCalls": (
-            1 + len(assessment["sourceScopedComposition"]["sourceExplanations"])
+            1 + len(assessment["sourceScopedComposition"]["sourceGenerationDiagnostics"])
             + int(bool(draft["visibleQuestions"]))
             if reasoning_mode == "staged-composed" else
             2 if draft is not None else 1
