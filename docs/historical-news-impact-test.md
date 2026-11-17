@@ -997,3 +997,80 @@ This is an explanation-evaluation milestone on **one** documented FAA
 chain. Generalization remains unproven until additional truly
 independent historical event chains are sourced and tested with the
 same quality evaluation contract.
+
+## Independent cross-event evaluation: 2023 FDA vaccine-policy chain
+
+The first independently sourced holdout after FAA uses **a different
+regulator and distinct policy mechanism**, not a reworded Boeing example.
+Primary official FDA dated pages checked against FDA public source
+content:
+
+| Official date | Dated FDA source | Explicit fact scope |
+|---|---|---|
+| April 18, 2023 | <https://www.fda.gov/news-events/press-announcements/coronavirus-covid-19-update-fda-authorizes-changes-simplify-use-bivalent-mrna-covid-19-vaccines> | Simplified bivalent mRNA dose schedule and *future* fall formula selection still open |
+| June 16, 2023 | <https://www.fda.gov/news-events/press-announcements/fda-roundup-june-16-2023> | FDA advises 2023–24 monovalent XBB.1.5 formula; manufacturer data filings/agency action still pending |
+| September 11, 2023 | <https://www.fda.gov/news-events/press-announcements/fda-takes-action-updated-mrna-covid-19-vaccines-better-protect-against-currently-circulating> | Updated mRNA ModernaTX/Pfizer approval and authorizations; old bivalent authorizations replaced |
+| October 3, 2023 | <https://www.fda.gov/news-events/press-announcements/fda-authorizes-updated-novavax-covid-19-vaccine-formulated-better-protect-against-currently> | Separate Novavax adjuvanted vaccine emergency authorization, not a repeat of Moderna/Pfizer mRNA decision |
+
+`research/fda-covid-vaccine-2023-event-chain.json` contains eight
+curated claim paraphrases, four source URLs and three evidence-limited
+editorial follow-up/scope-change edges. **Release date-only labels are
+not archived first-publication timestamps, original web bytes or
+verified historical point-in-time snapshots.** FDA and FAA source URLs,
+source IDs, publisher IDs, event IDs and event mechanisms are disjoint.
+The shared event chain and quality audit algorithms now accept FAA and
+FDA with strict matching official hostnames: neither domain can be
+pretended to belong to the other regulator; mixed-publisher datasets
+are rejected. Existing FAA backcompat is preserved.
+
+The evaluation is **FAA development case vs held-out FDA domain**.
+It must not fit/tune the quality filters to FDA outcomes after seeing
+them. An independent event in another domain is necessary evidence
+but not by itself proof of generalized economic reasoning.
+
+### Run once locally
+
+After pulling merged main, execute a **single** two-cutoff FDA Gemma4
+sequence. The early as-of cutoff is June 17, 2023, the late cutoff is
+October 4, 2023. Both exclude same-day releases, and the early prompt
+cannot access September/October source statements.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/fda-covid-vaccine-2023-event-chain.json \
+  --sequence 2023-06-17 2023-10-04 --run --model gemma4:e2b \
+  --output "$DATA/fda-event-chain-heldout-v1.json"
+```
+
+Then run a **zero-model-call comparison** against the already saved
+FAA v1 result. It verifies cohort SHA and exact conservative source
+scope per replay. It reports source-claim reference coverage, accepted
+edge-ID coverage, structural rejections, missing new source descriptions,
+unanswered planned official decisions, and circular `missingEvidence`
+separately, without treating coverage as truth:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-cross-event \
+  --primary-chain research/faa-7379max-january-2024-event-chain.json \
+  --primary-existing "$DATA/faa-event-chain-replay-two-cutoffs-v1.json" \
+  --holdout-chain research/fda-covid-vaccine-2023-event-chain.json \
+  --holdout-existing "$DATA/fda-event-chain-heldout-v1.json" \
+  --output "$DATA/faa-fda-cross-event-review-v1.json"
+```
+
+**IMPORTANT FAIRNESS LIMITATION:** FAA's saved original is a **v1**
+Gemma4 answer generated before structured `changeItems` and
+`unresolvedQuestions`; FDA is generated using the **v2** contract.
+The comparison prints
+`fairLikeForLikeModelSchemaComparison=false` and
+`evidenceOfCrossEventGeneralization=false` until both model outputs
+use a like-for-like schema and have semantic human evaluation. It
+does not silently score the old FAA schema as a regression relative to
+the new FDA one, or promote FDA holdout success automatically.
+
+A later, explicitly authorized, separate like-for-like FAA v2
+run may be needed for fair comparative measurement. Historical PIT,
+actual causation, observed market prices, sealed final outcomes and
+automated promotion/trading remain outside this research experiment.

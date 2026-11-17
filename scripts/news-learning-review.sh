@@ -178,6 +178,9 @@ case "$action" in
   historical-event-chain)
     module="tris_market_event_intelligence.historical_official_event_chain_cli"
     ;;
+  historical-cross-event)
+    module="tris_market_event_intelligence.historical_cross_event_validation_cli"
+    ;;
   historical-independent)
     module="tris_market_event_intelligence.historical_independent_news_cli"
     ;;
