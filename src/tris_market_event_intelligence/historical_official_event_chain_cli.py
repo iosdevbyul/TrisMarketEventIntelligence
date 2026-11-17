@@ -27,15 +27,15 @@ from tris_market_event_intelligence.historical_event_chain_explanation_quality i
     audit_explanation,
     audit_sequence,
 )
+from tris_market_event_intelligence.historical_evidence_composition import (
+    assess_question_axes,
+    generate_composed_explanation,
+)
 from tris_market_event_intelligence.historical_evidence_decision_consistency import (
     review_evidence_decisions,
 )
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
-)
-from tris_market_event_intelligence.historical_evidence_composition import (
-    assess_question_axes,
-    generate_composed_explanation,
 )
 from tris_market_event_intelligence.historical_generation_termination import (
     diagnose_termination,
