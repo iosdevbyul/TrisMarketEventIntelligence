@@ -260,7 +260,24 @@ def audit_saved_temporal(doc: dict, saved: dict, annotations: dict) -> dict:
             review_staged_model_output,
         )
 
+        from tris_market_event_intelligence.historical_evidence_decision_consistency import (
+            review_evidence_decisions,
+        )
+        from tris_market_event_intelligence.historical_staged_reasoning import (
+            visible_questions,
+        )
+
         saved_assessment = step["assessment"]
+        raw_draft = saved_assessment.get("stageOneModelDraft")
+        decision_review = None
+        if isinstance(raw_draft, dict):
+            reconstructed_draft = {
+                **raw_draft,
+                "visibleQuestions": visible_questions(annotations, packet),
+            }
+            decision_review = review_evidence_decisions(
+                packet, reconstructed_draft,
+            )
         staged_review = (
             review_staged_model_output(packet, saved_assessment)
             if isinstance(saved_assessment.get("stageOneModelDraft"), dict)
@@ -269,6 +286,7 @@ def audit_saved_temporal(doc: dict, saved: dict, annotations: dict) -> dict:
         output.append({
             "asOfDateExclusive": step["asOfDateExclusive"],
             "savedStagedModelOutputReview": staged_review,
+            "savedEvidenceDecisionConsistencyReview": decision_review,
             "curatorEvidenceLedger": evidence_ledger(packet),
             "questionLifecycle": current,
             "modelTemporalAudit": audit_temporal_consistency(
