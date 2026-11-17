@@ -13,7 +13,6 @@ import re
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,13 +20,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from tris_market_event_intelligence.historical_cross_domain_official_study_cli import (
     _require_new_output,
 )
+from tris_market_event_intelligence.historical_evidence_scope import (
+    is_observed_market_result,
+)
 from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
     _read,
     _write,
-)
-from tris_market_event_intelligence.historical_evidence_scope import (
-    is_observed_market_result,
 )
 from tris_market_event_intelligence.llm_runtime import (
     LLMCapabilities,
@@ -116,7 +115,7 @@ def validate_chain(doc: dict) -> None:
         name = row.get("sourceId")
         link = row.get("url")
         try:
-            day = date.fromisoformat(row["sourceDate"])
+            date.fromisoformat(row["sourceDate"])
             parsed = urlsplit(link)
         except (ValueError, TypeError, KeyError) as exc:
             raise ValueError("EVENT_CHAIN_SOURCE_INVALID") from exc
