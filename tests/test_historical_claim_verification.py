@@ -350,10 +350,14 @@ def test_normalization_does_not_allow_changed_facts_or_punctuation() -> None:
     )
     quote = {"a2:q2": {"quoteId": "a2:q2", "articleId": "a2", "text": original}}
     for altered in (
-        "The New York Times reported in October that Donald Trump "
-        "had been briefed this year on intelligence.",
-        "The New York Times reported in October that Donald Trump "
-        "had been briefed last year on intelligence!",
+        (
+            "The New York Times reported in October that Donald Trump "
+            "had been briefed this year on intelligence."
+        ),
+        (
+            "The New York Times reported in October that Donald Trump "
+            "had been briefed last year on intelligence!"
+        ),
     ):
         check = verify_claims(
             evidence=[EvidenceClaim(
