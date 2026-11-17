@@ -11,7 +11,7 @@ import argparse
 import json
 import re
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
