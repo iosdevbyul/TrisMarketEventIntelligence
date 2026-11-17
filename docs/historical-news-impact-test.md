@@ -1322,3 +1322,29 @@ jq '{auditModelCalls,steps:[.temporalQuestionLifecycleAudit.replayStepAudits[]|{
 ```
 
 Expected later Jan 25: `stageTwoExplanationUsable=false`, `STAGED_NARRATIVE_TRAILING_FRAGMENT` and `STAGED_QUESTION_REMAINDER_PLACEHOLDER`, with original FAA v1 saved result unchanged. New model calls are not needed to validate detection. The retained claims remain date-only, not verified historical point-in-time publisher snapshots.
+
+## Compact evidence-bound narrative generation (opt-in) — FAA/FDA follow-up
+
+The actual FAA Jan 25 Gemma4 staged-v1 result contained a syntactically JSON-valid but clipped `whatChanged` ending `... after the required work is 1`, while output also included extensive source-by-source fact and edge interpretations. The locally saved response does **not** expose Ollama's `done_reason` or token usage, so it is impossible to distinguish a model stop, content-length cap, or a generation-quality mistake from that saved text alone. The old original raw output and offline quality audit remain immutable.
+
+`--reasoning-mode staged-compact` is an **optional experimental generation path**. Its stage one is exactly the original evidence-first model call and strict source/claim validation (including model-authored question state, no automatic corrections). Its stage two is intentionally shorter: it receives date-scoped newly eligible official source claims, already validated stage-one MODEL decisions/changes and visible edge chronology, then generates only `whatChanged` and `whatRemainsUnknown` as structured JSON. It does not generate another comprehensive per-claim/per-edge interpretation ledger, nor does code pretend absent model-authored ledger items were verified. Source and edge coverage in the output stay explicitly 0/not generated, the original stage-one source changes and questions remain model-authored and inspectable, and the prior `single`/`staged` modes are unchanged.
+
+The generic stage-one decision guideline now separates OPEN (no material progress for the exact question), PARTIALLY_RESOLVED (a dated intermediate answer within its scope, but final answer/document not yet provided), and RESOLVED_BY_VISIBLE_SOURCE (the exact question directly answered by visible official evidence). Curator final statuses are **never** shown to the model and remain editorial annotations rather than semantic truth.
+
+The shared model runtime now records **provider-reported** last-generation metadata without model text, private claims or credentials: Ollama `done_reason`, `prompt_eval_count`, `eval_count`, configured output limit; OpenAI-compatible completion finish reason. `done_reason=length` and OpenAI-compatible `finish_reason=length` are rejected as incomplete. The new compact result includes both stage call diagnostics under `.assessment.generationDiagnostics` when available. A `done_reason=stop` only proves backend termination reason, **not** that a natural-language sentence ended correctly. Other endings or missing metadata remain possible. No telemetry can retroactively recover the old FAA v1 response's original stop reason.
+
+### One comparison experiment on unchanged FAA sources, without touching v1
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --question-tracks research/faa-2024-question-lifecycle.json \
+  --sequence 2024-01-13 2024-01-25 \
+  --reasoning-mode staged-compact --run --model gemma4:e2b \
+  --output "$DATA/faa-evidence-staged-compact-v1.json"
+jq '{modelCalls,steps:[.replaySteps[]|{date:.asOfDateExclusive,diagnostics:.assessment.generationDiagnostics,whatChanged:.assessment.whatChanged,whatRemainsUnknown:.assessment.whatRemainsUnknown,questions:.assessment.modelQuestionAssessments,narrativeReview:.assessment.stagedModelOutputReview}]}' "$DATA/faa-evidence-staged-compact-v1.json"
+```
+
+Compare source-specific factual action coverage, both question statuses, the separate 737-900ER scope, complete concise prose and the provider termination reason with the **original** saved FAA staged-v1. This is a prospective run with two stages at two dates (four model calls), not an automated self-repair. Historical archived publisher snapshots/PIT, actual semantic accuracy and cross-event generalization remain unverified; no market prices, predictions or financial effects are read.
