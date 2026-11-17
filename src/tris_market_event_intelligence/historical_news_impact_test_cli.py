@@ -534,6 +534,7 @@ def run_case(
     case: CaseInput, provider: LLMProvider, *,
     use_claim_extraction: bool = False,
     use_target_selection: bool = False,
+    verify_all_impacts: bool = False,
 ) -> dict:
     preflight = prepare_case(case)
     quotes, lookup = _quote_anchors(case)
@@ -654,18 +655,24 @@ def run_case(
         }, ensure_ascii=False)
     else:
         raise ValueError("NEWS_TEST_MODEL_REGENERATION_EXHAUSTED")
-    # A bounded independent pass only when no source-validated impacts were
-    # produced. Explicitly audit BOTH factual evidence and conditional causal
-    # hypothesis; never promote a model statement just because it has a quoteId.
+    # Audit every initially accepted impact when verification is enabled;
+    # source-quote membership alone is not sufficient proof of its mechanism.
+    # Legacy programmatic callers retain the previous fallback behavior.
+    initial_accepted_impacts = list(reviewed["impacts"])
+    if verify_all_impacts and targets is not None:
+        reviewed["impacts"] = []
+    # A bounded independent pass: always in strict verification mode, or
+    # when the normal pass produced no accepted impact. Preserve original
+    # assertions in the audit trail even when they are rejected.
     initial_rejected_impacts = list(reviewed["rejectedImpacts"])
     impact_recovery_used = False
     recovered_company_hypotheses: list[dict] = []
     rejected_company_hypotheses: list[dict] = []
     recovered_claim_checks: list[dict] = []
     impact_recovery_error: str | None = None
-    if targets is not None and not reviewed["impacts"] and (
-        targets["companies"] or targets["sectors"]
-    ):
+    if targets is not None and (
+        verify_all_impacts or not initial_accepted_impacts
+    ) and (targets["companies"] or targets["sectors"]):
         impact_recovery_used = True
         call_count += 1
         try:
@@ -807,16 +814,74 @@ def run_case(
             )
     # Prior rejected model output remains visible, never reclassified as
     # valid or silently discarded by the optional recovery pass.
-    reviewed["impactValidationComplete"] = (
-        reviewed["impactValidationComplete"]
-        and not initial_rejected_impacts
-        and not rejected_company_hypotheses
-        and impact_recovery_error is None
-    )
+    if verify_all_impacts and targets is not None:
+        # Never keep a primary impact unless a separately produced atomic
+        # evidence and causal claim passes the exact-source gate. A recovered
+        # sector hypothesis is admitted only after its own normal validation.
+        accepted_sector_keys = {
+            (row["sector"], row["market"])
+            for row in reviewed["impacts"] if row["targetType"] == "SECTOR"
+        }
+        accepted_company_names = {
+            row["companyName"].casefold()
+            for row in recovered_company_hypotheses
+        }
+        for index, original in enumerate(initial_accepted_impacts):
+            if original["targetType"] == "STOCK":
+                key = (original["companyName"] or "").casefold()
+                if key in accepted_company_names and original.get("ticker"):
+                    check_row = next(
+                        row for row in recovered_company_hypotheses
+                        if row["companyName"].casefold() == key
+                    )
+                    original["claimVerification"] = check_row["claimVerification"]
+                    reviewed["impacts"].append(original)
+                    continue
+            elif (original["sector"], original["market"]) in accepted_sector_keys:
+                # Covered by the independently verified replacement, which
+                # has its own causal claim and exact source excerpts.
+                continue
+            reviewed["rejectedImpacts"].append({
+                "impactIndex": index,
+                "reason": "NEWS_TEST_CLAIM_VERIFICATION_MISSING",
+                "proposal": {
+                    key: original[key] for key in (
+                        "targetType", "companyName", "ticker", "sector",
+                        "market", "mechanism", "uncertainty",
+                        "evidenceQuoteIds",
+                    )
+                },
+            })
+        if not impact_recovery_used:
+            reviewed["rejectedImpacts"].extend(
+                {
+                    "impactIndex": index,
+                    "reason": "NEWS_TEST_CLAIM_VERIFICATION_NOT_RUN",
+                    "proposal": original,
+                }
+                for index, original in enumerate(initial_accepted_impacts)
+            )
+        # A zero-claim impact must never be marked validated.
+        reviewed["impactValidationComplete"] = (
+            reviewed["impactValidationComplete"]
+            and not reviewed["rejectedImpacts"]
+            and not rejected_company_hypotheses
+            and impact_recovery_error is None
+            and all("claimVerification" in row for row in reviewed["impacts"])
+        )
+    else:
+        reviewed["impactValidationComplete"] = (
+            reviewed["impactValidationComplete"]
+            and not initial_rejected_impacts
+            and not rejected_company_hypotheses
+            and impact_recovery_error is None
+        )
     reviewed["companyImpactHypotheses"] = recovered_company_hypotheses
     reviewed["rejectedCompanyImpactHypotheses"] = rejected_company_hypotheses
     reviewed["impactClaimChecks"] = recovered_claim_checks
     reviewed["initialRejectedImpacts"] = initial_rejected_impacts
+    reviewed["initialAcceptedImpacts"] = initial_accepted_impacts
+    reviewed["verifyAllImpacts"] = verify_all_impacts
     reviewed["impactRecoveryUsed"] = impact_recovery_used
     reviewed["impactRecoveryError"] = impact_recovery_error
     revised_source_ids = [
@@ -850,7 +915,7 @@ def run_case(
         "modelCalls": call_count,
         "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
-        "promptVersion": "historical-news-impact-v9-atomic-claim-verified",
+        "promptVersion": "historical-news-impact-v10-universal-claim-gate",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -965,6 +1030,7 @@ def main() -> None:
             case, provider,
             use_claim_extraction=not args.legacy_single_pass,
             use_target_selection=not args.legacy_single_pass,
+            verify_all_impacts=not args.legacy_single_pass,
         )
         stage = "ANSWER_OUTPUT_WRITE"
         _write(args.output, report)
@@ -997,6 +1063,8 @@ def main() -> None:
             "impactRecoveryUsed": report["impactRecoveryUsed"],
             "impactRecoveryError": report["impactRecoveryError"],
             "impactClaimChecks": report["impactClaimChecks"],
+            "verifyAllImpacts": report["verifyAllImpacts"],
+            "initialAcceptedImpacts": report["initialAcceptedImpacts"],
             "rejectedMarketOutcomeClaims": report["rejectedMarketOutcomeClaims"],
             "rejectedNarrativeClaims": report["rejectedNarrativeClaims"],
             "impactResults": [

@@ -256,3 +256,63 @@ def test_no_recovery_call_when_initial_impact_already_accepted() -> None:
         test_full_three_stage_workflow_passes_grounded_targets,
     )
     test_full_three_stage_workflow_passes_grounded_targets()
+
+class PrimaryAcceptedProvider(FourStageProvider):
+    """Primary sector passes the old syntax gate, but not atomic checking."""
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if "claims" not in schema["properties"] and (
+            "companies" not in schema["properties"]
+            and "companyHypotheses" not in schema["properties"]
+        ):
+            self.calls += 1
+            case = cli.CaseInput.model_validate(sample_case())
+            result = answer(case)
+            result["impacts"] = [result["impacts"][1]]
+            result["impacts"][0]["direction"] = "UNCERTAIN"
+            result["impacts"][0]["intensity"] = "MODERATE"
+            return json.dumps(result)
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_primary_accepted_impact_still_requires_atomic_verification() -> None:
+    case, _, lookup = _quote_case()
+    provider = PrimaryAcceptedProvider(_recovery_response(lookup))
+    report = cli.run_case(
+        case, provider, use_claim_extraction=True, use_target_selection=True,
+        verify_all_impacts=True,
+    )
+    assert provider.calls == 4
+    assert report["impactRecoveryUsed"]
+    assert report["verifyAllImpacts"]
+    assert len(report["initialAcceptedImpacts"]) == 1
+    assert "claimVerification" not in report["initialAcceptedImpacts"][0]
+    assert len(report["impacts"]) == 1
+    assert report["impacts"][0]["sector"] == "SEMICONDUCTORS"
+    assert report["impacts"][0]["claimVerification"]["status"] == (
+        "SOURCE_QUOTE_MATCHED_CONDITIONAL"
+    )
+    assert len(report["impactClaimChecks"]) == 2
+
+
+def test_primary_accepted_impact_rejected_when_atomic_claim_is_fabricated() -> None:
+    case, _, lookup = _quote_case()
+    recovery = _recovery_response(lookup)
+    recovery["companyHypotheses"] = []
+    recovery["sectorHypotheses"][0]["sourceClaims"][0]["sourceExcerpt"] = (
+        "The market plunged following the official prohibition."
+    )
+    provider = PrimaryAcceptedProvider(recovery)
+    report = cli.run_case(
+        case, provider, use_claim_extraction=True, use_target_selection=True,
+        verify_all_impacts=True,
+    )
+    assert provider.calls == 4
+    assert report["impacts"] == []
+    assert report["initialAcceptedImpacts"]
+    assert any(row["reason"] == "NEWS_TEST_CLAIM_VERIFICATION_MISSING"
+               for row in report["rejectedImpacts"])
+    assert report["impactValidationComplete"] is False
+    assert report["impactClaimChecks"][0]["verification"]["status"] == (
+        "REJECTED_UNSUPPORTED_CLAIM"
+    )
