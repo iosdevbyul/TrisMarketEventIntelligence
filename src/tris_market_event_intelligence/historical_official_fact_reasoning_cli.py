@@ -16,10 +16,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tris_market_event_intelligence.historical_claim_verification import (
-    _CONDITIONAL,
-    _FACT_ASSERTION,
-)
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
@@ -28,6 +24,9 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _read,
     _write,
     validate_cohort,
+)
+from tris_market_event_intelligence.historical_official_conditional_scenarios import (
+    review_scenario,
 )
 from tris_market_event_intelligence.historical_official_mechanism_audit import (
     inspect_interpretation,
@@ -117,8 +116,12 @@ exploratory assumption rather than a source fact, omit it and state which
 unavailable evidence would establish it. No guessed high-margin description.
 Use sourceFactIds exactly; do not invent external facts, a second issuer,
 industry-wide impacts or future regulatory action. A mechanism is a
-HYPOTHESIS: state IF triggerCondition, could/may/might/would economic
-consequence, counterHypothesis and missingEvidence that would be required
+HYPOTHESIS: give a trigger assumption (may be a concise noun phrase),
+an effect with explicit could/may/might/would and an IF/when antecedent
+either in the trigger or effect; give an alternative counterHypothesis,
+explicitly conditional if possible. A counter that is a declarative
+alternative will be preserved as an UNVERIFIED assumption rather than
+proved as history. Include missingEvidence that would be required
 to evaluate it. Abstain with an empty mechanisms array if there is no
 support. Do not forecast a precise price, assert actual returns, or use
 unknown contemporaneous news, stock prices or knowledge after the release.
@@ -219,25 +222,11 @@ def run_case(case: dict, provider: LLMProvider) -> dict:
         ids = item.sourceFactIds
         if len(set(ids)) != len(ids) or any(i not in accepted_ids for i in ids):
             reason = "UNSUPPORTED_OR_REJECTED_SOURCE_FACT"
-        elif not _CONDITIONAL.search(item.triggerCondition):
-            reason = "TRIGGER_NOT_CONDITIONAL"
-        elif not _CONDITIONAL.search(item.conditionalEffect):
-            reason = "EFFECT_NOT_CONDITIONAL"
-        elif not _CONDITIONAL.search(item.counterHypothesis):
-            reason = "COUNTER_HYPOTHESIS_NOT_CONDITIONAL"
-        elif any(_quality_screen(value) for value in (
-            item.triggerCondition, item.conditionalEffect,
-            item.counterHypothesis, item.missingEvidence,
-        )):
-            reason = "OBSERVED_MARKET_RESULT_NOT_SUPPORTED"
-        elif any(
-            _FACT_ASSERTION.search(sentence)
-            and not _CONDITIONAL.search(sentence)
-            for sentence in re.split(r"(?<=[.!?])\s+", item.conditionalEffect)
-        ):
-            reason = "UNCONDITIONAL_NEW_ECONOMIC_FACT"
         else:
             reason = None
+        scenario = review_scenario(item.model_dump()) if reason is None else None
+        if scenario is not None and scenario["blockers"]:
+            reason = "SCENARIO_STRUCTURE_UNSUPPORTED"
         quality = (
             inspect_mechanism(item.model_dump(), fact_by_id)
             if reason is None else None
@@ -248,10 +237,12 @@ def run_case(case: dict, provider: LLMProvider) -> dict:
             rejected_mechanisms.append({
                 "reason": reason, "proposal": item.model_dump(),
                 **({"qualityAudit": quality} if quality is not None else {}),
+                **({"scenarioReview": scenario} if scenario is not None else {}),
             })
             continue
         mechanisms.append({
             **item.model_dump(),
+            "scenarioReview": scenario,
             "qualityAudit": quality,
             "issuer": case["issuer"],
             "sourceId": case["source"]["sourceId"],
@@ -319,6 +310,10 @@ def compare_cohort(results: list[dict], *, cohort_sha: str) -> dict:
         },
         "rejectedMechanismCounts": {
             r["caseId"]: len(r["rejectedEconomicMechanisms"]) for r in results
+        },
+        "recoveredCandidateCounts": {
+            r["caseId"]: len(r.get("recoveredResearchCandidates", []))
+            for r in results
         },
         "qualityGateRejectionCounts": {
             r["caseId"]: sum(
@@ -399,6 +394,44 @@ def audit_existing(cohort: dict, existing: dict) -> dict:
             fact["interpretationQualityFlags"] = inspect_interpretation(
                 fact["explanation"], facts[fact["factId"]]["statement"],
             )
+        recovered_candidates: list[dict] = []
+        for rejected in prior["rejectedEconomicMechanisms"]:
+            if rejected.get("reason") not in {
+                "TRIGGER_NOT_CONDITIONAL",
+                "COUNTER_HYPOTHESIS_NOT_CONDITIONAL",
+            }:
+                continue
+            proposal = rejected.get("proposal")
+            if not isinstance(proposal, dict):
+                continue
+            ids = proposal.get("sourceFactIds")
+            if (
+                not isinstance(ids, list)
+                or not ids
+                or len(ids) != len(set(ids))
+                or any(fid not in facts for fid in ids)
+            ):
+                continue
+            try:
+                model = MechanismHypothesis.model_validate(proposal)
+            except ValueError:
+                continue
+            scenario = review_scenario(model.model_dump())
+            quality = inspect_mechanism(model.model_dump(), facts)
+            if scenario["blockers"] or quality["blockers"]:
+                continue
+            recovered_candidates.append({
+                "proposal": model.model_dump(),
+                "priorStructuralRejection": rejected["reason"],
+                "scenarioReview": scenario,
+                "qualityAudit": quality,
+                "recovery": "STRUCTURAL_REASSESSMENT_NOT_MODEL_REGENERATION",
+                "sourceIdsVerified": True,
+                "humanReviewRequired": True,
+                "semanticAccuracyVerified": False,
+                "causalityProven": False,
+            })
+        prior["recoveredResearchCandidates"] = recovered_candidates
         approved = []
         for proposal in prior["economicMechanisms"]:
             audit = inspect_mechanism(proposal, facts)
@@ -420,6 +453,9 @@ def audit_existing(cohort: dict, existing: dict) -> dict:
     result["schemaVersion"] = "historical_official_fact_reasoning_audit_v1"
     result["status"] = "REAL_PRIMARY_CASE_MECHANISM_AUDIT_REQUIRES_HUMAN_REVIEW"
     result["originalModelCalls"] = existing["modelCalls"]
+    result["recoveredCandidateCount"] = sum(
+        len(row["recoveredResearchCandidates"]) for row in result["cases"]
+    )
     result["auditModelCalls"] = 0
     result["semanticEntailmentVerified"] = False
     result["trainingPerformed"] = False
@@ -465,6 +501,7 @@ def main() -> None:
             "qualifiedMechanisms": sum(
                 len(row["economicMechanisms"]) for row in report["cases"]
             ),
+            "recoveredResearchCandidates": report["recoveredCandidateCount"],
             "qualityGateRejections": sum(
                 sum(item["reason"] == "ECONOMIC_MECHANISM_QUALITY_GATE"
                     for item in row["rejectedEconomicMechanisms"])
