@@ -773,3 +773,48 @@ evidence are semantically justified by official facts. Neither
 `economicDecision` nor a mechanically accepted research candidate
 certifies generalization, source point-in-time reconstruction,
 price-effect measurement or economic causality.
+
+## Real Gemma4 v2: FDA `When` false negatives and FAA cost-incidence miss
+
+The second user-local official cross-domain run produced one research
+candidate (FAA), two rejected hypotheses (both FDA), and correct NASA
+`ABSTAIN` with `negativeControlAbstained=true`. Inspection of the
+*complete model-authored proposals* disclosed two distinct problems:
+
+- **FDA ModernaTX/Pfizer**: each proposal's trigger begins with
+  `When the updated authorization ...`, and its effect uses `might`.
+  Previous scenario validation only recognized `if`-style triggers in
+  that field, despite `_ANTECEDENT` already supporting `when`.
+  The scenario checker now uses the same explicit antecedent vocabulary
+  for trigger, effect, and counter hypotheses. Both are **eligible for
+  human research review**, not guaranteed commercial outcomes.
+- **FAA Boeing**: the accepted candidate's justification asserted that
+  the FAA grounding order imposed engineering modifications, inspection
+  and downtime *on the manufacturer*. Its evidenceBoundary conceded
+  that the primary source did **not** establish Boeing paid the airlines'
+  inspection costs. That self-contradiction does not establish cost
+  incidence. The actor-boundary reviewer now catches the documented
+  `impose ... costs ... on the manufacturer` form and quarantines the
+  candidate; it still permits conditional, carefully qualified indirect
+  effects to remain research candidates.
+
+This change is not a strategy to maximize acceptance counts. It
+**downgrades** the formerly accepted FAA proposal while recovering two
+FDA proposals only as **human-review-only** research candidates.
+
+Run a fresh **zero-model-call** audit against the original unmodified
+v2 local JSON to see both sides of the correction (create-only output):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-cross-domain \
+  --cohort research/cross-domain-official-events-2023-2024.json \
+  --audit-existing "$DATA/cross-domain-official-research-v2.json" \
+  --output "$DATA/cross-domain-official-research-audit-v3.json"
+```
+
+Check `summary.previousCandidatesNowQuarantined` and
+`summary.recoverableForHumanReview`, and inspect
+`cases[].acceptedCandidateReassessment` and
+`cases[].recoverableForHumanReview`. The saved input is not changed,
+and any recovery is never a semantic, causal or PIT verification.
