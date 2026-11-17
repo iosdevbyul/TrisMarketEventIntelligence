@@ -21,6 +21,16 @@ from tris_market_event_intelligence.historical_evidence_scope import (
 from tris_market_event_intelligence.llm_runtime import LLMProvider
 
 
+class StagedDraftEvidenceError(ValueError):
+    """Fail-closed evidence gap, with limited non-sensitive source diagnostics."""
+
+    def __init__(self, code: str, diagnostic: dict) -> None:
+        super().__init__(code)
+        self.code = code
+        self.diagnostic = diagnostic
+        self.completed_replay_steps: list[dict] = []
+
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,6 +64,10 @@ visible sourceId + claimId for EACH newly eligible source. Describe the actual
 announced regulatory decision and relevant aircraft/product scope. Do not treat
 plans, formula recommendations, formal authorizations, implementation, or
 commercial sales as interchangeable.
+Explicitly account for EACH sourceId in visibleHistoricalEvidence.eligibleSources
+that is NOT in previouslySeenSourceIds. Put at least one changeItems entry
+for each required new sourceId. Include exact claimId from that SAME source;
+do not use future IDs, invent IDs or combine source IDs in one change.
 For EVERY supplied research question return precisely one question assessment
 using OPEN, PARTIALLY_RESOLVED, RESOLVED_BY_VISIBLE_SOURCE. Anchor the answer
 to an actual currently-visible supporting sourceId + claimId. A later
@@ -130,14 +144,25 @@ def produce_draft(
 ) -> dict:
     """One factual stage. Reject incomplete or unavailable claims; no auto-fill."""
     questions = visible_questions(annotations, packet)
+    fresh = {
+        s["sourceId"] for s in packet["eligibleSources"]
+        if s["sourceId"] not in packet["previouslySeenSourceIds"]
+    }
     envelope = {
         "visibleHistoricalEvidence": _model_packet(packet),
         "visibleResearchQuestions": questions,
+        "requiredNewSourceIds": sorted(fresh),
     }
+    schema = EvidenceFirstDraft.model_json_schema()
+    # Schema cardinality is cutoff-local. It helps constrained JSON models
+    # allocate all required evidence slots, but cannot replace ID validation.
+    schema["properties"]["changeItems"]["minItems"] = max(1, len(fresh))
+    schema["properties"]["questionAssessments"]["minItems"] = len(questions)
+    schema["properties"]["questionAssessments"]["maxItems"] = len(questions)
     raw = provider.generate_json(
         system=STAGE_ONE_SYSTEM,
         user=json.dumps(envelope, ensure_ascii=False),
-        schema=EvidenceFirstDraft.model_json_schema(),
+        schema=schema,
     )
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > 24_000:
         raise ValueError("STAGED_DRAFT_GENERATION_INVALID")
@@ -146,22 +171,57 @@ def produce_draft(
         (s["sourceId"], c["claimId"])
         for s in packet["eligibleSources"] for c in s["claims"]
     }
-    fresh = {
-        s["sourceId"] for s in packet["eligibleSources"]
-        if s["sourceId"] not in packet["previouslySeenSourceIds"]
-    }
     accepted = [x.model_dump() for x in draft.changeItems]
-    if (
-        any((x["sourceId"], x["claimId"]) not in refs for x in accepted)
-        or len({(x["sourceId"], x["claimId"]) for x in accepted}) != len(accepted)
-        or not fresh <= {x["sourceId"] for x in accepted}
-        or any(
-            is_observed_market_result(x["changedAction"])
-            or is_observed_market_result(x["scope"])
-            for x in accepted
+    referenced = [(x["sourceId"], x["claimId"]) for x in accepted]
+    invalid_refs = sorted({
+        (source, claim) for source, claim in referenced
+        if (source, claim) not in refs
+    })
+    valid_new_sources = {
+        source for source, claim in referenced if (source, claim) in refs
+    }
+    missing_sources = sorted(fresh - valid_new_sources)
+    duplicates = sorted({
+        (source, claim) for source, claim in referenced
+        if referenced.count((source, claim)) > 1
+    })
+    unsupported_outcomes = sorted({
+        x["sourceId"] for x in accepted
+        if is_observed_market_result(x["changedAction"])
+        or is_observed_market_result(x["scope"])
+    })
+    if invalid_refs or missing_sources or duplicates or unsupported_outcomes:
+        raise StagedDraftEvidenceError(
+            "STAGED_DRAFT_CHANGE_EVIDENCE_INCOMPLETE",
+            {
+                "reasonCodes": [
+                    label for label, triggered in (
+                        ("MISSING_NEW_SOURCE_CHANGE", bool(missing_sources)),
+                        ("UNAVAILABLE_SOURCE_CLAIM", bool(invalid_refs)),
+                        ("DUPLICATE_SOURCE_CLAIM", bool(duplicates)),
+                        ("UNSUPPORTED_MARKET_OUTCOME", bool(unsupported_outcomes)),
+                    ) if triggered
+                ],
+                "requiredNewSourceIds": sorted(fresh),
+                "missingNewSourceIds": missing_sources,
+                "invalidSourceClaimIds": [
+                    {"sourceId": source, "claimId": claim}
+                    for source, claim in invalid_refs
+                ],
+                "duplicateSourceClaimIds": [
+                    {"sourceId": source, "claimId": claim}
+                    for source, claim in duplicates
+                ],
+                "marketOutcomeClaimSourceIds": unsupported_outcomes,
+                "modelSubmittedChangeReferences": [
+                    {"sourceId": source, "claimId": claim}
+                    for source, claim in referenced
+                ],
+                "modelAuthoredTextNotPersisted": True,
+                "curatorFactsNotSubstituted": True,
+                "semanticAccuracyVerified": False,
+            },
         )
-    ):
-        raise ValueError("STAGED_DRAFT_CHANGE_EVIDENCE_INCOMPLETE")
     states = [x.model_dump() for x in draft.questionAssessments]
     if (
         {x["questionId"] for x in states}
