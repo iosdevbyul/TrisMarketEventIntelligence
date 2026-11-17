@@ -325,3 +325,42 @@ Mechanical source-excerpt membership is still NOT semantic entailment,
 publisher truth, or demonstrated financial causation. Accepted explanations
 remain uncalibrated, human-review-required scenarios. The post-cutoff revised
 NVDA documents remain exploratory rather than eligible historical replay.
+
+## v13 acceptance: price-contaminated exact quotes and issuer-only sector claims
+
+The real exploratory v13 Gemma4 report contained two apparently accepted
+sector hypotheses and one Nvidia company hypothesis. Crucially, source quote
+`a2:q7` explicitly reported a 3.1% Nvidia stock drop and S&P 500 pressure,
+and the literal quote matcher had marked it `SOURCE_QUOTE_MATCHED_CONDITIONAL`
+without recognizing the **price observation**. This is not an eligible
+as-of event-impact input simply because the scraped article contains it.
+
+All model passes now receive **in-memory redacted market-outcome sentences**
+and an allowlist of quote anchors with observed price/index movements
+quarantined. The original private source files and article hashes are never
+modified; original quote IDs remain stable (blocked IDs are absent, never
+renumbered). The model cannot cite a blocked quote as as-of evidence.
+`quarantinedMarketOutcomeQuotes` reports article ID, quote ID, and reason.
+`eligibleSourceQuoteCount` discloses available evidence. If even one
+source article has no eligible quotes, the analysis fails closed before
+any generation. The atomic claim verifier independently rejects such
+verbatim snippets even when provided directly. This is a conservative
+price-claim guard rather than proof that other source text existed at
+the historical cutoff.
+
+A company-specific story is not automatically broad industry evidence.
+A sector recovery claim citing only issuer-specific quotations is
+retained in `sectorImpactHypotheses` with
+`sectorEvidenceScope=ISSUER_ONLY_NO_SECTOR_WIDE_SOURCE`, never counted as
+a validated sector `impact`. Explicit cross-firm/industry context in
+the cited source excerpts is required before proposing an industry-wide
+conditional scenario as an eligible sector impact. This lexical cue is
+not a semantic entailment judgment; even eligible conditional scenarios
+retain `semanticallyVerified=false`, `causalityProven=false`, and
+`humanReviewRequired=true`. Quarantined proposals remain accessible in
+`rejectedCompanyImpactHypotheses` for review.
+
+**The 2026-11-08 revised-source NVDA case is exploratory only.**
+`sourceQuotesExistAtAsOfVerified=false` makes the missing historical
+snapshot proof explicit. No future price data or realization labels may
+enter scoring, calibration, promotion, or training from this case.
