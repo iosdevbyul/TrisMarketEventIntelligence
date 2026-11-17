@@ -359,7 +359,7 @@ def review_staged_model_output(packet: dict, assessment: dict) -> dict:
     # Flag the exact dangling grammar/ordinal shape without claiming all
     # incomplete natural-language sentences can be found mechanically.
     clipped = bool(re.search(
-        r"\\b(?:is|are|was|were|to|the|an?|and|or|of|for|with|after|before)\\s+\\d+\\s*$",
+        r"\b(?:is|are|was|were|to|the|an?|and|or|of|for|with|after|before)\s+\d+\s*$",
         text, flags=re.IGNORECASE,
     ))
     if clipped:
@@ -388,7 +388,7 @@ def review_staged_model_output(packet: dict, assessment: dict) -> dict:
         }
         for x in questions
         if re.match(
-            r"^\\s*(?:N\\s*/?\\s*A|NOT_APPLICABLE)(?:\\b|_)",
+            r"^\s*(?:N\s*/?\s*A|NOT_APPLICABLE)(?:\b|_)",
             x["stillUnknown"], flags=re.IGNORECASE,
         )
     ]
