@@ -32,11 +32,6 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _read,
     _write,
 )
-from tris_market_event_intelligence.llm_runtime import (
-    LLMCapabilities,
-    LLMProvider,
-    LLMSettings,
-)
 from tris_market_event_intelligence.historical_temporal_question_lifecycle import (
     audit_saved_temporal,
     audit_temporal_consistency,
@@ -44,6 +39,11 @@ from tris_market_event_intelligence.historical_temporal_question_lifecycle impor
     lifecycle_delta,
     question_snapshot,
     validate_question_tracks,
+)
+from tris_market_event_intelligence.llm_runtime import (
+    LLMCapabilities,
+    LLMProvider,
+    LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
