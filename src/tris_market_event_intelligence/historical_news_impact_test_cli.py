@@ -21,6 +21,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from tris_market_event_intelligence.historical_article_understanding import extract_claims
 from tris_market_event_intelligence.historical_claim_verification import verify_claims
+from tris_market_event_intelligence.historical_evidence_scope import (
+    filter_evidence_quotes,
+    redact_market_result_sentences,
+)
 from tris_market_event_intelligence.historical_impact_recovery import recover_impact_hypotheses
 from tris_market_event_intelligence.historical_impact_targets import select_targets
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
@@ -537,18 +541,33 @@ def run_case(
     verify_all_impacts: bool = False,
 ) -> dict:
     preflight = prepare_case(case)
-    quotes, lookup = _quote_anchors(case)
+    original_quotes, _ = _quote_anchors(case)
+    quotes, quarantined_quotes = filter_evidence_quotes(original_quotes)
+    lookup = {quote["quoteId"]: quote for quote in quotes}
+    # Redact only the model-facing in-memory text; keep original files,
+    # source hashes, and article manifest unchanged for forensic review.
+    analysis_articles = [
+        article.model_copy(update={
+            "title": redact_market_result_sentences(article.title),
+            "body": redact_market_result_sentences(article.body),
+        })
+        for article in case.articles
+    ]
+    if not quotes or {q["articleId"] for q in quotes} != {
+        article.articleId for article in case.articles
+    }:
+        raise ValueError("NEWS_TEST_NO_ELIGIBLE_SOURCE_QUOTES")
     claims = (
         extract_claims(
             provider=provider,
-            articles=[a.model_dump() for a in case.articles],
+            articles=[a.model_dump() for a in analysis_articles],
             anchors=quotes, as_of=case.asOf,
         ) if use_claim_extraction else []
     )
     targets = (
         select_targets(
             provider=provider,
-            articles=[a.model_dump() for a in case.articles],
+            articles=[a.model_dump() for a in analysis_articles],
             anchors=quotes, claims=claims, as_of=case.asOf,
             known_tickers=[k.model_dump() for k in case.knownTickers],
         ) if use_target_selection else None
@@ -560,7 +579,7 @@ def run_case(
         "horizonTradingDays": case.horizonTradingDays,
         "articles": [a.model_dump(exclude={
             "sourceModifiedAt", "sourceIntegrity",
-        }) for a in case.articles],
+        }) for a in analysis_articles],
         "knownTickers": [t.model_dump() for t in case.knownTickers],
         "sourceQuoteAnchors": quotes,
         "historicalOutcomesAvailable": False,
@@ -895,6 +914,9 @@ def run_case(
             if revised_source_ids else "PUBLISHER_METADATA_UNARCHIVED"
         ),
         "revisedSourceArticleIds": revised_source_ids,
+        "quarantinedMarketOutcomeQuotes": quarantined_quotes,
+        "eligibleSourceQuoteCount": len(quotes),
+        "sourceQuotesExistAtAsOfVerified": False,
         "historicalBenchmarkEligible": False if (
             revised_source_ids or case.skippedSources
             or not reviewed["eventStageCoverageComplete"]
@@ -915,7 +937,7 @@ def run_case(
         "modelCalls": call_count,
         "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
-        "promptVersion": "historical-news-impact-v10-universal-claim-gate",
+        "promptVersion": "historical-news-impact-v11-price-evidence-quarantine",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -1049,6 +1071,9 @@ def main() -> None:
             "accuracyVerified": False,
             "sourceIntegrityStatus": report["sourceIntegrityStatus"],
             "revisedSourceArticleIds": report["revisedSourceArticleIds"],
+            "quarantinedMarketOutcomeQuotes": report["quarantinedMarketOutcomeQuotes"],
+            "eligibleSourceQuoteCount": report["eligibleSourceQuoteCount"],
+            "sourceQuotesExistAtAsOfVerified": report["sourceQuotesExistAtAsOfVerified"],
             "skippedSources": report["skippedSources"],
             "historicalBenchmarkEligible": report["historicalBenchmarkEligible"],
             "eventResults": report["eventGroups"],
