@@ -1074,3 +1074,92 @@ A later, explicitly authorized, separate like-for-like FAA v2
 run may be needed for fair comparative measurement. Historical PIT,
 actual causation, observed market prices, sealed final outcomes and
 automated promotion/trading remain outside this research experiment.
+
+## Temporal Question Lifecycle and Source Claim Ledger
+
+Actual **held-out** FDA Gemma4 v2 output exposed a meaningful distinction:
+
+- Free narrative `whatChanged` accurately recognized April/June XBB.1.5
+  formula guidance → September mRNA authorization → October separate Novavax
+  authorization, yet `changeItems=[]` for both replay steps. This is
+  primarily an output-structure failure, **not** proof it missed the events.
+- At the later October cutoff `whatRemainsUnknown` nevertheless claimed
+  the updated fall *composition* remained an unobserved decision, despite
+  the earlier visible recommendation and subsequent product-specific
+  FDA authorizations. The exact manufacturer filing receipts/underlying
+  review documents **remain unknown** and must not be erased.
+- `unresolvedQuestions` continued to cite the **original April formula
+  question** even at the October cutoff. The model may be asking about
+  separately unavailable advisory minutes, but cannot relabel the actual
+  *product authorization* decision as pending.
+
+The optional, versioned
+`research/fda-2023-question-lifecycle.json` is a separate **curator
+annotation artifact**. It does **not** modify
+`research/fda-covid-vaccine-2023-event-chain.json`, preserving the
+source cohort SHA and compatibility with *all existing real local Gemma4
+artifacts*. It anchors two research questions to exact source+claim IDs
+and describes dated states with conservative scope:
+
+1. Product-specific XBB.1.5 update: `OPEN` (April planning) →
+   `PARTIALLY_RESOLVED` (June recommendation) →
+   `RESOLVED_BY_LATER_SOURCE` (September ModernaTX/Pfizer product
+   authorization). This **does not** declare the independent Novavax
+   status or manufacturer submission details automatically resolved.
+2. Actual manufacturer filing/review records: `OPEN` (June anticipates
+   submissions) → `PARTIALLY_RESOLVED` (September authorizations occur,
+   but original source paraphrases do not expose filing receipts,
+   submission content or the complete review file).
+
+The `curatorEvidenceLedger` deterministically exposes *all* permitted
+source facts with provenance, publication-date **not** timestamp, exact
+source/claim IDs, and newly available status; it is **not** text created
+or asserted as correct by Gemma4. The separate `changeItems` field is
+always retained as the **model's own original output**, even if empty.
+The `temporalConsistencyAudit` warns on uncited new source changes,
+questions anchored to old now-resolved decisions, and narrow
+contradictory "composition still unobserved" phrasing (human review
+required; heuristic alerts may be false positives). It never rewrites
+the model's answers or treats a curated status as independent proof.
+
+All annotations are validated against the original official cohort;
+chronological regressions, future source/claim forgeries, and mixing
+source packets are rejected. A newly generated as-of model request
+receives **only visible original claims**, never the annotation of
+a future question resolution. The curated question lifecycle is
+attached to the *audit/result*, not spoon-fed to Gemma4.
+
+### Audit real saved FDA output without repeating Gemma4 calls
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/fda-covid-vaccine-2023-event-chain.json \
+  --question-tracks research/fda-2023-question-lifecycle.json \
+  --audit-existing "$DATA/fda-event-chain-heldout-v1.json" \
+  --output "$DATA/fda-temporal-question-audit-v1.json"
+```
+
+This creates a **new private JSON** with both existing explanation
+quality review and
+`temporalQuestionLifecycleAudit.replayStepAudits[]` containing
+`curatorEvidenceLedger`, `questionLifecycle`,
+`questionLifecycleDelta`, and `modelTemporalAudit`. The actual
+saved v2 JSON and source cohort remain untouched, `auditModelCalls=0`.
+
+### Future genuinely new model quality experiment (optional)
+
+When a new real Gemma4 sample is warranted, supply
+`--question-tracks research/fda-2023-question-lifecycle.json`
+alongside the original `--sequence` command and use an **unused**
+private output file. The two-model-call new result includes
+`questionLifecycleDelta` and the per-step curator/model provenance
+ledger. Source visibility restrictions and historical-PIT=false remain.
+
+**Limitations:** A curated temporal lifecycle is a transparent
+human-authored annotation, not a model-learned truth or a
+publication-time verified snapshot. Avoid using these source relations
+as market-causality proof or counting structural completeness as
+cross-event generalization. No market prices, realized returns,
+training, financial predictions, auto promotions or trades.
