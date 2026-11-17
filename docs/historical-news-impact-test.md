@@ -818,3 +818,96 @@ Check `summary.previousCandidatesNowQuarantined` and
 `cases[].acceptedCandidateReassessment` and
 `cases[].recoverableForHumanReview`. The saved input is not changed,
 and any recovery is never a semantic, causal or PIT verification.
+
+## New milestone: real historical event-chain reconstruction (FAA January 2024)
+
+This is **not** another round of Microsoft/Alphabet/AMD or single-event
+FAA/FDA/NASA validator tuning. The new historical reconstruction phase
+follows **one connected official regulatory event through five distinct
+FAA document URLs** with dated subsequent decisions:
+
+| Source date | Official record | Role and evidence boundary |
+|---|---|---|
+| Jan 6, 2024 | <https://www.faa.gov/newsroom/updates-boeing-737-9-max-aircraft> | Grounding and operator inspection directive **as stated in a subsequently updated timeline**. This is **excluded from all as-of replays**, not treated as a historical Jan 6 webpage snapshot. |
+| Jan 12, 2024 | <https://www.faa.gov/newsroom/faa-increasing-oversight-boeing-production-and-manufacturing> | FAA production/supplier audit and enhanced oversight announcement |
+| Jan 12, 2024 | <https://www.faa.gov/newsroom/safety-american-travelers-faa-will-keep-boeing-737-9-max-grounded-until-extensive> | Inspection process needs more Boeing-provided data, 40 door-plug inspections |
+| Jan 21, 2024 | <https://www.faa.gov/newsroom/faa-statement-recommending-visual-inspections-boeing-737-900er-mid-exit-door-plugs> | Recommendation for **a different aircraft**, 737-900ER; same door plug design does **not** make its regulatory scope identical to 737-9 MAX |
+| Jan 24, 2024 | <https://www.faa.gov/newsroom/faa-halts-boeing-max-production-expansion-improve-quality-control-also-lays-out-extensive> | FAA prohibits Boeing MAX production expansion and approves an inspection/maintenance process for affected 737-9 MAX aircraft |
+
+The versioned
+`research/faa-7379max-january-2024-event-chain.json` contains 10
+**curator paraphrased source claims** and three editorially documented
+relationships (inspection process follow-up, oversight escalation and
+related-model scope change), each keyed to exact source IDs. These
+links are **documentary relationships, not verified economic causal
+relationships**. Independently dated FAA releases establish their
+listed dates, but their exact historical webpage bytes, archival
+snapshots and first public access time have **not** been proven.
+
+### Replay safety: known date is NOT a verified historical PIT snapshot
+
+`historical-event-chain` introduces a conservative date-only replay
+window. Source dates must be **strictly earlier** than the exclusive
+`--as-of` date. Same-day releases are blocked without a confirmed
+publication clock. The retrospectively updated FAA timeline is
+**excluded from all replay windows**, even when it narrates a Jan 6
+action. Reject attempts to mislabel this timeline as a historical
+dated press release. Every as-of model call receives **only** eligible
+source claims and links; hidden later sources and their contents are
+not included in its input. References to future source/claim IDs,
+unsupported edge IDs and observed stock returns are quarantined.
+This is a date-based conservative screening experiment,
+**not verified point-in-time evidence availability**. Narrative
+sentences remain subject to human review for hidden hindsight leaks.
+
+### Run all stages without wasting Gemma4
+
+First preview two source-restricted windows with **zero** Ollama calls:
+
+```bash
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --sequence 2024-01-13 2024-01-25 --preview
+```
+
+For the real local Gemma4:e2b research, run the **single combined
+two-cutoff study**, once, to a **new, unused** private output path:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --sequence 2024-01-13 2024-01-25 \
+  --run --model gemma4:e2b \
+  --output "$DATA/faa-event-chain-replay-two-cutoffs-v1.json"
+```
+
+The combined output contains two independently source-restricted
+Gemma4 passes, `sourceAvailabilityDiff`, explicitly accepted and
+rejected fact interpretations and curated edge explanations,
+completeness counts, and immutable input SHA. It cannot overwrite
+previous files. For inspection:
+
+```bash
+jq '{
+  sourceAvailabilityDiff,
+  replaySteps: [.replaySteps[] | {
+    asOfDateExclusive, eligibleSourceCount:(.eligibleSources|length),
+    edgeCount:(.visibleCuratedEdges|length),
+    sourceClaimCoverage:.assessment.sourceClaimCoverage,
+    availableSourceClaimCount:.assessment.availableSourceClaimCount,
+    visibleEdgeCoverage:.assessment.visibleEdgeCoverage,
+    rejectedFactInterpretations:.assessment.rejectedFactInterpretations,
+    rejectedEdgeExplanations:.assessment.rejectedEdgeExplanations,
+    whatChanged:.assessment.whatChanged,
+    whatRemainsUnknown:.assessment.whatRemainsUnknown
+  }]
+}' "$DATA/faa-event-chain-replay-two-cutoffs-v1.json"
+```
+
+Historical Event Reconstruction and Event Chain Reasoning now operate
+on multiple real dated official statements; **Outcome-Guided
+Explanation**, verified **Temporal Replay/PIT**, learned generalizable
+rules, and **Cross-Event Validation** remain separate future research
+milestones. No sealed outcomes, market prices, auto promotion or trading
+are touched.

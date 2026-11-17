@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "historical_official_event_chain_v1",
+  "eventId": "FAA-7379MAX-2024-01",
+  "eventSubject": "FAA 737-9 MAX post-incident oversight, January 2024",
+  "curationMethod": "Independent FAA official dated releases; paraphrases, not archived page bytes",
+  "allPublisherClocksVerified": false,
+  "historicalPageVersionsVerified": false,
+  "sources": [
+    {
+      "sourceId": "faa-20240106-grounding",
+      "publisher": "FAA",
+      "sourceDate": "2024-01-06",
+      "url": "https://www.faa.gov/newsroom/updates-boeing-737-9-max-aircraft",
+      "kind": "RETROSPECTIVE_MULTI_DATE_TIMELINE",
+      "asOfEligibility": "EXCLUDED_RETROSPECTIVE",
+      "claims": [
+        {
+          "claimId": "grounding",
+          "text": "FAA's retrospectively updated timeline says it ordered temporary grounding of affected Boeing 737-9 MAX aircraft operated by US airlines or in US territory on January 6, 2024."
+        },
+        {
+          "claimId": "operator-inspection",
+          "text": "The January 6 FAA entry in its later-updated timeline says the emergency airworthiness directive required operators to inspect affected airplanes before further flight."
+        }
+      ]
+    },
+    {
+      "sourceId": "faa-20240112-oversight",
+      "publisher": "FAA",
+      "sourceDate": "2024-01-12",
+      "url": "https://www.faa.gov/newsroom/faa-increasing-oversight-boeing-production-and-manufacturing",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "production-audit",
+          "text": "FAA announced it would audit the Boeing 737-9 MAX production line and suppliers to evaluate compliance with approved quality procedures."
+        },
+        {
+          "claimId": "oversight-intensification",
+          "text": "FAA announced increased monitoring of in-service events and an assessment of independent oversight options for Boeing."
+        }
+      ]
+    },
+    {
+      "sourceId": "faa-20240112-inspection-process",
+      "publisher": "FAA",
+      "sourceDate": "2024-01-12",
+      "url": "https://www.faa.gov/newsroom/safety-american-travelers-faa-will-keep-boeing-737-9-max-grounded-until-extensive",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "additional-data",
+          "text": "FAA said it required Boeing to provide additional data before approving an extensive inspection and maintenance process for returning 737-9 MAX aircraft to service."
+        },
+        {
+          "claimId": "forty-inspections",
+          "text": "FAA said it was requiring plug-door inspections of 40 aircraft after reviewing proposed inspection instructions."
+        }
+      ]
+    },
+    {
+      "sourceId": "faa-20240121-900er-inspection",
+      "publisher": "FAA",
+      "sourceDate": "2024-01-21",
+      "url": "https://www.faa.gov/newsroom/faa-statement-recommending-visual-inspections-boeing-737-900er-mid-exit-door-plugs",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "different-model",
+          "text": "FAA recommended visual inspection of door plugs on Boeing 737-900ER aircraft, noting that this is not part of the newer MAX fleet."
+        },
+        {
+          "claimId": "related-design",
+          "text": "FAA said the 737-900ER shares the same door-plug design that motivated added safety recommendations after the January 5 incident."
+        }
+      ]
+    },
+    {
+      "sourceId": "faa-20240124-production",
+      "publisher": "FAA",
+      "sourceDate": "2024-01-24",
+      "url": "https://www.faa.gov/newsroom/faa-halts-boeing-max-production-expansion-improve-quality-control-also-lays-out-extensive",
+      "kind": "DATED_OFFICIAL_RELEASE",
+      "asOfEligibility": "DATE_ONLY_CONSERVATIVE",
+      "claims": [
+        {
+          "claimId": "no-production-expansion",
+          "text": "FAA stated it would not grant Boeing any production expansion of the MAX, including the 737-9 MAX, while increasing oversight."
+        },
+        {
+          "claimId": "return-to-service",
+          "text": "FAA approved inspection and maintenance procedures for grounded 737-9 MAX airplanes, which would be eligible to return to service after completion."
+        }
+      ]
+    }
+  ],
+  "curatedEdges": [
+    {
+      "edgeId": "e-12-inspection-to-24-return",
+      "fromSourceId": "faa-20240112-inspection-process",
+      "toSourceId": "faa-20240124-production",
+      "relation": "OFFICIAL_PROCESS_FOLLOWUP",
+      "basis": "The January 12 release described withholding inspection-procedure approval pending more data; the January 24 release announced approval of a process."
+    },
+    {
+      "edgeId": "e-12-oversight-to-24-production",
+      "fromSourceId": "faa-20240112-oversight",
+      "toSourceId": "faa-20240124-production",
+      "relation": "OVERSIGHT_ESCALATION",
+      "basis": "January 12 introduced production and supplier oversight; January 24 added a no-expansion decision."
+    },
+    {
+      "edgeId": "e-12-inspection-to-21-adjacent",
+      "fromSourceId": "faa-20240112-inspection-process",
+      "toSourceId": "faa-20240121-900er-inspection",
+      "relation": "RELATED_SCOPE_CHANGE",
+      "basis": "The January 21 recommendation addressed the distinct 737-900ER model sharing a door-plug design; this does not extend the 737-9 grounding order to that model."
+    }
+  ]
+}
