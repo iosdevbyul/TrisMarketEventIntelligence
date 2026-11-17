@@ -84,6 +84,7 @@ class FakeProvider:
                 )
             proposals.append(proposal)
         return json.dumps({
+            "economicDecision": "PROPOSE" if proposals else "ABSTAIN",
             "factAssessments": [
                 {
                     "factId": fact["factId"],

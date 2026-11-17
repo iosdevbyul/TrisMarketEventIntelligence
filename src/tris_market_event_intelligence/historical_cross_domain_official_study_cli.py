@@ -15,6 +15,10 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from tris_market_event_intelligence.historical_cross_domain_semantic_boundary import (
+    describe_abstention_format,
+    inspect_evidence_boundary,
+)
 from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
     _read,
@@ -35,7 +39,8 @@ from tris_market_event_intelligence.llm_runtime import (
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 SCHEMA_VERSION = "cross_domain_official_event_research_v1"
-RESULT_VERSION = "cross_domain_official_event_explanations_v1"
+RESULT_VERSION = "cross_domain_official_event_explanations_v2"
+LEGACY_RESULT_VERSION = "cross_domain_official_event_explanations_v1"
 ALLOWED_HOSTS = frozenset({"www.faa.gov", "www.fda.gov", "www.nasa.gov"})
 CATEGORIES = frozenset({
     "AVIATION_SAFETY_REGULATION",
@@ -72,6 +77,7 @@ class Explanation(Strict):
 
 
 class ModelAnswer(Strict):
+    economicDecision: Literal["ABSTAIN", "PROPOSE"]
     factAssessments: list[FactAssessment] = Field(min_length=3, max_length=3)
     hypotheses: list[Explanation] = Field(max_length=4)
     abstentionRationale: str = Field(min_length=25, max_length=500)
@@ -88,13 +94,25 @@ Differentiate a directly documented agency action from an economic mechanism
 that could follow IF conditions were met. Return zero hypotheses if the facts
 do not identify a justified commercial target, especially for pure science.
 A real event does not automatically mean a market-moving corporate event.
+Choose economicDecision=ABSTAIN and hypotheses=[] when no eligible target
+or no evidence-linked commercial mechanism exists. Never create a dummy
+hypothesis with target None, null, N/A, or a narrative explanation of
+why you abstain. Put abstention reasoning ONLY in abstentionRationale.
+If any hypotheses are proposed, economicDecision must be PROPOSE.
 
 For each explanatory hypothesis use only the provided allowedEconomicTargets.
 Cite sourceFactIds supporting the *initial link*, use the economic channel
 that ACTUALLY matches the transmission (REGULATION only for rule, compliance
 or authorization effects), and describe WHY with mechanismJustification.
 Separate what cited facts establish from what remains unknown via
-evidenceBoundary and missingEvidence. Explain an uncertainty-bearing
+evidenceBoundary and missingEvidence. For FAA distinguish airline operator
+inspection obligations from manufacturer expenses: a grounded aircraft
+is NOT proof that Boeing directly pays airline grounding/inspection costs.
+For FDA, an approval/authorization is regulatory permission, but NOT
+proof of vaccine sales, demand, margins or realized commercial returns.
+Each economic effect must use could/might/may/would/potentially and
+have an IF/when condition in the trigger or the effect. Do not use
+certain/will or plain declarative effects. Explain an uncertainty-bearing
 conditionalEffect and an alternative counterHypothesis; nominal trigger
 phrases and declarative alternatives are allowed but not proven.
 No arbitrary numeric assumptions, future outcomes, prices, profits or volume
@@ -220,42 +238,53 @@ def study_case(case: dict, provider: LLMProvider) -> dict:
         a["sourceStatement"] = by_id[a["factId"]]["statement"]
     candidates: list[dict] = []
     rejected: list[dict] = []
+    decision_consistent = (
+        (answer.economicDecision == "ABSTAIN") == (len(answer.hypotheses) == 0)
+    )
     for proposal in answer.hypotheses:
         item = proposal.model_dump()
         ids = item["sourceFactIds"]
-        if (
+        if not decision_consistent:
+            reasons = ["ECONOMIC_DECISION_CONTRADICTS_HYPOTHESES"]
+            scenario, audit, boundary = None, None, None
+        elif (
             len(ids) != len(set(ids))
             or any(fid not in by_id for fid in ids)
         ):
             reasons = ["UNKNOWN_OR_DUPLICATE_SOURCE_FACT"]
-            scenario, audit = None, None
+            scenario, audit, boundary = None, None, None
         elif item["target"] not in case["allowedEconomicTargets"]:
             reasons = ["TARGET_NOT_SUPPORTED_BY_OFFICIAL_SOURCE"]
-            scenario, audit = None, None
+            scenario, audit, boundary = None, None, None
         else:
             scenario = review_scenario(item)
             audit = inspect_mechanism(item, by_id)
-            reasons = scenario["blockers"] + audit["blockers"]
+            boundary = inspect_evidence_boundary(item, case)
+            reasons = scenario["blockers"] + audit["blockers"] + boundary["blockers"]
         if reasons:
             rejected.append({
                 "reasonCodes": reasons, "proposal": item,
                 "scenarioReview": scenario, "economicAudit": audit,
+                "sourceBoundaryReview": boundary,
             })
         else:
             candidates.append({
                 **item,
                 "scenarioReview": scenario,
                 "economicAudit": audit,
+                "sourceBoundaryReview": boundary,
                 "supportedCommercialTarget": True,
                 "economicCausalityVerified": False,
                 "semanticAccuracyVerified": False,
                 "publisherClockVerified": False,
                 "humanReviewRequired": True,
             })
+    abstention = describe_abstention_format(
+        case, [p.model_dump() for p in answer.hypotheses],
+    )
     negative_control_pass = (
-        not answer.hypotheses
-        if case["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
-        else None
+        abstention["negativeControlPass"]
+        if abstention["negativeControl"] else None
     )
     return {
         "caseId": case["caseId"],
@@ -267,6 +296,9 @@ def study_case(case: dict, provider: LLMProvider) -> dict:
         "researchCandidates": candidates,
         "rejectedHypotheses": rejected,
         "negativeControlAbstention": negative_control_pass,
+        "abstentionFormatAudit": abstention,
+        "economicDecision": answer.economicDecision,
+        "economicDecisionConsistent": decision_consistent,
         "abstentionRationale": answer.abstentionRationale,
         "overallInterpretation": answer.overallInterpretation,
         "modelCalls": 1,
@@ -290,6 +322,13 @@ def study_cohort(doc: dict, provider: LLMProvider) -> dict:
             "sourceFactAssessments": sum(len(x["factAssessments"]) for x in cases),
             "researchCandidateCount": sum(len(x["researchCandidates"]) for x in cases),
             "rejectedHypothesisCount": sum(len(x["rejectedHypotheses"]) for x in cases),
+            "negativeControlFormatViolations": sum(
+                bool(x["abstentionFormatAudit"]["abstentionOutputFormatViolation"])
+                for x in cases
+            ),
+            "economicDecisionConflicts": sum(
+                not x["economicDecisionConsistent"] for x in cases
+            ),
             "negativeControlAbstained": next(
                 x["negativeControlAbstention"] for x in cases
                 if x["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
@@ -326,7 +365,7 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
     """Review all saved rejected claims, preserving the original evidence."""
     validate_cohort(cohort)
     if (
-        existing.get("schemaVersion") != RESULT_VERSION
+        existing.get("schemaVersion") not in {LEGACY_RESULT_VERSION, RESULT_VERSION}
         or existing.get("sourceCohortSha256") != _digest(cohort)
         or existing.get("originalOfficialPagesCaptured") is not False
         or existing.get("historicalPublisherTimeVerified") is not False
@@ -379,8 +418,10 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
                 issues.append("TARGET_NOT_SUPPORTED_BY_OFFICIAL_SOURCE")
             scenario = review_scenario(item)
             economic = inspect_mechanism(item, by_id)
+            boundary = inspect_evidence_boundary(item, case)
             issues.extend(scenario["blockers"])
             issues.extend(economic["blockers"])
+            issues.extend(boundary["blockers"])
             classification = (
                 "NEGATIVE_CONTROL_MODEL_ABSTENTION_FAILURE"
                 if case["category"] == "SCIENTIFIC_MISSION_NEGATIVE_CONTROL"
@@ -399,6 +440,7 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
                 "classification": classification,
                 "scenarioReview": scenario,
                 "economicAudit": economic,
+                "sourceBoundaryReview": boundary,
                 "proposal": item,
                 "semanticAccuracyVerified": False,
                 "humanReviewRequired": True,
@@ -430,6 +472,11 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
             and prior.get("negativeControlAbstention") != (model_proposals == 0)
         ):
             raise ValueError("CROSS_DOMAIN_SAVED_ABSTENTION_INTEGRITY_INVALID")
+        abstention_format = describe_abstention_format(
+            case,
+            [r["proposal"] for r in prior["rejectedHypotheses"]]
+            + prior["researchCandidates"],
+        )
         audit_cases.append({
             "caseId": case["caseId"],
             "category": case["category"],
@@ -443,6 +490,7 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
             "negativeControlModelAbstained": (
                 model_proposals == 0 if is_negative else None
             ),
+            "abstentionFormatAudit": abstention_format,
             "economicCausalityVerified": False,
             "semanticAccuracyVerified": False,
             "humanReviewRequired": True,
@@ -461,6 +509,10 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
             ),
             "recoverableForHumanReview": sum(
                 len(x["recoverableForHumanReview"]) for x in audit_cases
+            ),
+            "negativeControlFormatViolations": sum(
+                bool(x["abstentionFormatAudit"]["abstentionOutputFormatViolation"])
+                for x in audit_cases
             ),
             "negativeControlModelAbstained": next(
                 x["negativeControlModelAbstained"] for x in audit_cases

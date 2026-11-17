@@ -715,3 +715,61 @@ cause or approved candidate. Any NASA hypothesis remains a
 target gate rejects it. `auditModelCalls=0`, source facts are never
 rewritten, the v1 artifact remains untouched, and semantic/PIT/causal
 accuracy flags remain false.
+
+## Cross-domain v1 real model audit: explainable failure taxonomy
+
+The actual user-local FAA/FDA/NASA v1 output generated **four** hypotheses
+but zero qualifying candidates: FAA 1, FDA 2, NASA 1. Offline v2 audit
+reported `recoverableForHumanReview=0` and
+`negativeControlModelAbstained=false`. This is not simply a validator
+strictness issue, and no evidence establishes causal/financial accuracy.
+
+The newly observed *specific* problems are different:
+
+- **FAA**: a valid `REGULATION` label, but the effect lacked explicit
+  uncertainty and a conditional antecedent. More importantly, the
+  justification claimed that FAA airline grounding/inspection obligations
+  imposed operational/compliance costs **on Boeing**. The documented
+  grounding concerns aircraft *operated by airlines*: shifting that cost
+  to the manufacturer requires separate evidence. The new source-actor
+  boundary gate marks `UNSUPPORTED_OPERATOR_TO_MANUFACTURER_COST_ATTRIBUTION`
+  rather than promoting the assertion.
+- **FDA**: Gemma4 correctly identified an authorization/approval route
+  for ModernaTX and Pfizer. The original regulation lexical check
+  failed to recognize `authorized` and `authorization` in the
+  primary facts/explanation. These are now recognized, without
+  automatically equating authorization with actual sales or profit.
+  The original definite/nonconditional effect still fails scenario
+  checks; only explicitly uncertain conditional economic effects can
+  qualify for human research review.
+- **NASA**: the actual model's `target="None"` and
+  justification *explicitly explained no supported commercial target*,
+  yet serialized that abstention as a fabricated `REGULATION` hypothesis
+  instead of `hypotheses=[]`. This is **abstention intent expressed
+  through the wrong output shape**, not evidence the model believed a
+  real company profited. The negative-control test still correctly
+  fails: the model emitted a hypothesis. The audit now adds
+  `modelExpressedNoTargetViaSentinel=true` and
+  `abstentionOutputFormatViolation=true`, retaining the original
+  `negativeControlModelAbstained=false`.
+
+For subsequent runs, the model has an explicit required
+`economicDecision` (`ABSTAIN` or `PROPOSE`) and is instructed that
+`ABSTAIN` must mean an empty hypothesis array, not `None` or
+invented commercial entities. Conflicting decisions are rejected and
+audited, not silently fixed. The agency actor/economic recipient
+boundary and appropriate approval vs sales distinction are passed
+into the new model prompt and checked mechanically. The saved v1
+artifact remains valid and independently auditable: the existing
+`historical-cross-domain --audit-existing` reads both the v1 and v2
+research output schema without model calls, and a **new** private
+output path must be used for another audit. No model rerun is required
+to confirm these observed v1 failure reasons.
+
+These checks are deliberately conservative and only a first-pass
+quality screen. Human reviewers still must inspect whether conditional
+economic reasoning, counter-arguments, company linkage and missing
+evidence are semantically justified by official facts. Neither
+`economicDecision` nor a mechanically accepted research candidate
+certifies generalization, source point-in-time reconstruction,
+price-effect measurement or economic causality.
