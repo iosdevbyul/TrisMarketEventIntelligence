@@ -87,7 +87,7 @@ def test_compact_mode_has_only_two_model_calls_per_cutoff_without_fake_facts() -
         ]["modelAuthoredChangeItems"]
         assert assessment["stageTwoChangeItems"] == []
         assert assessment["stageTwoOutputContract"] == (
-            "compact_narrative_two_fields_v1"
+            "compact_narrative_two_fields_v2"
         )
         assert assessment["generationDiagnostics"]["stageTwo"][
             "doneReason"
@@ -126,6 +126,89 @@ def test_compact_input_excludes_hindsight_and_retrospective_faa_source() -> None
     assert "faa-20240106-grounding" not in json.dumps(content)
     assert "faa-20240124-production" not in json.dumps(content)
     assert content["pointInTimeVerified"] is False
+
+
+def test_compact_schema_allows_a_complete_explanation_longer_than_old_limit() -> None:
+    schema = CompactNarrative.model_json_schema()
+    assert schema["properties"]["whatChanged"]["maxLength"] == 1200
+    longer = (
+        "The FAA separately described inspection procedures, MAX production "
+        "expansion limitations, and inspection recommendations for a "
+        "different 737-900ER aircraft model. "
+    ) * 5
+    assert 600 < len(longer) <= 1200
+    result = CompactNarrative.model_validate({
+        "whatChanged": longer,
+        "whatRemainsUnknown": (
+            "The completion of each aircraft inspection and final production "
+            "quality audit findings are not available in these releases."
+        ),
+    })
+    assert result.whatChanged == longer
+
+
+def test_saved_real_faa_compact_v1_boundary_truncation_is_rejected() -> None:
+    from tris_market_event_intelligence.historical_staged_reasoning import (
+        review_staged_model_output,
+    )
+
+    clipped = (
+        "On January 21, 2024, the FAA recommended a visual inspection "
+        "of door plugs on the Boeing 737-900ER aircraft, noting that this "
+        "procedure is not applicable to the newer MAX fleet. The FAA also "
+        "stated that the 737-900ER shares the door-plug design that "
+        "motivated safety recommendations after the January 5 incident. "
+        "On January 24, 2024, the FAA stated it would not grant Boeing "
+        "any production expansion of the MAX, including the 737-9 MAX, "
+        "while increasing oversight. Additionally, the FAA approved "
+        "inspection and maintenance procedures for grounded 737-9 MAX "
+        "airplanes, making them eligible to return a"
+    )
+    assert len(clipped) == 600
+    result = {
+        "stageTwoOutputContract": "compact_narrative_two_fields_v1",
+        "whatChanged": clipped,
+        "whatRemainsUnknown": (
+            "The final production audit results and aircraft-by-aircraft "
+            "inspection completion remain unseen."
+        ),
+        "stageOneModelDraft": {
+            "modelAuthoredChangeItems": [],
+            "modelAuthoredQuestionAssessments": [],
+        },
+    }
+    old = copy.deepcopy(result)
+    review = review_staged_model_output(
+        chain.prepare_replay(faa(), date(2024, 1, 25)), result,
+    )
+    assert result == old
+    assert review["schemaBoundaryCharacterLimit"] == 600
+    assert review["narrativeCharacterCount"] == 600
+    assert "STAGED_NARRATIVE_SCHEMA_BOUNDARY_TRUNCATION" in review["issues"]
+    assert review["stageTwoExplanationUsable"] is False
+    assert review["modelTextRewritten"] is False
+
+
+def test_complete_old_boundary_and_new_short_prose_are_not_falsely_rejected() -> None:
+    from tris_market_event_intelligence.historical_staged_reasoning import (
+        review_staged_model_output,
+    )
+
+    text = "The regulator approved the 737-9 MAX inspection procedures."
+    a = {
+        "stageTwoOutputContract": "compact_narrative_two_fields_v2",
+        "whatChanged": text,
+        "whatRemainsUnknown": "Aircraft-by-aircraft completion is unknown.",
+        "stageOneModelDraft": {
+            "modelAuthoredChangeItems": [],
+            "modelAuthoredQuestionAssessments": [],
+        },
+    }
+    review = review_staged_model_output(
+        chain.prepare_replay(faa(), date(2024, 1, 25)), a,
+    )
+    assert review["schemaBoundaryCharacterLimit"] == 1200
+    assert review["issues"] == []
 
 
 def test_compact_narrative_contract_rejects_extra_fake_ledger_fields() -> None:
