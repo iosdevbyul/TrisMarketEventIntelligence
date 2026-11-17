@@ -194,7 +194,8 @@ def test_complete_old_boundary_and_new_short_prose_are_not_falsely_rejected() ->
         review_staged_model_output,
     )
 
-    text = "The regulator approved the 737-9 MAX inspection procedures."
+    text = ("The federal regulator formally approved the required inspection "
+            "and maintenance procedures for affected Boeing 737-9 MAX aircraft.")
     a = {
         "stageTwoOutputContract": "compact_narrative_two_fields_v2",
         "whatChanged": text,
