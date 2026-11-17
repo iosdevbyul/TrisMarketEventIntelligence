@@ -36,6 +36,7 @@ from tris_market_event_intelligence.historical_staged_reasoning import (
     compare_model_questions_to_curator,
     explain_from_draft,
     produce_draft,
+    review_staged_model_output,
 )
 from tris_market_event_intelligence.historical_temporal_question_lifecycle import (
     audit_saved_temporal,
@@ -100,11 +101,14 @@ class UnresolvedDecision(Strict):
     evidenceToResolve: str = Field(min_length=25, max_length=350)
 
 
-class EventChainAnswer(Strict):
+class EventChainNarrative(Strict):
     factInterpretations: list[EventFactInterpretation] = Field(max_length=12)
     edgeExplanations: list[EventLinkExplanation] = Field(max_length=6)
     whatChanged: str = Field(min_length=30, max_length=600)
     whatRemainsUnknown: str = Field(min_length=30, max_length=600)
+
+
+class EventChainAnswer(EventChainNarrative):
     changeItems: list[EventSourceChange] = Field(default_factory=list, max_length=12)
     unresolvedQuestions: list[UnresolvedDecision] = Field(
         default_factory=list, max_length=12,
@@ -369,7 +373,7 @@ def run_replay(
     if reasoning_mode == "staged":
         draft = produce_draft(provider, packet, question_tracks)
         raw = explain_from_draft(
-            provider, packet, draft, EventChainAnswer.model_json_schema(),
+            provider, packet, draft, EventChainNarrative.model_json_schema(),
         )
     else:
         raw = provider.generate_json(
@@ -387,6 +391,9 @@ def run_replay(
         assessment["modelQuestionAssessments"] = draft[
             "modelAuthoredQuestionAssessments"
         ]
+        assessment["stagedModelOutputReview"] = review_staged_model_output(
+            packet, assessment,
+        )
         assessment["modelReasoningProvenance"] = (
             "STAGED_MODEL_GENERATED_NOT_CURATOR_OR_VERIFIED_SEMANTICS"
         )
@@ -410,7 +417,13 @@ def run_replay(
         "modelCalls": 2 if draft is not None else 1,
         "reasoningMode": reasoning_mode,
         "assessment": assessment,
-        "overallStatus": "DATE_ONLY_RECONSTRUCTION_REQUIRES_HUMAN_REVIEW",
+        "overallStatus": (
+            "STAGED_NARRATIVE_GENERATION_REJECTED"
+            if draft is not None and not assessment[
+                "stagedModelOutputReview"
+            ]["stageTwoExplanationUsable"]
+            else "DATE_ONLY_RECONSTRUCTION_REQUIRES_HUMAN_REVIEW"
+        ),
     }
 
 
@@ -470,7 +483,12 @@ def run_sequence(
         "sourceAvailabilityDiff": compare_replays(*results),
         "questionLifecycleDelta": lifecycle_delta(*results),
         "modelCalls": sum(x["modelCalls"] for x in results),
-        "status": "HISTORICAL_DATE_ONLY_SEQUENCE_REQUIRES_HUMAN_REVIEW",
+        "status": (
+            "HISTORICAL_SEQUENCE_CONTAINS_REJECTED_NARRATIVE"
+            if any(step["overallStatus"] == "STAGED_NARRATIVE_GENERATION_REJECTED"
+                   for step in results)
+            else "HISTORICAL_DATE_ONLY_SEQUENCE_REQUIRES_HUMAN_REVIEW"
+        ),
         "historicalPITVerified": False,
         "causalityProven": False,
         "semanticAccuracyVerified": False,
