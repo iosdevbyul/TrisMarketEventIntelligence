@@ -1214,3 +1214,25 @@ bash scripts/news-learning-review.sh historical-event-chain \
 Review temporalQuestionLifecycleAudit.replayStepAudits[].savedStagedModelOutputReview. This is retrospective failure classification (auditModelCalls=0), not evidence that a newly generated model output improved.
 
 Only after offline classification should a new unique-filename staged run be considered to test whether the slimmer second-stage schema improves real Gemma generation. Do not auto-retry, falsify old responses, or call model success based on schema validity alone. Full historical PIT, economic causality, and cross-domain semantic generalization remain unverified.
+
+## Real Gemma4 stage-one fail-closed rejection: v2 attempted twice
+
+The user's first two attempts to generate `fda-evidence-first-staged-v2.json` both raised `STAGED_DRAFT_CHANGE_EVIDENCE_INCOMPLETE` at the **first stage**, before stage-two narrative generation. These stack traces alone did **not** reveal whether the missing evidence was an omitted newly eligible FDA source, invented claim ID, duplicate source/claim pair, or an unsupported market result. Since the previous CLI did not persist failed drafts, the rejected model outputs from those attempts cannot be recovered or inferred; do not assert which exact claim was wrong. Running the identical command again without changes would only waste model resources.
+
+The new opt-in staged contract explicitly provides `requiredNewSourceIds` from *only currently visible official sources* and changes the first-stage JSON schema minItems to the actual new-source count. It also sets questionAssessments schema cardinality to the visible question count. This improves guidance for a constrained local model, but **does not relax** the validator: it still rejects omissions, hallucinated/future IDs, duplicate source-claim anchors, and forbidden market results.
+
+When that validation still fails, the CLI writes a **create-only private failure checkpoint** at the requested output path with `status=STAGED_DRAFT_EVIDENCE_REJECTED`, `analysisSucceeded=false`, `allStepsCompleted=false` (for a sequence), failed cutoff, required/missing new source IDs, invalid/duplicated source+claim references, relevant reason codes and actual calls attempted. It retains any *already completed earlier cutoff* without fabricating a response for the failed cutoff; it does **not** record raw rejected model text or retry automatically. The process exits with code 2 so scripts and CI do not interpret it as success. The previous failed runs left no output by design, so no offline retrospective diagnosis is possible for them.
+
+After this change is merged and pulled, a single **new** run with the previously unused v2 output path, if it remains absent, can confirm whether Stage 1 now completes or produces a named diagnostic. If the file exists already, use a new name; never overwrite an earlier result.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/fda-covid-vaccine-2023-event-chain.json \
+  --question-tracks research/fda-2023-question-lifecycle.json \
+  --sequence 2023-06-17 2023-10-04 --reasoning-mode staged \
+  --run --model gemma4:e2b --output "$DATA/fda-evidence-first-staged-v2.json"
+```
+
+If `STAGED_DRAFT_EVIDENCE_REJECTED` is printed, inspect the newly written JSON's `failure` object; do **not** rerun blindly. A generated failure checkpoint is **not** a successful model experiment. `historicalPITVerified=false`, `semanticAccuracyVerified=false` remain unverified.
