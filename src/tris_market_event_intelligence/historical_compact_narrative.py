@@ -15,7 +15,10 @@ from tris_market_event_intelligence.llm_runtime import LLMProvider
 
 class CompactNarrative(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    whatChanged: str = Field(min_length=30, max_length=600)
+    # v1 maxLength=600 was exactly where the real FAA Jan 25 narrative
+    # stopped mid-word while Ollama reported done_reason=stop. Keep v1
+    # auditability but give new prose adequate character headroom.
+    whatChanged: str = Field(min_length=30, max_length=1200)
     whatRemainsUnknown: str = Field(min_length=30, max_length=600)
 
 
@@ -24,11 +27,11 @@ MODEL-authored source-anchored changes, write two brief natural-language
 fields. Do not derive new facts, retroactively use future statements, claim
 financial impacts, or assume a planned audit is a completed audit.
 
-whatChanged: 2-4 concise, complete sentences explaining the concrete NEW
+whatChanged: 2-3 concise, complete sentences explaining the concrete NEW
 official action from every newly visible source, preserving model/agency and
 product/aircraft scope, and distinguishing recommendation, approval,
 procedure authorization and implementation. If sources differ, keep them
-separate. Do not repeat opaque source IDs in prose.
+separate. Aim for 350-650 characters total; prioritize the exact agency\nactions and scope over repeated context. Do not repeat opaque source IDs\nin prose.
 whatRemainsUnknown: 1-2 complete sentences describing concrete missing
 records or later decisions, consistent with the model's original question
 statuses; a resolved process approval does not prove individual completion.
