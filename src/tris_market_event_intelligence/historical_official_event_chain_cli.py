@@ -646,7 +646,7 @@ def main() -> None:
                 "analysisSucceeded": False,
                 "historicalPITVerified": False,
             }, ensure_ascii=False))
-            return
+            raise SystemExit(2)
         _write(args.output, result)
         print(json.dumps({
             "status": result["status"],
@@ -686,7 +686,7 @@ def main() -> None:
             "outputCreated": True,
             "analysisSucceeded": False,
         }, ensure_ascii=False))
-        return
+        raise SystemExit(2)
     _write(args.output, result)
     print(json.dumps({
         "status": result["overallStatus"],
