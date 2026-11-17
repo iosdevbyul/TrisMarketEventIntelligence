@@ -165,4 +165,8 @@ def test_saved_v2_reaudit_reclassifies_without_model_calls_or_original_edits() -
     assert prior == old
     assert audit["auditModelCalls"] == 0
     assert len(audit["cases"][1]["recoverableForHumanReview"]) == 2
+    assert audit["summary"]["previousCandidatesNowQuarantined"] == 1
+    assert audit["cases"][0]["acceptedCandidateReassessment"][0][
+        "reassessment"
+    ] == "PREVIOUS_CANDIDATE_NOW_QUARANTINED"
     assert audit["summary"]["semanticAccuracyVerified"] is False
