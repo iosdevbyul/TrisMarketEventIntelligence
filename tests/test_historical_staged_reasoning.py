@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 import json
 from datetime import date
-from pathlib import Path
 
 import pytest
 from test_historical_cross_event_validation import fda
@@ -13,7 +12,6 @@ from test_historical_temporal_question_lifecycle import tracks
 from tris_market_event_intelligence import historical_official_event_chain_cli as chain
 from tris_market_event_intelligence.historical_staged_reasoning import (
     EvidenceFirstDraft,
-    produce_draft,
     visible_questions,
 )
 
