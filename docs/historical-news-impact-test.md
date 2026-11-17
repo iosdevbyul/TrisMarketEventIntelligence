@@ -1348,3 +1348,24 @@ jq '{modelCalls,steps:[.replaySteps[]|{date:.asOfDateExclusive,diagnostics:.asse
 ```
 
 Compare source-specific factual action coverage, both question statuses, the separate 737-900ER scope, complete concise prose and the provider termination reason with the **original** saved FAA staged-v1. This is a prospective run with two stages at two dates (four model calls), not an automated self-repair. Historical archived publisher snapshots/PIT, actual semantic accuracy and cross-event generalization remain unverified; no market prices, predictions or financial effects are read.
+
+## Real FAA compact-v1 600-character output boundary
+
+Local user's real staged-compact FAA run (2024-01-13 and 2024-01-25, 4 Gemma4 calls) completed with two-stage Ollama `doneReason=stop` each date. On Jan 25, second stage reported 2,270 prompt tokens and only 192 generated tokens versus `num_predict=4096`, so there was no Ollama output-token-limit termination. **However `whatChanged` ended `... making them eligible to return a` and was exactly 600 characters long**, matching the generated Pydantic `CompactNarrative.whatChanged` JSON Schema's `maxLength=600`. It appeared syntactically valid but the saved narrative review reported `issues=[]` and `stageTwoExplanationUsable=true`. This points to a schema-constrained string boundary, not proof of model semantic completion; the constrained decoding implementation's exact cause is not independently verified.
+
+New `compact_narrative_two_fields_v2` raises the `whatChanged` JSON Schema ceiling to 1200 characters while asking for 2-3 concise complete sentences (~350-650 characters) to preserve headroom. `whatRemainsUnknown` stays capped at 600. The saved original `compact_narrative_two_fields_v1` remains immutable and its 600-char ceiling continues to be recognized. The shared saved-output review now reports `STAGED_NARRATIVE_SCHEMA_BOUNDARY_TRUNCATION` and marks the narrative unusable if a compact output ends without normal sentence punctuation **at the exact versioned bound** (600 for v1, 1200 for v2). This is narrow detection for observed failure and does not prove all sentence cutoffs are found or corrected. Never pad, silently rewrite, or promote incomplete model text.
+
+### Confirm saved historical FAA compact v1 failure without model calls
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+git pull --ff-only origin main
+bash scripts/news-learning-review.sh historical-event-chain \
+  --chain research/faa-7379max-january-2024-event-chain.json \
+  --question-tracks research/faa-2024-question-lifecycle.json \
+  --audit-existing "$DATA/faa-evidence-staged-compact-v1.json" \
+  --output "$DATA/faa-compact-schema-boundary-audit-v1.json"
+jq '{auditModelCalls,steps:[.temporalQuestionLifecycleAudit.replayStepAudits[]|{date:.asOfDateExclusive,review:.savedStagedModelOutputReview}]}' "$DATA/faa-compact-schema-boundary-audit-v1.json"
+```
+
+Only after diagnosis, measure the GENERATION effect prospectively by running the **same unchanged FAA cohort** with `--reasoning-mode staged-compact` and a **new output** `$DATA/faa-evidence-staged-compact-v2.json`; compare two cutoffs, source-specific changes and unknowns, provider stop reason, character counts, and new review issues against preserved v1. Historical PIT, full semantic accuracy and broad generalization remain unverified.

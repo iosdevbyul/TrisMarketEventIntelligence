@@ -412,7 +412,7 @@ def run_replay(
                 "individualFactInterpretationsGenerated": False,
                 "individualEdgeExplanationsGenerated": False,
                 "compactNarrativeRawFieldsPreserved": True,
-                "stageTwoOutputContract": "compact_narrative_two_fields_v1",
+                "stageTwoOutputContract": "compact_narrative_two_fields_v2",
             }
         else:
             raw = explain_from_draft(
