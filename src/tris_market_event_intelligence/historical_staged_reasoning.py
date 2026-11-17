@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from tris_market_event_intelligence.historical_evidence_decision_consistency import (
     check_action_evidence,
-    review_evidence_decisions,
 )
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
