@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 from test_historical_cross_event_validation import fda
+from test_historical_official_event_chain import load as faa
 from test_historical_staged_reasoning import StageProvider
 from test_historical_temporal_question_lifecycle import tracks as fda_tracks
-from test_historical_official_event_chain import load as faa
 
 from tris_market_event_intelligence import historical_official_event_chain_cli as chain
 from tris_market_event_intelligence.historical_cross_event_staged_transfer_cli import (
