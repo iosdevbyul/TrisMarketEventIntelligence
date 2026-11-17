@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from test_historical_official_fact_reasoning import SourceFactProvider
 
 from tris_market_event_intelligence import historical_official_fact_reasoning_cli as official
