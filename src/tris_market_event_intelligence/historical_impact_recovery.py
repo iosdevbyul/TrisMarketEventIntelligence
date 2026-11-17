@@ -30,8 +30,6 @@ class CompanyHypothesis(Strict):
     uncertainty: str = Field(min_length=20, max_length=550)
     sourceClaims: list[EvidenceClaim] = Field(min_length=1, max_length=6)
     causalClaim: CausalClaim
-    sourceClaims: list[EvidenceClaim] = Field(min_length=1, max_length=6)
-    causalClaim: CausalClaim
 
 
 class SectorHypothesis(Strict):
@@ -47,6 +45,8 @@ class SectorHypothesis(Strict):
     evidenceQuoteIds: list[str] = Field(min_length=1, max_length=6)
     mechanism: str = Field(min_length=30, max_length=800)
     uncertainty: str = Field(min_length=20, max_length=550)
+    sourceClaims: list[EvidenceClaim] = Field(min_length=1, max_length=6)
+    causalClaim: CausalClaim
 
 
 class RecoveredImpactHypotheses(Strict):
