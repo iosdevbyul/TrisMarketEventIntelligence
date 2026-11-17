@@ -8,7 +8,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from test_historical_official_event_chain import ChainProvider, load
 
 from tris_market_event_intelligence import historical_cross_event_validation_cli as cross
