@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 import json
 from datetime import date
-from pathlib import Path
 
 import pytest
 from test_historical_cross_event_validation import fda
