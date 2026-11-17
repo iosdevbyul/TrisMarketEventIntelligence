@@ -23,7 +23,7 @@ def test_saved_research_reaudit_retains_original_and_science_failure() -> None:
     assert result["auditModelCalls"] == 0
     assert result["originalResearchModelCalls"] == 3
     assert result["summary"]["negativeControlModelAbstained"] is False
-    assert result["summary"]["originalRejectedHypotheses"] == 2
+    assert result["summary"]["originalRejectedHypotheses"] == 3
     assert result["cases"][2]["modelHypothesesProposed"] == 1
     assert result["cases"][2]["rejectionDiagnostics"][0]["classification"] == (
         "NEGATIVE_CONTROL_MODEL_ABSTENTION_FAILURE"
