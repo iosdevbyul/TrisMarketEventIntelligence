@@ -256,14 +256,11 @@ def audit_saved_temporal(doc: dict, saved: dict, annotations: dict) -> dict:
         packet = prepare_replay(doc, date.fromisoformat(step["asOfDateExclusive"]))
         packet["previouslySeenSourceIds"] = sorted(old_ids)
         current = question_snapshot(annotations, packet)
-        from tris_market_event_intelligence.historical_staged_reasoning import (
-            review_staged_model_output,
-        )
-
         from tris_market_event_intelligence.historical_evidence_decision_consistency import (
             review_evidence_decisions,
         )
         from tris_market_event_intelligence.historical_staged_reasoning import (
+            review_staged_model_output,
             visible_questions,
         )
 
