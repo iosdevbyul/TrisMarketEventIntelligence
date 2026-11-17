@@ -443,3 +443,65 @@ different events and separate assessments of outcomes; this module
 correctly emits `generalizationVerified=false` and
 `outcomeAccuracyVerified=false`. It neither trades, trains, nor
 auto-promotes any hypothesis.
+
+## Three real official issuer events: first substantive cross-event research
+
+The existing `research/independent-historical-news-2023.json` is an
+already-curated and previously verified official-primary issuer cohort:
+Microsoft FY23 Q4 (2023-07-25), Alphabet Q2 2023 (2023-07-25,
+SEC Exhibit 99.1), and AMD Q2 2023 (2023-08-01). The three official
+source links and 9 distinct business facts are reused rather than
+inventing a new dataset, scraping a market-return summary, or repeating
+the NVDA example. Use the separate `historical-official-research`
+path for these **three actual historical announcements**.
+
+This mode does not pretend that the stored curator fact statements
+are verbatim portions of independently archived publisher HTML; each
+fact interpretation records `CURATED_PARAPHRASE_NOT_VERBATIM`,
+the official `sourceId`, the exact curated original statement, and
+`historicalAsOfVerified=false`. It neither fabricates two articles
+out of one official release nor claims intraday timing verified.
+
+After validating the existing official cohort, Gemma4 receives each
+release's three curated facts, source ID and date in isolation (without
+market prices), performs typed fact vs. forward-guidance assessment,
+relates facts WITHIN that disclosure, and proposes conditional issuer
+business-mechanism explanations with a competing counter-hypothesis
+and specifically named missing evidence. Deterministic gates quarantine
+invented IDs, misclassified future guidance, unconditioned conclusions
+and stated historical market movements. The response keeps accepted
+and rejected content separately.
+
+The cohort comparison contrasts the *types* of economic transmission
+channels across Microsoft / Alphabet / AMD, source-disjoint case IDs,
+coverage and rejected claims. The comparison does **not** prove
+predictive accuracy, generalization or causal market effects; it retains
+`generalizationVerified=false` and `pointInTimeReplayVerified=false`.
+The known official announcement date alone is insufficient to reconstruct
+the exact time-of-day historical information set.
+
+Prepare with no Ollama calls:
+
+```bash
+bash scripts/news-learning-review.sh historical-official-research \
+  --cohort research/independent-historical-news-2023.json --preview
+```
+
+Run on the Mac with installed Gemma4 using a unique create-only output
+path (3 model calls, one for each real disclosure):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-official-research \
+  --cohort research/independent-historical-news-2023.json \
+  --model gemma4:e2b --run \
+  --output "$DATA/official-three-case-reasoning-v1.json"
+```
+
+The outcome is an auditable **real-case source-fact research** artifact.
+It is NOT a verified `historical-reasoning-study` original-news replay
+and it should not replace future acquisition of timestamped historical
+publisher snapshots. Synthetic manufacturing, energy and transport
+cases remain regression tests only. Official sources and original cohort
+are read-only; results are created in a new private file, never auto-train,
+auto-promote, request price data or execute orders.
