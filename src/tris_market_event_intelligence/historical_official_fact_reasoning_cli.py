@@ -16,7 +16,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from tris_market_event_intelligence.historical_claim_verification import (
-    CausalClaim,
     _CONDITIONAL,
     _FACT_ASSERTION,
 )
@@ -36,7 +35,6 @@ from tris_market_event_intelligence.llm_runtime import (
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
-FACT_CLASSES = ("REPORTED_FACT", "FORWARD_GUIDANCE", "ALLEGATION", "OPINION")
 _GUIDANCE = re.compile(
     r"\b(?:on track|forecast|guidance|expected|expects?|"
     r"plan(?:s|ned)?|will|would|forward-looking)\b", re.IGNORECASE,
