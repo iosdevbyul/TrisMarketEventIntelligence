@@ -195,3 +195,41 @@ def explain_from_draft(
         }, ensure_ascii=False),
         schema=explanation_schema,
     )
+
+
+
+def compare_model_questions_to_curator(
+    draft: dict, current_curator_questions: list[dict],
+) -> dict:
+    """Post-generation diagnostic only; never supplied to either model stage."""
+    source_states = {x["questionId"]: x for x in current_curator_questions}
+    mapping = {
+        "RESOLVED_BY_LATER_SOURCE": "RESOLVED_BY_VISIBLE_SOURCE",
+        "PARTIALLY_RESOLVED": "PARTIALLY_RESOLVED",
+        "OPEN": "OPEN",
+    }
+    disagreements = [
+        {
+            "questionId": item["questionId"],
+            "modelStatus": item["status"],
+            "curatorExpectedStatus": mapping[
+                source_states[item["questionId"]]["status"]
+            ],
+            "curatorSupportingSourceId": source_states[
+                item["questionId"]
+            ]["supportingSourceId"],
+            "curatorSupportingClaimId": source_states[
+                item["questionId"]
+            ]["supportingClaimId"],
+            "humanReviewRequired": True,
+        }
+        for item in draft["modelAuthoredQuestionAssessments"]
+        if item["questionId"] in source_states and item["status"]
+        != mapping[source_states[item["questionId"]]["status"]]
+    ]
+    return {
+        "modelVsCuratorDisagreements": disagreements,
+        "curatorStatusIsNotVerifiedTruth": True,
+        "modelStatusAutomaticallyCorrected": False,
+        "semanticAccuracyVerified": False,
+    }
