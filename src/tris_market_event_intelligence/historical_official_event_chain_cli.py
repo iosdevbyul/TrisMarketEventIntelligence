@@ -33,6 +33,7 @@ from tris_market_event_intelligence.historical_independent_news_cli import (
     _write,
 )
 from tris_market_event_intelligence.historical_staged_reasoning import (
+    compare_model_questions_to_curator,
     explain_from_draft,
     produce_draft,
 )
@@ -398,6 +399,10 @@ def run_replay(
     assessment["temporalConsistencyAudit"] = audit_temporal_consistency(
         packet, assessment, lifecycle,
     )
+    if draft is not None:
+        assessment["modelQuestionStatusReview"] = (
+            compare_model_questions_to_curator(draft, lifecycle)
+        )
     return {
         **packet, "modelId": provider.model_id,
         "curatorEvidenceLedger": curator_ledger,
