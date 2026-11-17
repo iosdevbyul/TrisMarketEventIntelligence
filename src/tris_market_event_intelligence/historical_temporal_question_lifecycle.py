@@ -39,7 +39,7 @@ def validate_question_tracks(doc: dict, annotations: dict) -> None:
         raise ValueError("QUESTION_TRACKS_INVALID")
     for track in tracks:
         if not isinstance(track, dict):
-            raise ValueError("QUESTION_TRACK_INVALID")
+            raise TypeError("QUESTION_TRACK_INVALID")
         qid = track.get("questionId")
         transitions = track.get("transitions")
         if (
@@ -57,7 +57,7 @@ def validate_question_tracks(doc: dict, annotations: dict) -> None:
         last_state = -1
         for transition in transitions:
             if not isinstance(transition, dict):
-                raise ValueError("QUESTION_TRANSITION_INVALID")
+                raise TypeError("QUESTION_TRANSITION_INVALID")
             key = (transition.get("sourceId"), transition.get("claimId"))
             if key not in refs:
                 raise ValueError("QUESTION_TRANSITION_SOURCE_INVALID")
