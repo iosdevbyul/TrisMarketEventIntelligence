@@ -197,3 +197,63 @@ def test_cross_event_comparison_refuses_duplicate_case_ids() -> None:
     r = study_case(case, MockResearcher(case))
     with pytest.raises(ValueError, match="DISTINCT_CASES"):
         compare_cases([r, r])
+
+
+def test_allegation_fact_upgrade_and_invalid_event_link_are_separately_quarantined() -> None:
+    case = _case("production")
+
+    class AlteredResearcher(MockResearcher):
+        def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+            response = json.loads(super().generate_json(
+                system=system, user=user, schema=schema,
+            ))
+            response["atomicClaims"][1]["kind"] = "ALLEGATION"
+            response["atomicClaims"][1]["excerpt"] = (
+                "production delay affecting its flagship processor line."
+            )
+            response["atomicClaims"].append({
+                "claimId": "fact4", "articleId": "a1", "quoteId": "a1:q1",
+                "excerpt": "A suspected foreign agent caused the shutdown.",
+                "kind": "FACT", "eventStage": "OFFICIAL_ACTION",
+            })
+            response["events"].append({
+                "eventId": "event2", "claimIds": ["fact4"],
+                "summary": "Invalid event built around an unsupported atomic fact.",
+            })
+            response["eventEdges"].append({
+                "earlierClaimId": "fact4", "laterClaimId": "fact3",
+                "relation": "FOLLOW_UP",
+                "rationale": "Invalid unsupported content was linked forward.",
+            })
+            return json.dumps(response)
+
+    report = study_case(case, AlteredResearcher(case))
+    assert any(x["reason"] == "EXCERPT_NOT_IN_QUOTE"
+               for x in report["rejectedAtomicClaims"])
+    assert any(x["reason"] == "EVENT_HAS_UNKNOWN_ATOMIC_CLAIM"
+               for x in report["rejectedEvents"])
+    assert any(x["reason"] == "UNKNOWN_OR_REJECTED_CLAIM"
+               for x in report["rejectedEventEdges"])
+    assert report["events"][0]["eventId"] == "event1"
+
+
+def test_sector_without_multi_firm_evidence_cannot_become_valid_mechanism() -> None:
+    case = _case("production")
+
+    class SectorResearcher(MockResearcher):
+        def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+            response = json.loads(super().generate_json(
+                system=system, user=user, schema=schema,
+            ))
+            response["economicMechanisms"] = [{
+                **response["economicMechanisms"][0],
+                "targetType": "SECTOR", "target": "SEMICONDUCTORS",
+                "evidenceClaimIds": ["fact1", "fact2"],
+            }]
+            return json.dumps(response)
+
+    report = study_case(case, SectorResearcher(case))
+    assert not report["economicMechanisms"]
+    assert report["rejectedEconomicMechanisms"][0]["reason"] == (
+        "ISSUER_ONLY_SECTOR_EXTRAPOLATION"
+    )
