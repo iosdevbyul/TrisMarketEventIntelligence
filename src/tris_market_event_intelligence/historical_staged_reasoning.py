@@ -255,7 +255,7 @@ def review_staged_model_output(packet: dict, assessment: dict) -> dict:
 
     draft = assessment.get("stageOneModelDraft")
     if not isinstance(draft, dict):
-        raise ValueError("STAGED_OUTPUT_MISSING_DRAFT")
+        raise TypeError("STAGED_OUTPUT_MISSING_DRAFT")
     changes = draft.get("modelAuthoredChangeItems", [])
     questions = draft.get("modelAuthoredQuestionAssessments", [])
     text = assessment.get("whatChanged", "")
