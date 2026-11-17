@@ -170,6 +170,9 @@ def assess_question_axes(
     questions = draft["visibleQuestions"]
     if not questions:
         return {"questionAssessments": [], "generationDiagnostics": None}
+    schema = AllQuestionAxes.model_json_schema()
+    schema["properties"]["assessments"]["minItems"] = len(questions)
+    schema["properties"]["assessments"]["maxItems"] = len(questions)
     raw = provider.generate_json(
         system=_QUESTIONS_SYSTEM,
         user=json.dumps({
@@ -182,7 +185,7 @@ def assess_question_axes(
             "visibleQuestions": questions,
             "pointInTimeVerified": False,
         }, ensure_ascii=False),
-        schema=AllQuestionAxes.model_json_schema(),
+        schema=schema,
     )
     diag = getattr(provider, "last_generation_diagnostics", None)
     parsed = AllQuestionAxes.model_validate_json(raw)
