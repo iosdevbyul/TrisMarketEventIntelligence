@@ -218,11 +218,12 @@ def test_full_four_stage_recovery_keeps_company_unverified_without_ticker() -> N
     assert company["identityVerified"] is False
     assert company["verifiedStockImpact"] is False
     assert company["claimVerification"]["status"] == "SOURCE_QUOTE_MATCHED_CONDITIONAL"
-    assert len(report["impacts"]) == 1
-    assert report["impacts"][0]["targetType"] == "SECTOR"
-    assert report["impacts"][0]["direction"] == "UNCERTAIN"
-    assert report["impacts"][0]["intensity"] == "MODERATE"
-    assert report["impacts"][0]["claimVerification"]["causalityProven"] is False
+    assert report["impacts"] == []
+    assert len(report["sectorImpactHypotheses"]) == 1
+    assert report["sectorImpactHypotheses"][0]["verifiedSectorImpact"] is False
+    assert report["sectorImpactHypotheses"][0]["sectorEvidenceScope"] == (
+        "ISSUER_ONLY_NO_SECTOR_WIDE_SOURCE"
+    )
     assert report["marketPricesRead"] is False
     assert report["accuracyVerified"] is False
 
@@ -245,8 +246,8 @@ def test_individual_unsupported_recovery_claim_quarantined_while_valid_survives(
         c["reason"] == "EXCERPT_NOT_IN_SOURCE"
         for c in report["impactClaimChecks"][0]["verification"]["claimChecks"]
     )
-    assert len(report["impacts"]) == 1
-    assert report["impacts"][0]["targetType"] == "SECTOR"
+    assert report["impacts"] == []
+    assert len(report["sectorImpactHypotheses"]) == 1
     assert report["impactValidationComplete"] is False
 
 
@@ -287,11 +288,9 @@ def test_primary_accepted_impact_still_requires_atomic_verification() -> None:
     assert report["verifyAllImpacts"]
     assert len(report["initialAcceptedImpacts"]) == 1
     assert "claimVerification" not in report["initialAcceptedImpacts"][0]
-    assert len(report["impacts"]) == 1
-    assert report["impacts"][0]["sector"] == "SEMICONDUCTORS"
-    assert report["impacts"][0]["claimVerification"]["status"] == (
-        "SOURCE_QUOTE_MATCHED_CONDITIONAL"
-    )
+    assert report["impacts"] == []
+    assert len(report["sectorImpactHypotheses"]) == 1
+    assert report["sectorImpactHypotheses"][0]["sector"] == "SEMICONDUCTORS"
     assert len(report["impactClaimChecks"]) == 2
 
 
