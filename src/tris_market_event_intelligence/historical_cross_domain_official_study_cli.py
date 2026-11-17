@@ -366,7 +366,7 @@ def audit_saved_research(cohort: dict, existing: dict) -> dict:
         for rejection in prior["rejectedHypotheses"]:
             proposal = rejection.get("proposal")
             if not isinstance(proposal, dict):
-                raise ValueError("CROSS_DOMAIN_SAVED_PROPOSAL_INVALID")
+                raise TypeError("CROSS_DOMAIN_SAVED_PROPOSAL_INVALID")
             try:
                 item = Explanation.model_validate(proposal).model_dump()
             except ValueError as exc:
