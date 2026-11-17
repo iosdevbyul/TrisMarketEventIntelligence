@@ -20,12 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from tris_market_event_intelligence.historical_cross_domain_official_study_cli import (
     _require_new_output,
 )
-from tris_market_event_intelligence.historical_evidence_scope import (
-    is_observed_market_result,
-)
 from tris_market_event_intelligence.historical_event_chain_explanation_quality import (
     audit_explanation,
     audit_sequence,
+)
+from tris_market_event_intelligence.historical_evidence_scope import (
+    is_observed_market_result,
 )
 from tris_market_event_intelligence.historical_independent_news_cli import (
     _digest,
