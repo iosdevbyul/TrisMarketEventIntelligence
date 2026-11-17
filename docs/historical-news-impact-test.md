@@ -550,3 +550,50 @@ reasons, with `auditModelCalls=0`; its cross-event comparison excludes
 unsupported channels. These new quality checks also run on all future
 `--run` outputs. Neither the v1 report nor this audit establishes
 historical PIT validity, source semantic truth or market causation.
+
+## Real Gemma4 v3: preserve scenario meaning, not only individual IF tokens
+
+The actual local three-case v3 run generated nine factual interpretations
+and **four research mechanisms**, rejected solely for conditional syntax:
+two nominal antecedents (Microsoft Azure adoption, Alphabet Cloud growth)
+and two declarative *counter-hypotheses* (AMD's semiconductor cycle or
+MI300 bottlenecks). All four selected plausible business channels
+(`REVENUE` or `SUPPLY`), in contrast to v1's five incorrect
+`REGULATION` selections. This demonstrates improvement in topic/channel
+selection, **not** proof of economic truth.
+
+Old code rejected if the *individual* trigger/counter field omitted a
+token such as `if`, even when the effect itself said `If ... could`
+or the alternative was stored in the explicitly hypothetical
+`counterHypothesis` slot. The new scenario reviewer checks the
+complete trigger/effect/alternative structure. It labels nominal triggers
+as `IMPLICIT_TRIGGER_CONDITION_SCOPED_BY_EFFECT` **only** when the
+effect independently contains an antecedent and uncertainty; it preserves
+declarative counter-scenarios as
+`DECLARATIVE_COUNTER_AS_UNVERIFIED_ALTERNATIVE`. Both stay unverified
+model assumptions requiring human review. Neither changes the original
+proposed text or treats the counter-scenario as a historical result.
+
+Hard rejections remain for unconditional outcomes, observed share-price
+results, missing source IDs, unsupported numerics and ungrounded regulation.
+The quality gate still runs independently after scenario-shape review.
+
+Crucially, an already saved v3 output can be re-audited without rerunning
+Gemma4, producing a new create-only artifact:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh historical-official-research \
+  --cohort research/independent-historical-news-2023.json \
+  --audit-existing "$DATA/official-three-case-reasoning-v3.json" \
+  --output "$DATA/official-three-case-reasoning-v3-scenario-audit-v4.json"
+```
+
+Previously rejected scenarios are *not silently reclassified* as validated
+economics. Accepted source-linked, non-hallucinated former proposals appear
+in a separate `recoveredResearchCandidates` collection with original
+rejection reasons, immutable source text, scenario warnings and
+`semanticAccuracyVerified=false`/`causalityProven=false`.
+The original `rejectedEconomicMechanisms` log remains intact. The
+cross-case report counts these research candidates separately from accepted
+mechanisms; it does not claim historical or causal generalization.
