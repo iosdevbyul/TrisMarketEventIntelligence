@@ -20,6 +20,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.historical_article_understanding import extract_claims
+from tris_market_event_intelligence.historical_claim_verification import verify_claims
+from tris_market_event_intelligence.historical_impact_recovery import recover_impact_hypotheses
 from tris_market_event_intelligence.historical_impact_targets import select_targets
 from tris_market_event_intelligence.historical_issuer_corroboration_cli import _write
 from tris_market_event_intelligence.historical_news_url_collector import collect_urls
@@ -437,7 +439,11 @@ def _validate_answer(
                     if (impact.direction == "NEGATIVE"
                             and not (interval.minPct < interval.maxPct <= 0)):
                         raise ValueError("NEWS_TEST_NEGATIVE_RANGE_INVALID")
-            elif interval is not None or impact.intensity != "UNASSESSED":
+            elif interval is not None:
+                # Uncertain directional sign can still coexist with a
+                # qualitative assessment of potential risk intensity.
+                # Its intensity is an UNCALIBRATED description, not a
+                # price range or confidence in a signed return.
                 raise ValueError("NEWS_TEST_UNCERTAIN_DIRECTION_WITH_RANGE")
             identity = (impact.targetType, impact.ticker or impact.sector, impact.market)
             if identity in processed:
@@ -448,6 +454,7 @@ def _validate_answer(
             entry["evidence"] = [lookup[key] for key in refs]
             entry["horizonTradingDays"] = case.horizonTradingDays
             entry["estimateCalibrated"] = False
+            entry["intensityCalibrated"] = False
             entry["returnIsObserved"] = False
             result_impacts.append(entry)
         except ValueError as exc:
@@ -647,6 +654,171 @@ def run_case(
         }, ensure_ascii=False)
     else:
         raise ValueError("NEWS_TEST_MODEL_REGENERATION_EXHAUSTED")
+    # A bounded independent pass only when no source-validated impacts were
+    # produced. Explicitly audit BOTH factual evidence and conditional causal
+    # hypothesis; never promote a model statement just because it has a quoteId.
+    initial_rejected_impacts = list(reviewed["rejectedImpacts"])
+    impact_recovery_used = False
+    recovered_company_hypotheses: list[dict] = []
+    rejected_company_hypotheses: list[dict] = []
+    recovered_claim_checks: list[dict] = []
+    impact_recovery_error: str | None = None
+    if targets is not None and not reviewed["impacts"] and (
+        targets["companies"] or targets["sectors"]
+    ):
+        impact_recovery_used = True
+        call_count += 1
+        try:
+            recovered = recover_impact_hypotheses(
+                provider=provider, case_data=data, targets=targets,
+                anchors=quotes, event_groups=reviewed["eventGroups"],
+                event_stages=reviewed["eventStages"],
+                event_links=reviewed["eventLinks"],
+            )
+            valid_names = {
+                candidate["companyName"].casefold(): candidate
+                for candidate in targets["companies"]
+            }
+            sector_choices = {
+                candidate["sector"] for candidate in targets["sectors"]
+            }
+            seen_names: set[str] = set()
+            for index, hypothesis in enumerate(recovered.companyHypotheses):
+                name = hypothesis.companyName.casefold()
+                refs = hypothesis.evidenceQuoteIds
+                match = valid_names.get(name)
+                check = verify_claims(
+                    evidence=hypothesis.sourceClaims, causal=hypothesis.causalClaim,
+                    quote_lookup=lookup, permitted_quote_ids=refs,
+                    claimed_name=hypothesis.companyName,
+                )
+                recovered_claim_checks.append({
+                    "targetType": "COMPANY_HYPOTHESIS", "index": index,
+                    "target": hypothesis.companyName, "verification": check,
+                })
+                if match is None:
+                    reason = "COMPANY_NOT_IN_SOURCE_TARGETS"
+                elif name in seen_names:
+                    reason = "DUPLICATE_COMPANY_HYPOTHESIS"
+                elif len(set(refs)) != len(refs) or any(q not in lookup for q in refs):
+                    reason = "QUOTE_NOT_IN_SOURCE"
+                elif check["status"] != "SOURCE_QUOTE_MATCHED_CONDITIONAL":
+                    reason = "CLAIM_VERIFICATION_FAILED"
+                elif (
+                    _observed_outcome_claim(hypothesis.mechanism)
+                    or _observed_outcome_claim(hypothesis.uncertainty)
+                ):
+                    reason = "UNSUPPORTED_OBSERVED_MARKET_OUTCOME"
+                else:
+                    reason = None
+                if reason is not None:
+                    rejected_company_hypotheses.append({
+                        "reason": reason, "proposal": hypothesis.model_dump(),
+                        "verification": check,
+                    })
+                    continue
+                seen_names.add(name)
+                recovered_company_hypotheses.append({
+                    **hypothesis.model_dump(),
+                    "ticker": match["ticker"],
+                    "tickerProvenance": match["tickerProvenance"],
+                    "identityVerified": match["ticker"] is not None,
+                    "verifiedStockImpact": False,
+                    "evidence": [lookup[q] for q in refs],
+                    "claimVerification": check,
+                    "estimateCalibrated": False,
+                    "returnIsObserved": False,
+                })
+            sector_proposals: list[ImpactTarget] = []
+            sector_verifications: list[dict] = []
+            for index, hypothesis in enumerate(recovered.sectorHypotheses):
+                check = verify_claims(
+                    evidence=hypothesis.sourceClaims, causal=hypothesis.causalClaim,
+                    quote_lookup=lookup,
+                    permitted_quote_ids=hypothesis.evidenceQuoteIds,
+                )
+                recovered_claim_checks.append({
+                    "targetType": "SECTOR", "index": index,
+                    "target": hypothesis.sector, "verification": check,
+                })
+                if hypothesis.sector not in sector_choices:
+                    reason = "SECTOR_NOT_IN_SOURCE_TARGETS"
+                elif check["status"] != "SOURCE_QUOTE_MATCHED_CONDITIONAL":
+                    reason = "CLAIM_VERIFICATION_FAILED"
+                elif (
+                    _observed_outcome_claim(hypothesis.mechanism)
+                    or _observed_outcome_claim(hypothesis.uncertainty)
+                ):
+                    reason = "UNSUPPORTED_OBSERVED_MARKET_OUTCOME"
+                else:
+                    reason = None
+                if reason is not None:
+                    rejected_company_hypotheses.append({
+                        "reason": reason, "proposal": hypothesis.model_dump(),
+                        "verification": check,
+                    })
+                    continue
+                sector_proposals.append(ImpactTarget(
+                    targetType="SECTOR",
+                    companyName=None, ticker=None,
+                    sector=hypothesis.sector, market=hypothesis.market,
+                    exposure="BROAD_SECTOR", direction=hypothesis.direction,
+                    intensity=hypothesis.intensity,
+                    conditionalMovePctRange=None,
+                    confidence=hypothesis.confidence,
+                    evidenceQuoteIds=hypothesis.evidenceQuoteIds,
+                    mechanism=hypothesis.mechanism,
+                    uncertainty=hypothesis.uncertainty,
+                ))
+                sector_verifications.append(check)
+            if sector_proposals:
+                recovered_answer = model_answer.model_copy(
+                    update={"impacts": sector_proposals},
+                )
+                recovered_review = _validate_answer(
+                    case, recovered_answer, lookup, targets,
+                )
+                reviewed["impacts"] = recovered_review["impacts"]
+                # Match checks to surviving validated proposals, including
+                # rejected duplicates, without silently shifting positions.
+                for row in reviewed["impacts"]:
+                    for proposal, check in zip(
+                        sector_proposals, sector_verifications, strict=True,
+                    ):
+                        if (row["sector"] == proposal.sector
+                                and row["market"] == proposal.market):
+                            row["claimVerification"] = check
+                            break
+                reviewed["rejectedImpacts"] = [
+                    *initial_rejected_impacts,
+                    *recovered_review["rejectedImpacts"],
+                ]
+                reviewed["rejectedMarketOutcomeClaims"] = [
+                    *reviewed["rejectedMarketOutcomeClaims"],
+                    *recovered_review["rejectedMarketOutcomeClaims"],
+                ]
+        except (ValidationError, ValueError, LLMExecutionError) as exc:
+            # Failure cannot erase a valid event reconstruction or create
+            # evidence that wasn't present in immutable source anchors.
+            impact_recovery_error = (
+                "MODEL_SCHEMA_INVALID" if isinstance(exc, ValidationError)
+                else exc.code if isinstance(exc, LLMExecutionError)
+                else str(exc).split("|", 1)[0]
+            )
+    # Prior rejected model output remains visible, never reclassified as
+    # valid or silently discarded by the optional recovery pass.
+    reviewed["impactValidationComplete"] = (
+        reviewed["impactValidationComplete"]
+        and not initial_rejected_impacts
+        and not rejected_company_hypotheses
+        and impact_recovery_error is None
+    )
+    reviewed["companyImpactHypotheses"] = recovered_company_hypotheses
+    reviewed["rejectedCompanyImpactHypotheses"] = rejected_company_hypotheses
+    reviewed["impactClaimChecks"] = recovered_claim_checks
+    reviewed["initialRejectedImpacts"] = initial_rejected_impacts
+    reviewed["impactRecoveryUsed"] = impact_recovery_used
+    reviewed["impactRecoveryError"] = impact_recovery_error
     revised_source_ids = [
         a.articleId for a in case.articles
         if a.sourceIntegrity == "CURRENT_PAGE_REVISED_AFTER_CUTOFF"
@@ -678,7 +850,7 @@ def run_case(
         "modelCalls": call_count,
         "rangeSchemaRetryUsed": range_retry_used,
         "modelContractRetryReason": retry_reason,
-        "promptVersion": "historical-news-impact-v7-target-grounded",
+        "promptVersion": "historical-news-impact-v9-atomic-claim-verified",
         "articleManifest": [
             {
                 "articleId": a.articleId, "publishedAt": a.publishedAt,
@@ -820,6 +992,11 @@ def main() -> None:
             "impactValidationComplete": report["impactValidationComplete"],
             "rejectedImpacts": report["rejectedImpacts"],
             "targetSelection": report["targetSelection"],
+            "companyImpactHypotheses": report["companyImpactHypotheses"],
+            "rejectedCompanyImpactHypotheses": report["rejectedCompanyImpactHypotheses"],
+            "impactRecoveryUsed": report["impactRecoveryUsed"],
+            "impactRecoveryError": report["impactRecoveryError"],
+            "impactClaimChecks": report["impactClaimChecks"],
             "rejectedMarketOutcomeClaims": report["rejectedMarketOutcomeClaims"],
             "rejectedNarrativeClaims": report["rejectedNarrativeClaims"],
             "impactResults": [
