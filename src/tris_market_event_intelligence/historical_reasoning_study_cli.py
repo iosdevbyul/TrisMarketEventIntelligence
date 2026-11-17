@@ -219,21 +219,46 @@ def study_case(case: CaseInput, provider: LLMProvider) -> dict:
         items = [a for a in evidence if a is not None]
         quote_ids = [a["quoteId"] for a in items]
         cited_excerpts = [a["excerpt"] for a in items]
-        claim_check = verify_claims(
-            evidence=[
-                EvidenceClaim(
+        # An original passage may contain multiple valid atomic claims.
+        # The older quote-level verifier expects unique IDs, so verify
+        # each distinct excerpt without erasing any atomic claim.
+        evidence_checks = [
+            verify_claims(
+                evidence=[EvidenceClaim(
                     quoteId=a["quoteId"], sourceExcerpt=a["excerpt"],
                     epistemicType=(
                         a["kind"] if a["kind"] in {
                             "ALLEGATION", "DENIAL", "OPINION",
                         } else "REPORTED_FACT"
                     ),
-                ) for a in items
+                )],
+                causal=mech.causalClaim,
+                quote_lookup=lookup,
+                permitted_quote_ids=[a["quoteId"]],
+            ) for a in items
+        ]
+        errors = [
+            issue for checked in evidence_checks for issue in checked["claimChecks"]
+        ]
+        if mech.targetType == "COMPANY" and not any(
+            mech.target.casefold() in excerpt.casefold()
+            for excerpt in cited_excerpts
+        ):
+            errors.append({"reason": "ENTITY_NOT_IN_EVIDENCE"})
+        claim_check = {
+            "status": (
+                "SOURCE_QUOTE_MATCHED_CONDITIONAL"
+                if not errors else "REJECTED_UNSUPPORTED_CLAIM"
+            ),
+            "evidence": [
+                entry for checked in evidence_checks for entry in checked["evidence"]
             ],
-            causal=mech.causalClaim,
-            quote_lookup=lookup, permitted_quote_ids=quote_ids,
-            claimed_name=mech.target if mech.targetType == "COMPANY" else None,
-        )
+            "claimChecks": errors,
+            "semanticEntailmentVerified": False,
+            "causalityProven": False,
+            "marketOutcomesVerified": False,
+            "humanReviewRequired": True,
+        }
         target_key = (mech.targetType, mech.target.casefold())
         if target_key in seen_targets:
             reason = "DUPLICATE_TARGET"
