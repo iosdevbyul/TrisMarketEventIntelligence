@@ -16,10 +16,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tris_market_event_intelligence.historical_claim_verification import (
-    _CONDITIONAL,
-    _FACT_ASSERTION,
-)
 from tris_market_event_intelligence.historical_evidence_scope import (
     is_observed_market_result,
 )
@@ -315,6 +311,10 @@ def compare_cohort(results: list[dict], *, cohort_sha: str) -> dict:
         "rejectedMechanismCounts": {
             r["caseId"]: len(r["rejectedEconomicMechanisms"]) for r in results
         },
+        "recoveredCandidateCounts": {
+            r["caseId"]: len(r.get("recoveredResearchCandidates", []))
+            for r in results
+        },
         "qualityGateRejectionCounts": {
             r["caseId"]: sum(
                 row["reason"] == "ECONOMIC_MECHANISM_QUALITY_GATE"
@@ -394,6 +394,44 @@ def audit_existing(cohort: dict, existing: dict) -> dict:
             fact["interpretationQualityFlags"] = inspect_interpretation(
                 fact["explanation"], facts[fact["factId"]]["statement"],
             )
+        recovered_candidates: list[dict] = []
+        for rejected in prior["rejectedEconomicMechanisms"]:
+            if rejected.get("reason") not in {
+                "TRIGGER_NOT_CONDITIONAL",
+                "COUNTER_HYPOTHESIS_NOT_CONDITIONAL",
+            }:
+                continue
+            proposal = rejected.get("proposal")
+            if not isinstance(proposal, dict):
+                continue
+            ids = proposal.get("sourceFactIds")
+            if (
+                not isinstance(ids, list)
+                or not ids
+                or len(ids) != len(set(ids))
+                or any(fid not in facts for fid in ids)
+            ):
+                continue
+            try:
+                model = MechanismHypothesis.model_validate(proposal)
+            except ValueError:
+                continue
+            scenario = review_scenario(model.model_dump())
+            quality = inspect_mechanism(model.model_dump(), facts)
+            if scenario["blockers"] or quality["blockers"]:
+                continue
+            recovered_candidates.append({
+                "proposal": model.model_dump(),
+                "priorStructuralRejection": rejected["reason"],
+                "scenarioReview": scenario,
+                "qualityAudit": quality,
+                "recovery": "STRUCTURAL_REASSESSMENT_NOT_MODEL_REGENERATION",
+                "sourceIdsVerified": True,
+                "humanReviewRequired": True,
+                "semanticAccuracyVerified": False,
+                "causalityProven": False,
+            })
+        prior["recoveredResearchCandidates"] = recovered_candidates
         approved = []
         for proposal in prior["economicMechanisms"]:
             audit = inspect_mechanism(proposal, facts)
@@ -415,6 +453,9 @@ def audit_existing(cohort: dict, existing: dict) -> dict:
     result["schemaVersion"] = "historical_official_fact_reasoning_audit_v1"
     result["status"] = "REAL_PRIMARY_CASE_MECHANISM_AUDIT_REQUIRES_HUMAN_REVIEW"
     result["originalModelCalls"] = existing["modelCalls"]
+    result["recoveredCandidateCount"] = sum(
+        len(row["recoveredResearchCandidates"]) for row in result["cases"]
+    )
     result["auditModelCalls"] = 0
     result["semanticEntailmentVerified"] = False
     result["trainingPerformed"] = False
@@ -460,6 +501,7 @@ def main() -> None:
             "qualifiedMechanisms": sum(
                 len(row["economicMechanisms"]) for row in report["cases"]
             ),
+            "recoveredResearchCandidates": report["recoveredCandidateCount"],
             "qualityGateRejections": sum(
                 sum(item["reason"] == "ECONOMIC_MECHANISM_QUALITY_GATE"
                     for item in row["rejectedEconomicMechanisms"])
