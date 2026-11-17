@@ -164,6 +164,9 @@ case "$action" in
   historical-impact-test)
     module="tris_market_event_intelligence.historical_news_impact_test_cli"
     ;;
+  historical-reasoning-study)
+    module="tris_market_event_intelligence.historical_reasoning_study_cli"
+    ;;
   historical-independent)
     module="tris_market_event_intelligence.historical_independent_news_cli"
     ;;
