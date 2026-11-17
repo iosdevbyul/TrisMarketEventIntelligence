@@ -119,7 +119,7 @@ def validate_cohort(doc: dict) -> None:
     categories: set[str] = set()
     for case in doc["cases"]:
         if not isinstance(case, dict):
-            raise ValueError("CROSS_DOMAIN_CASE_INVALID")
+            raise TypeError("CROSS_DOMAIN_CASE_INVALID")
         try:
             case_id = case["caseId"]
             category = case["category"]
@@ -149,7 +149,7 @@ def validate_cohort(doc: dict) -> None:
             raise ValueError("CROSS_DOMAIN_CASE_OR_CATEGORY_DUPLICATE")
         url = source.get("url")
         if not isinstance(url, str):
-            raise ValueError("CROSS_DOMAIN_SOURCE_INVALID")
+            raise TypeError("CROSS_DOMAIN_SOURCE_INVALID")
         parsed = urlsplit(url)
         source_id = source.get("sourceId")
         if (
