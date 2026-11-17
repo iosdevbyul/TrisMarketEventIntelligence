@@ -37,6 +37,14 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMProvider,
     LLMSettings,
 )
+from tris_market_event_intelligence.historical_temporal_question_lifecycle import (
+    audit_saved_temporal,
+    audit_temporal_consistency,
+    evidence_ledger,
+    lifecycle_delta,
+    question_snapshot,
+    validate_question_tracks,
+)
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 SCHEMA_VERSION = "historical_official_event_chain_v1"
@@ -334,8 +342,11 @@ def assess_answer(packet: dict, raw: str) -> dict:
 def run_replay(
     doc: dict, cutoff: date, provider: LLMProvider,
     *, previous_source_ids: set[str] | None = None,
+    question_tracks: dict | None = None,
 ) -> dict:
     packet = prepare_replay(doc, cutoff)
+    if question_tracks is not None:
+        validate_question_tracks(doc, question_tracks)
     packet["previouslySeenSourceIds"] = sorted(previous_source_ids or set())
     # Only visible sources/edges reach the model, no excluded text or dates.
     model_input = {
@@ -352,8 +363,18 @@ def run_replay(
     )
     assessment = assess_answer(packet, raw)
     assessment["explanationQualityAudit"] = audit_explanation(packet, assessment)
+    curator_ledger = evidence_ledger(packet)
+    lifecycle = (
+        question_snapshot(question_tracks, packet)
+        if question_tracks is not None else []
+    )
+    assessment["temporalConsistencyAudit"] = audit_temporal_consistency(
+        packet, assessment, lifecycle,
+    )
     return {
         **packet, "modelId": provider.model_id,
+        "curatorEvidenceLedger": curator_ledger,
+        "questionLifecycle": lifecycle,
         "modelCalls": 1, "assessment": assessment,
         "overallStatus": "DATE_ONLY_RECONSTRUCTION_REQUIRES_HUMAN_REVIEW",
     }
@@ -385,14 +406,20 @@ def compare_replays(early: dict, late: dict) -> dict:
     }
 
 
-def run_sequence(doc: dict, cutoffs: list[date], provider: LLMProvider) -> dict:
+def run_sequence(
+    doc: dict, cutoffs: list[date], provider: LLMProvider,
+    *, question_tracks: dict | None = None,
+) -> dict:
     if len(cutoffs) != 2 or cutoffs[0] >= cutoffs[1]:
         raise ValueError("EVENT_CHAIN_SEQUENCE_CUTOFF_INVALID")
+    if question_tracks is not None:
+        validate_question_tracks(doc, question_tracks)
     results = []
     previously_seen: set[str] = set()
     for cutoff in cutoffs:
         step = run_replay(
             doc, cutoff, provider, previous_source_ids=previously_seen,
+            question_tracks=question_tracks,
         )
         results.append(step)
         previously_seen = {
@@ -404,6 +431,7 @@ def run_sequence(doc: dict, cutoffs: list[date], provider: LLMProvider) -> dict:
         "sourceCohortSha256": _digest(doc),
         "replaySteps": results,
         "sourceAvailabilityDiff": compare_replays(*results),
+        "questionLifecycleDelta": lifecycle_delta(*results),
         "modelCalls": len(results),
         "status": "HISTORICAL_DATE_ONLY_SEQUENCE_REQUIRES_HUMAN_REVIEW",
         "historicalPITVerified": False,
@@ -420,6 +448,7 @@ def main() -> None:
     parser.add_argument("--chain", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--question-tracks", type=Path)
     scope = parser.add_mutually_exclusive_group()
     scope.add_argument("--as-of", type=date.fromisoformat)
     scope.add_argument(
@@ -432,18 +461,35 @@ def main() -> None:
     mode.add_argument("--audit-existing", type=Path)
     args = parser.parse_args()
     doc = _read(args.chain)
+    annotations = _read(args.question_tracks) if args.question_tracks else None
+    if annotations is not None:
+        validate_question_tracks(doc, annotations)
     if args.audit_existing is not None:
         if args.as_of is not None or args.sequence is not None:
             parser.error("--audit-existing does not accept cutoff flags")
         if args.output is None:
             parser.error("--audit-existing requires --output")
         _require_new_output(args.output)
-        result = audit_sequence(doc, _read(args.audit_existing))
+        saved = _read(args.audit_existing)
+        result = audit_sequence(doc, saved)
+        if annotations is not None:
+            result["temporalQuestionLifecycleAudit"] = audit_saved_temporal(
+                doc, saved, annotations,
+            )
         _write(args.output, result)
         print(json.dumps({
             "status": result["status"],
             "auditModelCalls": 0,
             "warningCounts": result["warningCounts"],
+            **({
+                "temporalQuestionLifecycleWarnings": [
+                    x["modelTemporalAudit"]["issueCodes"]
+                    for x in result["temporalQuestionLifecycleAudit"]["replayStepAudits"]
+                ],
+                "questionTrackCount": result[
+                    "temporalQuestionLifecycleAudit"
+                ]["questionTrackCount"],
+            } if annotations is not None else {}),
             "historicalPITVerified": False,
             "outputCreated": True,
         }, ensure_ascii=False))
@@ -485,7 +531,9 @@ def main() -> None:
     )
     provider = build_runtime(settings, confirm_model=True)
     if len(cutoffs) == 2:
-        result = run_sequence(doc, cutoffs, provider)
+        result = run_sequence(
+            doc, cutoffs, provider, question_tracks=annotations,
+        )
         _write(args.output, result)
         print(json.dumps({
             "status": result["status"],
@@ -496,7 +544,9 @@ def main() -> None:
             "outputCreated": True,
         }, ensure_ascii=False))
         return
-    result = run_replay(doc, args.as_of, provider)
+    result = run_replay(
+        doc, args.as_of, provider, question_tracks=annotations,
+    )
     _write(args.output, result)
     print(json.dumps({
         "status": result["overallStatus"],
