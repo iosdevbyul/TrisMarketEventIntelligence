@@ -8,16 +8,18 @@ chance that one long constrained JSON string clips the final explanation.
 
 1. Generate and validate cutoff-visible source-anchored change facts using
    the existing evidence-first model draft.
-2. Generate exactly one short model explanation and limitation for each
-   newly visible official source. Each generated record must reference a
-   claim from **that exact source**, end in punctuation, and pass the
-   no-market-outcome check. Any failure stops the run; never substitute
+2. Generate one short model explanation and limitation for **every claim**
+   in each newly visible official source, using one structured model call
+   per source. The full set of source claim IDs must be covered exactly once.
+   Each explanation ends in punctuation and passes the no-market-outcome check. Any failure stops the run; never substitute
    curator text for model-authored output.
 3. Assemble the source prose verbatim in dated source order, without a
    separate long free-form narrative generation call. Retain all individual
    claims and diagnostics for human review.
 4. Independently infer the two question axes from date-cutoff-visible
-   sources and the *question text only*, not editorial lifecycle outcomes.
+   sources, question text, and earlier model-authored evidence assessments,
+   **never** editorial lifecycle outcomes. Prefer later, directly relevant
+   official claims over earlier unresolved notices.
    The legacy model question status remains unchanged.
 5. Separately diagnose token-limit termination, invalid JSON, suspected
    JSON Schema string boundary, a normal provider stop, and unavailable
@@ -66,3 +68,19 @@ snapshots, point-in-time verification, economic effects or causality.
 
 Both the cutoff-visible official evidence and model-generated text must be
 reviewed by a human before treating explanations as factual.
+
+## Real FAA 2024-01-13/25 feedback (first prospective v1 run)
+
+The first real composed run used eight Gemma4 calls and successfully avoided
+visible clipped prose. However, on January 25 it cited the January 12 pending
+procedure announcement for a still-UNKNOWN approval despite a January 24
+procedure-approval source being visible. It also omitted the January 24 MAX
+production-expansion prohibition because the single-source explanation chose
+only one of the release's two distinct claims. These are substantive failures,
+not evidence that success is guaranteed merely because JSON parses.
+
+The follow-up revision requires all official claims to be narrated and
+includes validated phase-one model assessments in the independent question
+analysis. Run a **new output file name** for the next prospective comparison:
+`faa-evidence-composed-v2.json`. Keep v1 untouched. This is still not
+verified semantic correctness or historical PIT.
