@@ -7,6 +7,7 @@ from datetime import date
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from test_historical_cross_event_validation import fda
 from test_historical_official_event_chain import load as faa
 from test_historical_staged_reasoning import StageProvider
@@ -128,7 +129,7 @@ def test_compact_input_excludes_hindsight_and_retrospective_faa_source() -> None
 
 
 def test_compact_narrative_contract_rejects_extra_fake_ledger_fields() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         CompactNarrative.model_validate({
             "whatChanged": "The regulator approved a documented process.",
             "whatRemainsUnknown": (
