@@ -256,3 +256,42 @@ publisher pages in the current NVDA exploratory case are still NOT eligible
 for strict historical replay or stock-prediction-accuracy evaluation. CI
 validates code contracts; only a real local `gemma4:e2b` execution can
 demonstrate whether the revised prompts improve reasoning performance.
+
+## Claim Verification for qualitative event impact explanations
+
+When the main event/impact pass produces **no accepted impact hypotheses**
+and grounded targets exist, one bounded, independent qualitative recovery
+call may run. It returns per-company and per-sector explanatory hypotheses,
+never realized prices. Company hypotheses are preserved separately from
+verified stock impacts, including when the ticker is unknown.
+
+The recovery response must split its claims into:
+
+1. `sourceClaims`: atomic quotations with exact `quoteId` and a verbatim
+   `sourceExcerpt` substring of that original quote, plus explicit
+   `REPORTED_FACT`, `ALLEGATION`, `DENIAL` or `OPINION` label.
+2. `causalClaim`: a conditional trigger, named economic transmission channel,
+   conditional potential effect, and counter-hypothesis.
+
+A deterministic Claim Verification gate checks original source excerpt
+membership, quote allowlist, duplicate evidence, obvious allegation-as-fact
+wording, referenced company identity, and unconditioned economic outcomes.
+Unsupported observed market outcomes cannot be upgraded into explanations.
+Rejected company/sector hypotheses remain auditable with machine-readable
+claim checks, while independently acceptable hypotheses survive. The original
+model proposals and original rejection reasons are not erased.
+
+`companyImpactHypotheses` are **not** verified traded-stock impacts. A
+surviving recovered sector impact appears in `impacts` only after both
+claim verification and the existing sector/direction/quote validation pass.
+`impactClaimChecks` records all recovery verdicts, including rejected ones,
+and `impactRecoveryUsed` / `impactRecoveryError` disclose the extra pass.
+
+**Trust boundary:** exact quotation is mechanically verified, but a quoted
+excerpt does NOT independently prove that a publisher's story is true or that
+a downstream economic conclusion is causally established. All explanations
+retain `semanticallyVerified=false`, `causalityProven=false`, market outcome
+verification false and `humanReviewRequired=true`. The original two
+post-cutoff-revised publisher pages remain exploratory, never a strict
+historical accuracy benchmark. No stock prices or later outcomes enter the
+model or Claim Verification.
