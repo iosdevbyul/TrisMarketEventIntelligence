@@ -17,6 +17,9 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from tris_market_event_intelligence.historical_compact_narrative import (
+    generate_compact_narrative,
+)
 from tris_market_event_intelligence.historical_cross_domain_official_study_cli import (
     _require_new_output,
 )
@@ -371,21 +374,69 @@ def run_replay(
             "pricesAndOutcomesAvailable", "previouslySeenSourceIds",
         )
     }
-    if reasoning_mode not in {"single", "staged"}:
+    if reasoning_mode not in {"single", "staged", "staged-compact"}:
         raise ValueError("EVENT_CHAIN_REASONING_MODE_INVALID")
     draft = None
-    if reasoning_mode == "staged":
+    stage_one_generation = None
+    stage_two_generation = None
+    if reasoning_mode in {"staged", "staged-compact"}:
         draft = produce_draft(provider, packet, question_tracks)
-        raw = explain_from_draft(
-            provider, packet, draft, EventChainNarrative.model_json_schema(),
+        stage_one_generation = getattr(
+            provider, "last_generation_diagnostics", None,
+        )
+        if reasoning_mode == "staged-compact":
+            narrative = generate_compact_narrative(provider, packet, draft)
+            # The model did NOT generate fact/edge interpretations in
+            # compact mode. Empty collections are explicit non-generation,
+            # not assertions that all interpretations were verified.
+            assessment = {
+                "acceptedFactInterpretations": [],
+                "rejectedFactInterpretations": [],
+                "acceptedEdgeExplanations": [],
+                "rejectedEdgeExplanations": [],
+                "sourceClaimCoverage": 0,
+                "availableSourceClaimCount": sum(
+                    len(s["claims"]) for s in packet["eligibleSources"]
+                ),
+                "visibleEdgeCoverage": 0,
+                "visibleEdgeCount": len(packet["visibleCuratedEdges"]),
+                "whatChanged": narrative.whatChanged,
+                "whatRemainsUnknown": narrative.whatRemainsUnknown,
+                "changeItems": [],
+                "unresolvedQuestions": [],
+                "narrativeContainsUncheckedSourceClaims": True,
+                "semanticAccuracyVerified": False,
+                "economicCausalityVerified": False,
+                "historicalPITVerified": False,
+                "humanReviewRequired": True,
+                "individualFactInterpretationsGenerated": False,
+                "individualEdgeExplanationsGenerated": False,
+                "compactNarrativeRawFieldsPreserved": True,
+                "stageTwoOutputContract": "compact_narrative_two_fields_v1",
+            }
+        else:
+            raw = explain_from_draft(
+                provider, packet, draft, EventChainNarrative.model_json_schema(),
+            )
+            assessment = assess_answer(packet, raw)
+        stage_two_generation = getattr(
+            provider, "last_generation_diagnostics", None,
         )
     else:
         raw = provider.generate_json(
             system=SYSTEM, user=json.dumps(model_input, ensure_ascii=False),
             schema=EventChainAnswer.model_json_schema(),
         )
-    assessment = assess_answer(packet, raw)
+        assessment = assess_answer(packet, raw)
     if draft is not None:
+        assessment["generationDiagnostics"] = {
+            "stageOne": stage_one_generation,
+            "stageTwo": stage_two_generation,
+            "metadataUnavailable": (
+                stage_one_generation is None or stage_two_generation is None
+            ),
+            "generatedTextRewritten": False,
+        }
         # Stage two can restate or omit changes. Preserve both outputs:
         # the phase-one model ledger is authoritative as *phase-one text*
         # for evaluating source-change coverage, never as verified truth.
@@ -529,7 +580,8 @@ def main() -> None:
     parser.add_argument("--chain", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
-    parser.add_argument("--reasoning-mode", choices=("single", "staged"),
+    parser.add_argument(
+        "--reasoning-mode", choices=("single", "staged", "staged-compact"),
                         default="single")
     parser.add_argument("--question-tracks", type=Path)
     scope = parser.add_mutually_exclusive_group()
