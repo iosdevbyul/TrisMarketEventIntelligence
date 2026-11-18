@@ -104,9 +104,11 @@ def test_capture_then_first_pass_does_not_leak_future_pages_or_gold() -> None:
 
 
 def test_capture_rejects_missing_verbatim_excerpt() -> None:
-    with _client(packet(), missing=True) as client:
-        with pytest.raises(ValueError, match="FIRST_SIGHT_EXCERPT_NOT_FOUND"):
-            capture(packet(), client=client)
+    with (
+        _client(packet(), missing=True) as client,
+        pytest.raises(ValueError, match="FIRST_SIGHT_EXCERPT_NOT_FOUND"),
+    ):
+        capture(packet(), client=client)
 
 
 def test_inference_rejects_tampered_capture_or_model_index() -> None:
