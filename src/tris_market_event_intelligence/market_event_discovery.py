@@ -18,6 +18,9 @@ from tris_market_event_intelligence.market_evidence_db_bridge import (
     make_packet_from_db,
 )
 from tris_market_event_intelligence.market_evidence_pressure import MarketEvidence
+from tris_market_event_intelligence.market_pressure_causal_engine import (
+    analyze_general_causal,
+)
 from tris_market_event_intelligence.market_pressure_reasoning import (
     FactAnalysis,
     analyze_pressure_two_stage,
@@ -268,10 +271,13 @@ def discover_and_analyze(
     lookback_days: int = 10, max_groups: int = 2,
     as_of_time: datetime | None = None,
     page: int = 0,
+    reasoning_mode: str = "legacy",
 ) -> dict:
     """Run selection, source-index-bound grouping and two-stage pressure."""
     if not 1 <= max_groups <= 3:
         raise ValueError("INVALID_MAX_GROUPS")
+    if reasoning_mode not in {"legacy", "causal"}:
+        raise ValueError("INVALID_MARKET_REASONING_MODE")
     candidates, inventory = recent_candidates(
         db, as_of=as_of, lookback_days=lookback_days,
         as_of_time=as_of_time, page=page,
@@ -350,9 +356,12 @@ def discover_and_analyze(
                 groupingExplanation=group.connectionExplanation,
             )
         try:
-            report = analyze_pressure_two_stage(
-                packet, counted, recover_invalid_impacts=True,
-            )
+            if reasoning_mode == "causal":
+                report = analyze_general_causal(packet, counted)
+            else:
+                report = analyze_pressure_two_stage(
+                    packet, counted, recover_invalid_impacts=True,
+                )
         except (ValueError, TypeError) as exc:
             if trace is not None:
                 trace.validation_failure(
