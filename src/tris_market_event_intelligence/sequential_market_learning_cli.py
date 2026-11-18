@@ -66,7 +66,7 @@ PREDICTION_SCHEMA: dict[str, object] = {
             },
         },
     },
-    "required": ["summary", "impacts"],
+    "required": ["summary", "impacts", "surpriseAssessment"],
     "additionalProperties": False,
 }
 FEEDBACK_SCHEMA: dict[str, object] = {
@@ -93,7 +93,7 @@ Analyze economic effect SEPARATELY from expected stock price movement. Good
 fundamentals need not mean positive returns. Market context contains only
 prior evidence. If consensus evidence is unavailable, expectationStatus
 MUST be UNKNOWN. Prior SPY price increases do not establish priced-in news.
-Never invent estimates, expectations or stock prices. Optionally return
+Never invent estimates, expectations or stock prices. Return
 surpriseAssessment with economicImpact POSITIVE|NEGATIVE|NEUTRAL|UNKNOWN,
 expectationStatus ABOVE|IN_LINE|BELOW|UNKNOWN,
 novelty NEW|REPEATED|UNKNOWN, pricedInStatus POSSIBLE|UNSUPPORTED|UNKNOWN,
