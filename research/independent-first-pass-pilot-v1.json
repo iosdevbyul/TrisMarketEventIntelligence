@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "independent_first_pass_pilot_v1",
+  "evaluationSplit": "FIRST_PASS_UNSEEN_DIAGNOSTIC_NOT_FROZEN_HOLDOUT",
+  "historicalPITVerified": false,
+  "sourceVerification": "CURRENT_OFFICIAL_PAGE_EXCERPTS_ONLY",
+  "events": [
+    {
+      "eventId": "FTC-NONCOMPETE-2023-2024",
+      "agency": "FTC",
+      "subject": "Noncompete proposed rule vs adopted final rule; enforcement not proven",
+      "cutoffs": [
+        "2023-01-06",
+        "2024-04-24"
+      ],
+      "sources": [
+        {
+          "sourceId": "ftc-20230105-proposal",
+          "sourceDate": "2023-01-05",
+          "url": "https://www.ftc.gov/news-events/news/press-releases/2023/01/ftc-proposes-rule-ban-noncompete-clauses-which-hurt-workers-harm-competition",
+          "excerpts": [
+            {
+              "claimId": "proposal",
+              "quote": "The Federal Trade Commission proposed a new rule that would ban employers from imposing noncompetes on their workers"
+            },
+            {
+              "claimId": "public-comment",
+              "quote": "The FTC is seeking public comment on the proposed rule"
+            }
+          ]
+        },
+        {
+          "sourceId": "ftc-20240423-final",
+          "sourceDate": "2024-04-23",
+          "url": "https://www.ftc.gov/news-events/news/press-releases/2024/04/ftc-announces-rule-banning-noncompetes",
+          "excerpts": [
+            {
+              "claimId": "issued-final",
+              "quote": "Today, the Federal Trade Commission issued a final rule to promote competition by banning noncompetes nationwide"
+            },
+            {
+              "claimId": "not-effective-proof",
+              "quote": "The Commission vote to approve the issuance of the final rule was 3-2"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "ftc-rule-status",
+          "question": "By this cutoff, had the FTC only proposed its noncompete rule or issued a final rule? Distinguish issuance from court enforcement and real-world compliance."
+        },
+        {
+          "id": "ftc-implementation",
+          "question": "What dated evidence establishes that the FTC noncompete rule was actually enforceable and implemented by this cutoff, rather than merely proposed or issued?"
+        }
+      ]
+    },
+    {
+      "eventId": "EPA-LEAD-COPPER-2023-2024",
+      "agency": "EPA",
+      "subject": "Lead service-line replacement: proposal versus final regulation, not actual pipe replacement",
+      "cutoffs": [
+        "2023-12-01",
+        "2024-10-09"
+      ],
+      "sources": [
+        {
+          "sourceId": "epa-20231130-proposal",
+          "sourceDate": "2023-11-30",
+          "url": "https://www.epa.gov/newsreleases/biden-harris-administration-proposes-strengthen-lead-and-copper-rule-protect-all",
+          "excerpts": [
+            {
+              "claimId": "proposal",
+              "quote": "EPA announced a proposal to strengthen its Lead and Copper Rule that would require water systems across the country to replace lead service lines within 10 years"
+            },
+            {
+              "claimId": "lower-level-proposal",
+              "quote": "EPA is also proposing additional improvements to protect public health, such as lowering the lead action level and improving sampling protocols"
+            }
+          ]
+        },
+        {
+          "sourceId": "epa-20241008-final",
+          "sourceDate": "2024-10-08",
+          "url": "https://www.epa.gov/newsreleases/biden-harris-administration-issues-final-rule-requiring-replacement-lead-pipes-within",
+          "excerpts": [
+            {
+              "claimId": "final-issued",
+              "quote": "the Biden-Harris Administration issued a final rule requiring drinking water systems across the country to identify and replace lead pipes within 10 years"
+            },
+            {
+              "claimId": "additional-rules",
+              "quote": "The Lead and Copper Rule Improvements (LCRI) also require more rigorous testing of drinking water and a lower threshold requiring communities to take action"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "epa-rule-status",
+          "question": "As of this cutoff, had the EPA merely proposed or actually issued its final Lead and Copper Rule Improvements?"
+        },
+        {
+          "id": "epa-physical-replacement",
+          "question": "Do these dated EPA statements document nationwide physical replacement of all lead service lines, or only regulatory obligations and future requirements?"
+        }
+      ]
+    }
+  ]
+}
