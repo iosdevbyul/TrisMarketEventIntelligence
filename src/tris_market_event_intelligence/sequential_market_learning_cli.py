@@ -300,14 +300,15 @@ def evaluate(model_prediction: dict, observed: datetime, horizon: timedelta,
             try:
                 cache[symbol] = price_return(client, symbol, observed, horizon, interval)
             except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
-                cache[symbol] = {"error": type(exc).__name__}
+                cache[symbol] = {"error": type(exc).__name__, "detail": str(exc)[:300]}
         return cache[symbol]
     benchmark = lookup("SPY")
     for impact in model_prediction["impacts"]:
         result = lookup(impact["priceProxy"])
         row = dict(impact)
         if "error" in result:
-            row.update(status="UNVERIFIED", reasonCode=result["error"])
+            row.update(status="UNVERIFIED", reasonCode=result["error"],
+                       reasonDetail=result.get("detail"))
         else:
             change = result["return"]
             actual = ("POSITIVE" if change > 0.001 else
@@ -501,12 +502,32 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         article=article, evaluation=assessment, feedback=feedback,
                     )
                     db.commit()
+                outcomes = assessment["impacts"]
+                assessed = sum(r["status"] in {"CORRECT", "WRONG"} for r in outcomes)
                 print(json.dumps({
                     "seq": index, "articleId": article["articleId"],
-                    "correct": sum(r["status"] == "CORRECT" for r in assessment["impacts"]),
-                    "wrong": sum(r["status"] == "WRONG" for r in assessment["impacts"]),
-                    "unverified": sum(r["status"] == "UNVERIFIED"
-                                      for r in assessment["impacts"]),
+                    "predictionSummary": prediction.get("summary"),
+                    "predictedImpacts": [
+                        {"targetType": r["targetType"], "target": r["target"],
+                         "priceProxy": r["priceProxy"], "predictedDirection": r["direction"]}
+                        for r in prediction["impacts"]
+                    ],
+                    "outcomes": [
+                        {"target": r["target"], "predictedDirection": r["direction"],
+                         "actualDirection": r.get("actualDirection"),
+                         "absoluteReturn": r.get("absoluteReturn"),
+                         "status": r["status"], "reasonCode": r.get("reasonCode"),
+                         "reasonDetail": r.get("reasonDetail")}
+                        for r in outcomes
+                    ],
+                    "evaluationStatus": (
+                        "NO_TARGETS" if not prediction["impacts"] else
+                        "UNVERIFIED" if assessed == 0 else
+                        "PARTIALLY_VERIFIED" if assessed < len(outcomes) else "VERIFIED"
+                    ),
+                    "correct": sum(r["status"] == "CORRECT" for r in outcomes),
+                    "wrong": sum(r["status"] == "WRONG" for r in outcomes),
+                    "unverified": sum(r["status"] == "UNVERIFIED" for r in outcomes),
                     "phase": "COMPLETE",
                 }), flush=True)
             totals = db.execute("""
@@ -514,17 +535,56 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 FROM steps
             """).fetchone()
             lessons_count = db.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
+            metrics = {
+                "articlesWithNoTargets": 0, "articlesWithVerifiedTargets": 0,
+                "articlesWithOnlyUnverifiedTargets": 0,
+                "targetsPredicted": 0, "targetsCorrect": 0,
+                "targetsWrong": 0, "targetsUnverified": 0,
+            }
+            failure_reasons: dict[str, int] = {}
+            for raw_prediction, raw_evaluation in db.execute(
+                "SELECT prediction_json, evaluation_json FROM steps"
+            ):
+                impacts = json.loads(raw_prediction)["impacts"]
+                if not impacts:
+                    metrics["articlesWithNoTargets"] += 1
+                metrics["targetsPredicted"] += len(impacts)
+                if raw_evaluation is None:
+                    continue
+                outcomes = json.loads(raw_evaluation)["impacts"]
+                verified = 0
+                for outcome in outcomes:
+                    state = outcome["status"]
+                    if state == "CORRECT":
+                        metrics["targetsCorrect"] += 1
+                        verified += 1
+                    elif state == "WRONG":
+                        metrics["targetsWrong"] += 1
+                        verified += 1
+                    elif state == "UNVERIFIED":
+                        metrics["targetsUnverified"] += 1
+                        reason = outcome.get("reasonCode") or "UNKNOWN"
+                        failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+                if verified:
+                    metrics["articlesWithVerifiedTargets"] += 1
+                elif impacts:
+                    metrics["articlesWithOnlyUnverifiedTargets"] += 1
+            verified_total = metrics["targetsCorrect"] + metrics["targetsWrong"]
             return {
                 "status": "COMPLETE" if totals[1] == count else "INSUFFICIENT_CHRONOLOGICAL_ARTICLES",
                 "articlesRequested": count, "articlesAvailable": len(articles),
                 "articlesCompleted": totals[1], "lessons": lessons_count,
                 "holdoutReserved": heldout, "journal": str(args.journal),
-                "marketReturnsAnalyzed": any(
-                    any(r["status"] != "UNVERIFIED" for r in json.loads(row[0])["impacts"])
-                    for row in db.execute(
-                        "SELECT evaluation_json FROM steps WHERE evaluation_json IS NOT NULL"
-                    )
-                ),
+                "marketReturnsAnalyzed": verified_total > 0,
+                "evaluationMetrics": {
+                    **metrics,
+                    "evaluatedTargets": verified_total,
+                    "storedVerdictAccuracy": (
+                        metrics["targetsCorrect"] / verified_total
+                        if verified_total else None
+                    ),
+                    "unverifiedReasonCounts": failure_reasons,
+                },
                 "learningMemory": learning_memory.report(db),
                 "evaluationMode": "RETROSPECTIVE_SEQUENTIAL_FEEDBACK",
                 "pointInTimeCertified": False,
