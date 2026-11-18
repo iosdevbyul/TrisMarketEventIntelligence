@@ -613,3 +613,41 @@ sample independent unseen events and use external/human evidence-based
 assessment of economic coherence, factuality and directional conditions.
 Failure on fresh events is a system-level issue, not grounds to add
 article-specific exceptions or loop over only the old two articles.
+
+
+### Sampling validity after the causal-engine reset
+
+A live generalization study cannot be credible if its discovery pagination
+silently repeats or drops records. Prior logic fetched growing prefixes per
+table and globally sorted them anew on each page. The candidate roster
+therefore changed when advancing to the next page. Discovery now builds one
+deterministic cutoff-visible ordering across article, event and indicator
+release rows, applies source-level de-duplication consistently from the
+beginning, then uses disjoint fixed-size pages. Regression tests interleave
+more than 70 records across article and event tables to verify exactly-once
+page coverage.
+
+A second `source_balanced` sampling mode deterministically interleaves
+chronologically ordered candidates across source TYPES (not news content,
+ticker, publisher name, economic event wording or article IDs). This exposes
+scarce economic releases rather than filling every sampled page with the
+newest dominant RSS source. Normal daily `market-pressure-cycle` discovery
+remains chronological by default; only `market-pressure-generalization`
+uses the source-balanced mode. Every page stays deterministic and source
+IDs must not overlap.
+
+The evaluation report now retains bounded, original conditional causal
+research items for independent human review (per-path cited observation,
+economic steps, assumptions, opposing explanations and missing evidence),
+alongside accepted/rejected structural counts. It also reports:
+- sampling mode, source-kind counts, per-publisher counts,
+- number and fraction of sampled candidates actually grouped/analyzed,
+- sampling warnings when publisher or source-kind diversity is insufficient,
+  or most candidates were not processed by the model.
+
+The evaluation's `uniqueEligibleSources` is the count of **sampled
+candidates within the page budget**, not exhaustive universe coverage.
+Neither many sampled articles nor multiple publisher names prove
+independence of the underlying economic events. Reviewers must inspect
+actual causal-path content and independently verify event diversity and
+source claims. The generalization flag remains false until that happens.
