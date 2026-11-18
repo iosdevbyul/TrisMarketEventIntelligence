@@ -7,7 +7,7 @@ AS_OF="${1:-$(date +%F)}"
 MODE="${2:---preview}"
 PERSIST="${3:-}"
 DB="${MARKET_EVENT_DB:-$DATA/news.sqlite3}"
-OUTPUT="${MARKET_PRESSURE_OUTPUT:-$DATA/market-pressure-first-real-v2.json}"
+OUTPUT="${MARKET_PRESSURE_OUTPUT:-$DATA/market-pressure-first-real-v3.json}"
 
 if [[ "$MODE" != "--preview" && "$MODE" != "--run" ]] || \
    [[ -n "$PERSIST" && "$PERSIST" != "--persist" ]] || \
