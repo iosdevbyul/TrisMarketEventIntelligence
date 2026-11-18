@@ -351,7 +351,26 @@ def predict_with_repair(model: Any, payload: dict) -> dict:
                 "Use an empty impacts array when unable to identify a target."
             )
         try:
-            return canonical_prediction(model_json(model, SYSTEM, request))
+            prediction = canonical_prediction(model_json(model, SYSTEM, request))
+            market_context = payload.get("marketContext")
+            if market_context:
+                assessment = prediction.get("surpriseAssessment")
+                if assessment is None:
+                    prediction["surpriseAssessment"] = {
+                        "economicImpact": "UNKNOWN",
+                        "expectationStatus": "UNKNOWN",
+                        "novelty": "UNKNOWN",
+                        "pricedInStatus": "UNKNOWN",
+                        "rationale": "Model did not provide a validated assessment",
+                    }
+                else:
+                    if (market_context.get("consensus", {}).get("status") == "UNKNOWN"
+                            and assessment["expectationStatus"] != "UNKNOWN"):
+                        raise ValueError("Consensus surprise lacks timestamped evidence")
+                    if (assessment["pricedInStatus"] == "POSSIBLE"
+                            and not market_context.get("earlierRelatedArticles")):
+                        raise ValueError("Priced-in claim lacks prior coverage")
+            return prediction
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             last_error = str(exc)[:180]
     raise ValueError("MODEL_PREDICTION_INVALID_AFTER_3_ATTEMPTS: " + last_error)
