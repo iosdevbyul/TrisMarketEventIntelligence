@@ -236,3 +236,48 @@ def test_broad_market_name_in_target_type_is_normalized():
     }]})
     assert prediction["impacts"][0]["targetType"] == "MARKET"
     assert prediction["impacts"][0]["priceProxy"] == "SPY"
+
+
+def test_evaluation_exposes_unverified_price_error(monkeypatch):
+    observed = datetime(2025, 1, 1, tzinfo=UTC)
+
+    def missing(*args, **kwargs):
+        raise ValueError("Price bars unavailable around event")
+
+    monkeypatch.setattr(seq, "price_return", missing)
+    prediction = seq.canonical_prediction({"summary": "Supply risk", "impacts": [{
+        "targetType": "STOCK", "target": "NVDA",
+        "direction": "NEGATIVE", "reason": "Export restriction",
+    }]})
+    assessment = seq.evaluate(
+        prediction, observed, timedelta(hours=24), "1d", object(),
+    )
+    outcome = assessment["impacts"][0]
+    assert outcome["status"] == "UNVERIFIED"
+    assert outcome["reasonCode"] == "ValueError"
+    assert outcome["reasonDetail"] == "Price bars unavailable around event"
+
+
+def test_run_reports_zero_targets_separately(monkeypatch, tmp_path, capsys):
+    article = sample(1, datetime(2025, 1, 1, tzinfo=UTC))
+    monkeypatch.setattr(
+        seq, "load_articles", lambda db, count, cutoff: ([article], 0),
+    )
+
+    class EmptyModel:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({"summary": "No clear public market exposure", "impacts": []})
+
+    config = args(tmp_path)
+    config.count = 1
+    result = seq.run(config, model=EmptyModel(), client=object())
+    metrics = result["evaluationMetrics"]
+    assert metrics["articlesWithNoTargets"] == 1
+    assert metrics["targetsPredicted"] == 0
+    assert metrics["evaluatedTargets"] == 0
+    assert metrics["storedVerdictAccuracy"] is None
+    assert result["marketReturnsAnalyzed"] is False
+    line = json.loads(capsys.readouterr().out.strip())
+    assert line["evaluationStatus"] == "NO_TARGETS"
+    assert line["predictedImpacts"] == []
+    assert line["outcomes"] == []
