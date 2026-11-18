@@ -22,6 +22,7 @@ dev = [
 ]
 
 [project.scripts]
+market-event-sequential-learn = "tris_market_event_intelligence.sequential_market_learning_cli:main"
 market-event-api = "tris_market_event_intelligence.__main__:main"
 market-event-collect = "tris_market_event_intelligence.collect_cli:main"
 market-event-extract = "tris_market_event_intelligence.events_cli:main"
