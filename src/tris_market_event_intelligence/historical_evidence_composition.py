@@ -48,8 +48,18 @@ class QuestionAxes(Strict):
     remainingEvidence: str = Field(min_length=25, max_length=280)
 
 
-class AllQuestionAxes(Strict):
-    assessments: list[QuestionAxes] = Field(default_factory=list, max_length=12)
+class QuestionAnswer(Strict):
+    regulatoryActionProgress: Literal[
+        "NOT_OBSERVED", "ANNOUNCED", "AUTHORIZED", "IMPLEMENTING",
+        "COMPLETED", "UNKNOWN",
+    ]
+    requestedEvidenceStatus: Literal[
+        "NOT_OBSERVED", "PARTIAL", "DIRECTLY_OBSERVED",
+    ]
+    explanation: str = Field(min_length=35, max_length=450)
+    remainingEvidence: str = Field(min_length=25, max_length=280)
+
+
 
 
 _SOURCE_SYSTEM = """Explain ONLY the single dated official claim given.
@@ -63,32 +73,43 @@ with punctuation. Return ONLY the two schema fields: explanation and
 limitation. The invoking system attaches the source and claim IDs from
 the cutoff-visible official record; you must not generate those IDs."""
 
-_QUESTIONS_SYSTEM = """Evaluate every visible official source claim and
-every supplied source-scoped explanation relevant to EACH research question.
-Later official decisions may change earlier UNKNOWN or OPEN answers. Prior
-model assessments are provisional, not ground truth. Include EVERY directly
-relevant dated claim in supportingEvidence, including new announcements and
-older pending notices, without adding unrelated or invented references.
-The primary sourceId and claimId should cite the most recent substantive
-relevant decision, rather than always citing the initial question source.
+_SCREEN_SYSTEM = """For ONE historical question, classify EACH supplied
+date-cutoff-visible official claim, with one role per claim index.
+DIRECT_ANSWER means this claim directly answers the exact question.
+INTERMEDIATE_DECISION means an official later decision or significant
+regulatory step bears on the question, but does not supply all requested
+records/outcomes. RELATED_CONTEXT means preliminary background or
+evidence explaining the question. NOT_RELEVANT means unrelated scope.
+A decision restricting production expansion is an INTERMEDIATE_DECISION
+when the question asks about official production oversight decisions AND
+completed audit findings; lack of final audit results does not erase the
+restriction. Likewise, product authorization can be an INTERMEDIATE_DECISION
+for a question about underlying manufacturer filings and internal review
+records; approval does not itself supply those records. These are general
+distinctions, not proof of any particular historical outcome.
+Classify later decisions separately from earlier notices. Preserve distinct
+product and aircraft scopes. Do not use later unseen information. Return
+exactly the required claim-index keys and allowed role values. No prose."""
 
-Assess two independent dimensions. regulatoryActionProgress measures the
-regulator action (NOT_OBSERVED, ANNOUNCED, AUTHORIZED, IMPLEMENTING,
-COMPLETED, UNKNOWN), not completion of inspections or audits. An official
-production restriction is an observed regulatory decision but not a
-completed quality audit. requestedEvidenceStatus measures whether the
-EXACT full question has supporting documentation: NOT_OBSERVED when no
-part of the answer is visible, PARTIAL when a decision or intermediate
-evidence exists but necessary final results are missing, and
-DIRECTLY_OBSERVED when the full answer requested is directly observed.
-For questions requesting BOTH official decisions and audit findings,
-observed official restrictions plus missing audit findings mean PARTIAL,
-not NOT_OBSERVED. Explain the observed decision in explanation, then
-name only truly absent evidence in remainingEvidence. Never claim no
-decisions are visible when a relevant decision is in supportingEvidence.
-Distinguish 737-900ER from 737-9 MAX and authorization from actual
-completion. No editorial future transitions, fabricated proof, market
-prices, financial effects or causal assertions. Strict JSON only."""
+
+_ANSWER_SYSTEM = """Use the question and all model-screened relevant
+official claims to answer the exact historical question as of the cutoff.
+INTERMEDIATE_DECISION claims are genuine regulatory actions; describe them
+even when the final audit findings, manufacturer filings or underlying
+review records are not visible. They do NOT establish completed inspections,
+completed audits, completed implementation or the presence of private
+internal documentation. DIRECT_ANSWER supports requestedEvidenceStatus
+DIRECTLY_OBSERVED only when the entire requested answer is supported.
+When observed intermediate decisions exist but the requested final records
+remain unseen, use PARTIAL rather than NOT_OBSERVED.
+regulatoryActionProgress is about the regulatory action in the question's
+scope. AUTHORIZED means an approval/authorization was issued. COMPLETED
+requires an explicit source establishing completion of the relevant
+implementation or final process, not merely authorization.
+Distinguish regulator approvals from product adoption, execution,
+inspection completion or factory audit completion. No future sources,
+unsupported causes, prices or financial market claims. Provide complete
+explanation and remainingEvidence sentences and strict JSON only."""
 
 
 class ComposedEvidenceError(ValueError):
@@ -218,65 +239,184 @@ def assess_question_axes(
     provider: LLMProvider, packet: dict, draft: dict,
     composed: dict | None = None,
 ) -> dict:
-    """Do not derive either dimension from legacy OPEN/RESOLVED labels."""
+    """Screen every visible official claim per question, then synthesize.
+
+    A claim's role is model-authored; provenance and order are input-bound.
+    Full screening decisions are persisted for human recall/omission review.
+    No curator transitions or independently unverified outcome labels are
+    supplied, and structural completeness does not prove semantic relevance.
+    """
     questions = draft["visibleQuestions"]
     if not questions:
-        return {"questionAssessments": [], "generationDiagnostics": None}
-    schema = AllQuestionAxes.model_json_schema()
-    schema["properties"]["assessments"]["minItems"] = len(questions)
-    schema["properties"]["assessments"]["maxItems"] = len(questions)
-    raw = provider.generate_json(
-        system=_QUESTIONS_SYSTEM,
-        user=json.dumps({
-            "asOfDateExclusive": packet["asOfDateExclusive"],
-            "visibleOfficialSources": [
-                {"sourceId": x["sourceId"], "sourceDate": x["sourceDate"],
-                 "claims": x["claims"]}
-                for x in packet["eligibleSources"]
-            ],
-            "visibleQuestions": questions,
-            "newlyExplainedClaims": (
-                composed["sourceExplanations"] if composed is not None else []
-            ),
-            "previouslyValidatedModelQuestionAssessments": (
-                draft["modelAuthoredQuestionAssessments"]
-            ),
-            "pointInTimeVerified": False,
-        }, ensure_ascii=False),
-        schema=schema,
+        return {
+            "questionAssessments": [], "generationDiagnostics": None,
+            "questionEvidenceScreens": [],
+        }
+    visible: list[dict] = [
+        {
+            "sourceId": source["sourceId"],
+            "claimId": claim["claimId"],
+            "sourceDate": source["sourceDate"],
+            "text": claim["text"],
+        }
+        for source in packet["eligibleSources"]
+        for claim in source["claims"]
+    ]
+    explanations = {
+        (item["sourceId"], item["claimId"]): item["explanation"]
+        for item in (composed["sourceExplanations"] if composed else [])
+    }
+    screen_roles = (
+        "DIRECT_ANSWER", "INTERMEDIATE_DECISION", "RELATED_CONTEXT",
+        "NOT_RELEVANT",
     )
-    diag = getattr(provider, "last_generation_diagnostics", None)
-    parsed = AllQuestionAxes.model_validate_json(raw)
-    states = [x.model_dump() for x in parsed.assessments]
-    expected = {x["questionId"] for x in questions}
-    visible_refs = _refs(packet)
-    if (
-        len(states) != len(questions)
-        or {x["questionId"] for x in states} != expected
-        or any(
-            (x["sourceId"], x["claimId"]) not in visible_refs
-            or (x["sourceId"], x["claimId"]) not in {
-                (ref["sourceId"], ref["claimId"])
-                for ref in x["supportingEvidence"]
-            }
-            or len({
-                (ref["sourceId"], ref["claimId"])
-                for ref in x["supportingEvidence"]
-            }) != len(x["supportingEvidence"])
-            or any(
-                (ref["sourceId"], ref["claimId"]) not in visible_refs
-                for ref in x["supportingEvidence"]
-            )
-            or not _complete(x["explanation"])
-            or not _complete(x["remainingEvidence"])
-            or is_observed_market_result(x["explanation"])
-            for x in states
+    screened: list[dict] = []
+    assessments: list[dict] = []
+    screen_diagnostics: list[dict | None] = []
+    answer_diagnostics: list[dict | None] = []
+    keys = [f"claim_{i}" for i in range(len(visible))]
+    screen_schema: dict = {
+        "type": "object",
+        "properties": {
+            key: {"type": "string", "enum": list(screen_roles)}
+            for key in keys
+        },
+        "required": keys,
+        "additionalProperties": False,
+    }
+    for question in questions:
+        raw_screen = provider.generate_json(
+            system=_SCREEN_SYSTEM,
+            user=json.dumps({
+                "asOfDateExclusive": packet["asOfDateExclusive"],
+                "question": question,
+                "indexedVisibleOfficialClaims": [
+                    {"index": i, **claim} for i, claim in enumerate(visible)
+                ],
+                "pointInTimeVerified": False,
+            }, ensure_ascii=False),
+            schema=screen_schema,
         )
-    ):
-        raise ComposedEvidenceError("COMPOSED_QUESTION_AXES_INVALID")
+        screen_diagnostics.append(getattr(
+            provider, "last_generation_diagnostics", None,
+        ))
+        try:
+            roles = json.loads(raw_screen)
+        except (ValueError, TypeError) as exc:
+            raise ComposedEvidenceError(
+                "COMPOSED_QUESTION_SCREEN_INVALID_JSON"
+            ) from exc
+        if (
+            not isinstance(roles, dict)
+            or set(roles) != set(keys)
+            or any(roles[key] not in screen_roles for key in keys)
+        ):
+            raise ComposedEvidenceError(
+                "COMPOSED_QUESTION_SCREEN_INCOMPLETE"
+            )
+        decisions = [
+            {
+                "sourceId": claim["sourceId"],
+                "claimId": claim["claimId"],
+                "sourceDate": claim["sourceDate"],
+                "role": roles[f"claim_{i}"],
+            }
+            for i, claim in enumerate(visible)
+        ]
+        relevant = [
+            claim for claim in decisions if claim["role"] != "NOT_RELEVANT"
+        ]
+        if not relevant:
+            raise ComposedEvidenceError(
+                "COMPOSED_QUESTION_NO_RELEVANT_EVIDENCE"
+            )
+        # Most recent strongest applicable action is chosen deterministically
+        # from model-screened roles. This is a provenance tie-breaker, not
+        # independent evidence that the relevance classification is correct.
+        priority = {
+            "DIRECT_ANSWER": 3, "INTERMEDIATE_DECISION": 2,
+            "RELATED_CONTEXT": 1,
+        }
+        primary = max(
+            relevant,
+            key=lambda item: (
+                priority[item["role"]], item["sourceDate"],
+                next(i for i, claim in enumerate(visible)
+                     if claim["sourceId"] == item["sourceId"]
+                     and claim["claimId"] == item["claimId"]),
+            ),
+        )
+        candidate_input = [
+            {
+                **claim,
+                "role": decision["role"],
+                "sourceScopedExplanation": explanations.get(
+                    (claim["sourceId"], claim["claimId"]),
+                ),
+            }
+            for claim, decision in zip(visible, decisions)
+            if decision["role"] != "NOT_RELEVANT"
+        ]
+        raw_answer = provider.generate_json(
+            system=_ANSWER_SYSTEM,
+            user=json.dumps({
+                "asOfDateExclusive": packet["asOfDateExclusive"],
+                "question": question,
+                "screenedRelevantEvidence": candidate_input,
+                "historicalPITVerified": False,
+            }, ensure_ascii=False),
+            schema=QuestionAnswer.model_json_schema(),
+        )
+        answer_diagnostics.append(getattr(
+            provider, "last_generation_diagnostics", None,
+        ))
+        answer = QuestionAnswer.model_validate_json(raw_answer)
+        if (
+            not _complete(answer.explanation)
+            or not _complete(answer.remainingEvidence)
+            or is_observed_market_result(answer.explanation)
+            or is_observed_market_result(answer.remainingEvidence)
+        ):
+            raise ComposedEvidenceError(
+                "COMPOSED_QUESTION_ANSWER_INVALID"
+            )
+        if (
+            answer.requestedEvidenceStatus == "DIRECTLY_OBSERVED"
+            and not any(x["role"] == "DIRECT_ANSWER" for x in relevant)
+        ):
+            raise ComposedEvidenceError(
+                "COMPOSED_QUESTION_DIRECT_ANSWER_UNSUPPORTED"
+            )
+        resolved = {
+            "questionId": question["questionId"],
+            "sourceId": primary["sourceId"],
+            "claimId": primary["claimId"],
+            "supportingEvidence": [
+                {"sourceId": x["sourceId"], "claimId": x["claimId"]}
+                for x in relevant
+            ],
+            **answer.model_dump(),
+        }
+        QuestionAxes.model_validate(resolved)
+        assessments.append(resolved)
+        screened.append({
+            "questionId": question["questionId"],
+            "allVisibleClaimRoles": decisions,
+            "primaryClaimSelection": {
+                "sourceId": primary["sourceId"],
+                "claimId": primary["claimId"],
+                "role": primary["role"],
+            },
+            "roleAccuracyVerified": False,
+            "omissionsSemanticallyVerified": False,
+        })
     return {
-        "questionAssessments": states,
-        "generationDiagnostics": diag,
+        "questionAssessments": assessments,
+        "questionEvidenceScreens": screened,
+        "generationDiagnostics": {
+            "relevanceScreenCalls": screen_diagnostics,
+            "questionAnswerCalls": answer_diagnostics,
+        },
         "axesSemanticallyVerified": False,
         "legacyStatusAutomaticallyOverwritten": False,
         "humanReviewRequired": True,
