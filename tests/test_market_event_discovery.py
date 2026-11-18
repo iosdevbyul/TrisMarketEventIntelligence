@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from test_market_evidence_db_bridge import populated_db
+
 from tris_market_event_intelligence.market_event_discovery import (
     discover_and_analyze,
     recent_candidates,
