@@ -9,9 +9,7 @@ from copy import deepcopy
 
 import pytest
 
-from tris_market_event_intelligence.market_evidence_pressure import (
-    MarketEvidencePacket,
-)
+from tris_market_event_intelligence.market_evidence_pressure import MarketEvidencePacket
 from tris_market_event_intelligence.market_pressure_causal_engine import (
     analyze_general_causal,
     causal_output_schema,
@@ -214,7 +212,7 @@ def test_future_sources_cannot_reach_model_and_absence_is_not_success() -> None:
     model = MockCausalProvider(
         text, proposal(text, kind, target, channel, sign),
     )
-    report = analyze_general_causal(
+    analyze_general_causal(
         MarketEvidencePacket.model_validate(raw), model,
     )
     assert len(model.user_inputs[0]["visibleSources"]) == 1
