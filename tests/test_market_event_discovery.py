@@ -194,3 +194,99 @@ def test_root_validation_reason_and_first_pass_claims_are_not_lost(
     assert analysis["validationStage"] == "IMPACT_GENERATION"
     assert analysis["groundedClaims"][0]["sourceId"] == "article-1"
     assert analysis["impacts"] == []
+
+
+class GeneralCausalDiscoveryProvider:
+    """Exercise the actual discovery entry point with the new causal mode."""
+
+    model_id = "mock-general-causal-discovery"
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        self.causal_schema_seen = False
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        supplied = json.loads(user)
+        self.calls.append(supplied)
+        if "cutoffVisibleEvidence" in supplied:
+            return json.dumps({"groups": [{
+                "sourceIndexes": [0, 1], "anchorIndex": 0,
+                "connectionExplanation": (
+                    "Two cutoff-visible observations potentially describe "
+                    "conditional input costs and industrial demand."
+                ),
+            }]})
+        if "visibleSources" in supplied:
+            first = supplied["visibleSources"][0]
+            quote = first["excerpt"][:min(150, len(first["excerpt"]))]
+            return json.dumps({"claims": [{
+                "sourceId": first["sourceId"],
+                "excerpt": quote, "factKind": "REPORTED_FACT",
+                "novelty": "UNKNOWN", "entities": [],
+            }]})
+        assert "groundedClaims" in supplied
+        assert set(schema["properties"]) == {"candidateImpacts"}
+        self.causal_schema_seen = True
+        quote = supplied["groundedClaims"][0]["excerpt"]
+        return json.dumps({"candidateImpacts": [{
+            "targetType": "SECTOR",
+            "targetName": "Industrial manufacturers",
+            "market": "GLOBAL", "sector": "INDUSTRIALS",
+            "horizon": "SHORT_TERM", "strength": "UNASSESSED",
+            "causalPaths": [{
+                "pressureDirection": "NEGATIVE",
+                "evidenceClaimIndexes": [0],
+                "observedExcerpt": quote,
+                "economicSteps": [{
+                    "cause": "The reported observation changes input costs",
+                    "channel": "COST",
+                    "effect": "Industrial margins may face economic pressure",
+                    "condition": (
+                        "Only if suppliers transmit those costs to buyers"
+                    ),
+                }],
+                "competingExplanation": (
+                    "Industry demand could offset this hypothetical pressure"
+                ),
+            }],
+            "missingEvidence": ["No independent sector exposure figures"],
+            "uncertaintyExplanation": (
+                "This is a source-reported observation, not an independently "
+                "measured change in sector earnings."
+            ),
+        }]})
+
+
+def test_auto_discovery_routes_to_general_causal_engine(
+    tmp_path: Path,
+) -> None:
+    db = populated_db(tmp_path / "news.sqlite3")
+    provider = GeneralCausalDiscoveryProvider()
+    report = discover_and_analyze(
+        db, as_of=date(2024, 2, 15),
+        provider=provider, reasoning_mode="causal",
+    )
+    assert provider.causal_schema_seen is True
+    assert len(provider.calls) == 3
+    assert report["modelCalls"] == 3
+    assert report["status"] == "CANDIDATE_EVENTS_REQUIRE_REVIEW"
+    assert len(report["events"]) == 1
+    analysis = report["events"][0]["analysis"]
+    assert analysis["analysisMode"] == "GENERAL_CAUSAL_PATHS_V1"
+    assert analysis["modelCalls"] == 2
+    assert len(analysis["impacts"]) == 1
+    assert analysis["impacts"][0]["direction"] == "NEGATIVE"
+    assert analysis["impacts"][0]["strength"] == "UNASSESSED"
+    assert analysis["impacts"][0]["economicCausalityVerified"] is False
+    assert analysis["semanticAccuracyVerified"] is False
+
+
+def test_invalid_reasoning_mode_fails_before_model(tmp_path: Path) -> None:
+    db = populated_db(tmp_path / "news.sqlite3")
+    provider = GeneralCausalDiscoveryProvider()
+    with pytest.raises(ValueError, match="INVALID_MARKET_REASONING_MODE"):
+        discover_and_analyze(
+            db, as_of=date(2024, 2, 15),
+            provider=provider, reasoning_mode="per-company-rules",
+        )
+    assert provider.calls == []
