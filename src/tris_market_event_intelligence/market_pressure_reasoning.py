@@ -18,12 +18,15 @@ from tris_market_event_intelligence.impact import (
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
 from tris_market_event_intelligence.llm_runtime import LLMProvider
+from tris_market_event_intelligence.market_pressure_quality_gate import (
+    assess_reasoning_quality,
+)
 from tris_market_event_intelligence.market_evidence_pressure import (
     MarketEvidencePacket,
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v7-individual-claim-validation"
+PROMPT_VERSION = "market-pressure-two-stage-v8-economic-quality-gate"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -378,6 +381,14 @@ def _validate_one_impact(
         )
     return {
         **item.model_dump(),
+        "reasoningQuality": assess_reasoning_quality(
+            item.model_dump(),
+            [
+                {**claim.model_dump(),
+                 "sourceVerification": by_id[claim.sourceId].verification}
+                for claim in references
+            ],
+        ),
         "supportingSourceIds": sorted({claim.sourceId for claim in references}),
         "observedMarketReaction": False,
         "pressureNotPriceForecast": True,
