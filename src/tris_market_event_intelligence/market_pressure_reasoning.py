@@ -187,6 +187,15 @@ def analyze_pressure_two_stage(
         schema["$defs"]["PressureImpact"]["properties"]["uncertainty"]["enum"] = [
             "HIGH"
         ]
+    # Ollama's JSON-Schema mode may reject Pydantic inheritance/allOf
+    # schemas with HTTP 400. Its plain JSON mode still returns JSON, and
+    # the complete original Pydantic schema is validated immediately below.
+    # Do not silently retry an arbitrary HTTP failure or lose provenance.
+    provider_settings = getattr(provider, "settings", None)
+    ollama_json_mode = (
+        provider_settings is not None
+        and getattr(provider_settings, "kind", None) == "ollama"
+    )
     raw_impacts = provider.generate_json(
         system=IMPACT_SYSTEM,
         user=json.dumps({
@@ -197,7 +206,7 @@ def analyze_pressure_two_stage(
             "stockPriceDataAvailable": False,
             "outcomeLabelsAvailable": False,
         }, ensure_ascii=False),
-        schema=schema,
+        schema=None if ollama_json_mode else schema,
     )
     analysis = PressureAnalysis.model_validate_json(raw_impacts)
     impacts = []
@@ -293,6 +302,9 @@ def _report(
         "groundedClaims": claims,
         "impacts": impacts,
         "modelCalls": calls,
+        "impactGenerationMode": "JSON_PYDANTIC_VALIDATED"
+        if getattr(getattr(provider, "settings", None), "kind", None) == "ollama"
+        else "SCHEMA_AND_PYDANTIC_VALIDATED",
         "historicalPITVerified": False,
         "sourceFactsIndependentlyVerified": False,
         "semanticAccuracyVerified": False,
