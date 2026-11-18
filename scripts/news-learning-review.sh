@@ -181,6 +181,9 @@ case "$action" in
   historical-event-chain)
     module="tris_market_event_intelligence.historical_official_event_chain_cli"
     ;;
+  market-evidence-pressure)
+    module="tris_market_event_intelligence.market_evidence_pressure_cli"
+    ;;
   historical-first-sight)
     module="tris_market_event_intelligence.historical_first_sight_pilot_cli"
     ;;
