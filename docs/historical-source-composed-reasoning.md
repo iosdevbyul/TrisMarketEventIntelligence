@@ -9,9 +9,11 @@ chance that one long constrained JSON string clips the final explanation.
 1. Generate and validate cutoff-visible source-anchored change facts using
    the existing evidence-first model draft.
 2. Generate one short model explanation and limitation for **every claim**
-   in each newly visible official source, using one structured model call
-   per source. The full set of source claim IDs must be covered exactly once.
-   Each explanation ends in punctuation and passes the no-market-outcome check. Any failure stops the run; never substitute
+   in each newly visible official source, using one narrowly scoped structured
+   model call **per claim**. Provenance IDs come from the scoped official
+   input, not model-generated ID echoes. Preserve model-authored prose
+   verbatim. Each explanation ends in punctuation and passes the
+   no-market-outcome check. Any failure stops the run; never substitute
    curator text for model-authored output.
 3. Assemble the source prose verbatim in dated source order, without a
    separate long free-form narrative generation call. Retain all individual
@@ -58,7 +60,7 @@ bash scripts/news-learning-review.sh historical-event-chain \
 ```
 
 Then compare the two preserved runs without asserting equivalence of model
-effort, since composed mode makes **1 + N new sources + 1 question-axes**
+effort, since composed mode makes **1 + N new source claims + 1 question-axes**
 calls per cutoff, versus 2 in staged-compact. Compare source coverage,
 complete prose, contradicting agency/product scope, missing documents,
 reported token consumption and false status changes. Generated prose and
@@ -84,3 +86,15 @@ includes validated phase-one model assessments in the independent question
 analysis. Run a **new output file name** for the next prospective comparison:
 `faa-evidence-composed-v2.json`. Keep v1 untouched. This is still not
 verified semantic correctness or historical PIT.
+
+## FAA v3 failure and response
+
+The real FAA v3 run failed before producing its output with
+`COMPOSED_SOURCE_CLAIM_COVERAGE_INVALID`. The old exception did not
+identify which of the multiple required model-authored claim IDs or prose
+fields failed, so no narrower cause is proven by that log. The revised
+mode makes one model call per claim, attaches prevalidated cutoff-visible
+IDs outside the model text, and rejects incomplete explanation/limitation
+sentences with a source-claim-specific error. More inference calls are an
+explicit tradeoff for a smaller output contract. Old v1/v2 are preserved.
+The next prospective test should use `faa-evidence-composed-v4.json`.
