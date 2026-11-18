@@ -377,3 +377,75 @@ def test_invalid_direction_remains_hard_error_after_retries():
             ]})
     with pytest.raises(ValueError, match="AFTER_3_ATTEMPTS"):
         seq.predict_with_repair(InvalidDirection(), {"article": {}})
+
+
+def test_malformed_ticker_recovery_keeps_valid_stock_and_sector():
+    class MalformedTickerModel:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_json(self, *, system, user, schema):
+            self.calls += 1
+            return json.dumps({
+                "summary": "Company and sector impact",
+                "impacts": [
+                    {"targetType": "STOCK", "target": "NVIDIA CORP",
+                     "direction": "NEGATIVE", "reason": "Export controls"},
+                    {"targetType": "STOCK", "target": "AMD",
+                     "direction": "NEGATIVE", "reason": "Export controls"},
+                    {"targetType": "SECTOR", "target": "SEMICONDUCTORS",
+                     "direction": "NEGATIVE", "reason": "Sector exposure"},
+                ],
+            })
+    model = MalformedTickerModel()
+    answer = seq.predict_with_repair(model, {
+        "marketContext": {
+            "consensus": {"status": "UNKNOWN"},
+            "earlierRelatedArticles": [],
+        },
+    })
+    assert model.calls == 3
+    assert [(x["targetType"], x["target"]) for x in answer["impacts"]] == [
+        ("STOCK", "AMD"), ("SECTOR", "SEMICONDUCTORS"),
+    ]
+    assert answer["recoveryStatus"] == "PARTIAL_TARGET_MAPPING"
+    assert answer["targetMappingRejections"] == [{
+        "targetType": "STOCK", "target": "NVIDIA CORP",
+        "reasonCode": "MALFORMED_STOCK_TICKER",
+    }]
+
+
+def test_malformed_only_ticker_abstains_without_fake_success():
+    class BadTickerModel:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({"summary": "unresolved", "impacts": [
+                {"targetType": "STOCK", "target": "A/B",
+                 "direction": "POSITIVE", "reason": "Possible upside"},
+            ]})
+    result = seq.predict_with_repair(BadTickerModel(), {
+        "marketContext": {
+            "consensus": {"status": "UNKNOWN"},
+            "earlierRelatedArticles": [],
+        },
+    })
+    assert result["impacts"] == []
+    assert result["recoveryStatus"] == "NO_VALID_TARGETS"
+    assert result["targetMappingRejections"][0]["reasonCode"] == "MALFORMED_STOCK_TICKER"
+
+
+def test_malformed_ticker_recovery_rejects_other_invalid_fields():
+    class MixedInvalidModel:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({"summary": "invalid", "impacts": [
+                {"targetType": "STOCK", "target": "A B",
+                 "direction": "POSITIVE", "reason": "Market impact"},
+                {"targetType": "STOCK", "target": "AMD",
+                 "direction": "UNKNOWN", "reason": "Unknown effect"},
+            ]})
+    with pytest.raises(ValueError, match="Invalid target type/direction"):
+        seq.predict_with_repair(MixedInvalidModel(), {
+            "marketContext": {
+                "consensus": {"status": "UNKNOWN"},
+                "earlierRelatedArticles": [],
+            },
+        })
