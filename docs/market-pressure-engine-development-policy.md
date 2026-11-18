@@ -651,3 +651,41 @@ Neither many sampled articles nor multiple publisher names prove
 independence of the underlying economic events. Reviewers must inspect
 actual causal-path content and independently verify event diversity and
 source claims. The generalization flag remains false until that happens.
+
+
+### One-shot generalization execution and durable model diagnostics
+
+The multi-page generalization CLI now emits a local PRIVATE trace
+automatically for `--run`:
+`NEW_RESULT.json.trace.jsonl`. It uses the same create-only 0600
+`MarketPressureTrace` and `TracedMarketProvider` as the older pilot;
+every native JSON-schema request, model response, validation error and
+truncation/transport failure is preserved before the process exits.
+The `CAUSAL_PATH_GENERATION` stage is recognized separately from the
+legacy impact-generation stage. Do not upload this trace or commit raw
+source text to the repository.
+
+Inspect candidate diversity *once* before making the Mac call:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh market-pressure-generalization \
+  --db "$DATA/news.sqlite3" --as-of 2026-11-19 \
+  --lookback-days 30 --pages 4 --preview
+```
+
+If the preview shows an acceptable spread of stored source kinds and
+publishers, one bounded real Gemma4 study is:
+
+```bash
+bash scripts/news-learning-review.sh market-pressure-generalization \
+  --db "$DATA/news.sqlite3" --as-of 2026-11-19 \
+  --lookback-days 30 --pages 4 --run --model gemma4:e2b \
+  --output "$DATA/market-pressure-generalization-20261119-v1.json"
+```
+
+This is never an automatic benchmark PASS. Study the original novel causal
+paths and their uncertainty rather than merely the schema acceptance count.
+A failed run can be diagnosed from the same private trace rather than
+blindly calling the model again. The code does not perform automatic
+persistence, return prediction, or live trading.
