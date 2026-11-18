@@ -88,6 +88,7 @@ def test_all_reference_expectations_pass_but_trust_still_blocked() -> None:
     assert not report["trustGate"]["sampleSizeSufficient"]
     assert not report["trustGate"]["historicalPITVerified"]
     assert not report["trustGate"]["independentGoldReviewComplete"]
+    assert not report["trustGate"]["evaluationSplitIsFrozenHoldout"]
 
 
 def test_scoring_catches_missing_later_decisions_and_false_completion() -> None:
