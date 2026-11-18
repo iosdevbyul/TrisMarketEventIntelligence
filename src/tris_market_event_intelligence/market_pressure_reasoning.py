@@ -9,7 +9,7 @@ import hashlib
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.impact import (
     Impact,
@@ -23,7 +23,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v6-separated-abstention"
+PROMPT_VERSION = "market-pressure-two-stage-v7-individual-claim-validation"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -304,8 +304,90 @@ def _visible(packet: MarketEvidencePacket) -> list:
     return visible
 
 
+def _validate_one_impact(
+    item: PressureImpact, facts: FactAnalysis, by_id: dict,
+    has_unverified: bool,
+) -> dict:
+    """Apply the existing economic and provenance guards per hypothesis."""
+    if (
+        has_unverified and item.uncertainty != "HIGH"
+        or rationale_quality_code(item.rationale)
+        or mechanism_quality_code(item.sector, item.rationale)
+    ):
+        raise ImpactAnalysisError(
+            "IMPACT_REASONING_INVALID", "Evidence or market mechanism invalid"
+        )
+    if len(set(item.claimIndexes)) != len(item.claimIndexes) or any(
+        index < 0 or index >= len(facts.claims) for index in item.claimIndexes
+    ):
+        raise ImpactAnalysisError(
+            "IMPACT_CLAIM_INDEX_INVALID", "Impact references non-existing claim"
+        )
+    references = [facts.claims[index] for index in item.claimIndexes]
+    if not any(item.evidence_excerpt in claim.excerpt for claim in references):
+        raise ImpactAnalysisError(
+            "IMPACT_EVIDENCE_MISMATCH", "Impact quote missing from cited claims"
+        )
+    if any(not any(entity in claim.excerpt for claim in references)
+           for entity in item.entities):
+        raise ImpactAnalysisError(
+            "IMPACT_ENTITY_MISMATCH", "Impact entity not grounded"
+        )
+    if item.targetType == "COMPANY" and not any(
+        item.targetName in claim.excerpt for claim in references
+    ):
+        raise ImpactAnalysisError(
+            "IMPACT_TARGET_UNGROUNDED", "Company not identified in cited source"
+        )
+    if any(
+        by_id[claim.sourceId].verification == "REPORTED_UNVERIFIED"
+        for claim in references
+    ) and item.uncertainty != "HIGH":
+        raise ImpactAnalysisError(
+            "IMPACT_UNVERIFIED_CERTAINTY", "Unverified basis requires HIGH"
+        )
+    if item.expectationComparison in {
+        "ABOVE_EXPECTATION", "BELOW_EXPECTATION", "IN_LINE",
+    }:
+        releases = {
+            (by_id[claim.sourceId].indicatorName,
+             by_id[claim.sourceId].indicatorPeriod)
+            for claim in references
+            if by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
+            and by_id[claim.sourceId].indicatorValue
+        }
+        consensus = {
+            (by_id[claim.sourceId].indicatorName,
+             by_id[claim.sourceId].indicatorPeriod)
+            for claim in references
+            if by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
+            and by_id[claim.sourceId].expectation
+        }
+        if not releases.intersection(consensus):
+            raise ImpactAnalysisError(
+                "INDICATOR_SURPRISE_UNSUPPORTED",
+                "Actual-versus-expectation comparison lacks sourced consensus",
+            )
+    if item.strength == "HIGH" and all(
+        by_id[claim.sourceId].verification == "REPORTED_UNVERIFIED"
+        for claim in references
+    ):
+        raise ImpactAnalysisError(
+            "IMPACT_HIGH_STRENGTH_UNVERIFIED",
+            "High pressure strength requires stronger sourced evidence",
+        )
+    return {
+        **item.model_dump(),
+        "supportingSourceIds": sorted({claim.sourceId for claim in references}),
+        "observedMarketReaction": False,
+        "pressureNotPriceForecast": True,
+        "expectationComparisonSemanticallyVerified": False,
+    }
+
+
 def analyze_pressure_two_stage(
     packet: MarketEvidencePacket, provider: LLMProvider,
+    *, recover_invalid_impacts: bool = False,
 ) -> dict:
     """Analyze first-time input without any known-outcome answer key."""
     visible = _visible(packet)
@@ -429,91 +511,85 @@ def analyze_pressure_two_stage(
             "noImpactExplanation" in impact_payload
         ):
             raise ValueError("IMPACT_STAGE_ABSTENTION_FIELDS_FORBIDDEN")
-        analysis = PressureAnalysis.model_validate(impact_payload)
+        if recover_invalid_impacts:
+            if set(impact_payload) != {"impacts"}:
+                raise ValueError("IMPACT_STAGE_UNEXPECTED_FIELDS")
+            analysis = PressureAnalysis.model_validate({"impacts": []})
+        else:
+            analysis = PressureAnalysis.model_validate(impact_payload)
         raw_abstention_label = None
     else:
         analysis, raw_abstention_label = _parse_impact_response(raw_impacts)
     impacts = []
-    for item in analysis.impacts:
-        if (
-            has_unverified and item.uncertainty != "HIGH"
-            or rationale_quality_code(item.rationale)
-            or mechanism_quality_code(item.sector, item.rationale)
-        ):
-            raise ImpactAnalysisError(
-                "IMPACT_REASONING_INVALID", "Evidence or market mechanism invalid"
-            )
-        if len(set(item.claimIndexes)) != len(item.claimIndexes) or any(
-            index < 0 or index >= len(facts.claims) for index in item.claimIndexes
-        ):
-            raise ImpactAnalysisError(
-                "IMPACT_CLAIM_INDEX_INVALID", "Impact references non-existing claim"
-            )
-        references = [facts.claims[index] for index in item.claimIndexes]
-        if not any(item.evidence_excerpt in claim.excerpt for claim in references):
-            raise ImpactAnalysisError(
-                "IMPACT_EVIDENCE_MISMATCH", "Impact quote missing from cited claims"
-            )
-        if any(not any(entity in claim.excerpt for claim in references)
-               for entity in item.entities):
-            raise ImpactAnalysisError(
-                "IMPACT_ENTITY_MISMATCH", "Impact entity not grounded"
-            )
-        if item.targetType == "COMPANY" and not any(
-            item.targetName in claim.excerpt for claim in references
-        ):
-            raise ImpactAnalysisError(
-                "IMPACT_TARGET_UNGROUNDED", "Company not identified in cited source"
-            )
-        if any(
-            by_id[claim.sourceId].verification == "REPORTED_UNVERIFIED"
-            for claim in references
-        ) and item.uncertainty != "HIGH":
-            raise ImpactAnalysisError(
-                "IMPACT_UNVERIFIED_CERTAINTY", "Unverified basis requires HIGH"
-            )
-        if item.expectationComparison in {
-            "ABOVE_EXPECTATION", "BELOW_EXPECTATION", "IN_LINE",
-        }:
-            releases = {
-                (by_id[claim.sourceId].indicatorName,
-                 by_id[claim.sourceId].indicatorPeriod)
-                for claim in references
-                if by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
-                and by_id[claim.sourceId].indicatorValue
-            }
-            consensus = {
-                (by_id[claim.sourceId].indicatorName,
-                 by_id[claim.sourceId].indicatorPeriod)
-                for claim in references
-                if by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
-                and by_id[claim.sourceId].expectation
-            }
-            if not releases.intersection(consensus):
-                raise ImpactAnalysisError(
-                    "INDICATOR_SURPRISE_UNSUPPORTED",
-                    "Actual-versus-expectation comparison lacks sourced consensus",
+    impacts: list[dict] = []
+    rejected: list[dict] = []
+    if ollama_json_mode and recover_invalid_impacts:
+        raw_list = impact_payload.get("impacts")
+        if not isinstance(raw_list, list) or len(raw_list) > 12:
+            raise ValueError("IMPACT_LIST_INVALID")
+        for index, raw_item in enumerate(raw_list):
+            try:
+                item = PressureImpact.model_validate(raw_item)
+                accepted = _validate_one_impact(
+                    item, facts, by_id, has_unverified,
                 )
-        if item.strength == "HIGH" and all(
-            by_id[claim.sourceId].verification == "REPORTED_UNVERIFIED"
-            for claim in references
-        ):
-            raise ImpactAnalysisError(
-                "IMPACT_HIGH_STRENGTH_UNVERIFIED",
-                "High pressure strength requires stronger sourced evidence",
+            except (ValidationError, ImpactAnalysisError, ValueError) as exc:
+                if isinstance(exc, ImpactAnalysisError):
+                    code = exc.code
+                    fields: list[dict] = []
+                elif isinstance(exc, ValidationError):
+                    issues = exc.errors(
+                        include_input=False, include_context=False,
+                    )
+                    code = (
+                        "UNCERTAIN_DIRECTION_HAS_INDETERMINATE_STRENGTH"
+                        if any(
+                            issue["type"] == "value_error" and issue.get("msg")
+                            == "Value error, "
+                            "UNCERTAIN_DIRECTION_HAS_INDETERMINATE_STRENGTH"
+                            for issue in issues
+                        )
+                        else "IMPACT_SCHEMA_INVALID"
+                    )
+                    fields = [
+                        {"path": ".".join(str(v) for v in issue["loc"]),
+                         "type": issue["type"]}
+                        for issue in issues[:12]
+                    ]
+                else:
+                    code = "IMPACT_RESULT_INVALID"
+                    fields = []
+                rejected.append({
+                    "index": index, "code": code,
+                    "invalidFields": fields,
+                })
+                if trace is not None:
+                    trace.record(
+                        "IMPACT_PROPOSAL_REJECTED",
+                        eventId=packet.eventId,
+                        proposalIndex=index,
+                        validationCode=code,
+                        invalidFields=fields,
+                    )
+            else:
+                impacts.append(accepted)
+                if trace is not None:
+                    trace.record(
+                        "IMPACT_PROPOSAL_ACCEPTED",
+                        eventId=packet.eventId,
+                        proposalIndex=index,
+                        sourceIds=accepted["supportingSourceIds"],
+                    )
+    else:
+        for item in analysis.impacts:
+            impacts.append(
+                _validate_one_impact(item, facts, by_id, has_unverified)
             )
-        impacts.append({
-            **item.model_dump(),
-            "supportingSourceIds": sorted({claim.sourceId for claim in references}),
-            "observedMarketReaction": False,
-            "pressureNotPriceForecast": True,
-            "expectationComparisonSemanticallyVerified": False,
-        })
     # Only an actually empty, schema-valid impact response may trigger a
     # separate abstention analysis. This cannot erase a valid impact.
     abstention_detail: dict | None = None
     model_calls = 2
-    if ollama_json_mode and not impacts:
+    if ollama_json_mode and not impacts and not rejected:
         raw_abstention = provider.generate_json(
             system=ABSTENTION_SYSTEM,
             user=json.dumps({
@@ -551,6 +627,7 @@ def analyze_pressure_two_stage(
             eventId=packet.eventId,
             acceptedImpactCount=len(impacts),
             modelAbstention=analysis.noImpactCategory,
+            rejectedImpactCount=len(rejected),
             groundedSourceIds=sorted({
                 source_id for item in impacts
                 for source_id in item["supportingSourceIds"]
@@ -559,6 +636,7 @@ def analyze_pressure_two_stage(
     return _report(
         packet, provider, packet_hash, visible,
         [claim.model_dump() for claim in facts.claims], impacts, model_calls,
+        rejected_impacts=rejected,
         abstention=(
             abstention_detail if ollama_json_mode
             else {
@@ -575,10 +653,17 @@ def _report(
     packet: MarketEvidencePacket, provider: LLMProvider, digest: str,
     visible: list, claims: list[dict], impacts: list[dict], calls: int,
     abstention: dict | None = None,
+    rejected_impacts: list[dict] | None = None,
 ) -> dict:
     return {
         "schemaVersion": "multi_source_market_pressure_v2",
-        "status": "CONDITIONAL_MARKET_PRESSURE_REQUIRES_REVIEW",
+        "status": (
+            "PARTIAL_MARKET_PRESSURE_REQUIRES_REVIEW"
+            if rejected_impacts and impacts
+            else "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+            if rejected_impacts
+            else "CONDITIONAL_MARKET_PRESSURE_REQUIRES_REVIEW"
+        ),
         "eventId": packet.eventId,
         "asOfDateExclusive": packet.asOfDateExclusive.isoformat(),
         "sourceDigestSha256": digest,
@@ -591,6 +676,8 @@ def _report(
         ],
         "groundedClaims": claims,
         "impacts": impacts,
+        "rejectedImpacts": rejected_impacts or [],
+        "proposedImpactCount": len(impacts) + len(rejected_impacts or []),
         "noImpactAssessment": (
             abstention if abstention is not None else
             {"category": "NO_GROUNDED_CLAIMS", "explanation": (
