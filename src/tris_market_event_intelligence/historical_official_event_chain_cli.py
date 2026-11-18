@@ -393,7 +393,7 @@ def run_replay(
         )
         if reasoning_mode == "staged-composed":
             composed = generate_composed_explanation(provider, packet, draft)
-            question_axes = assess_question_axes(provider, packet, draft)
+            question_axes = assess_question_axes(provider, packet, draft, composed)
             assessment = {
                 "acceptedFactInterpretations": [],
                 "rejectedFactInterpretations": [],
