@@ -31,7 +31,7 @@ class ComposedProvider(StageProvider):
             claim = envelope["claim"]
             if self.wrong_scope:
                 return json.dumps({
-                    "explanation": "Incomplete",
+                    "explanation": "The regulator described a source action without finishing the sentence",
                     "limitation": (
                         "The original official claim does not establish "
                         "the outcome of the following stage."
