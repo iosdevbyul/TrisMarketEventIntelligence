@@ -26,6 +26,8 @@ def _stage(system: str) -> str:
         return "FACT_EXTRACTION"
     if "CONDITIONAL economic MARKET PRESSURE" in system:
         return "IMPACT_GENERATION"
+    if "Diagnose why a financial news/indicator event" in system:
+        return "ABSTENTION_REASON"
     return "UNKNOWN_MODEL_STAGE"
 
 
