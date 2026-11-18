@@ -355,3 +355,35 @@ This phase is **root-cause diagnosis**, not another attempt to force
 positive or negative predictions. After inspecting the actual raw
 response, fix the observed validator/prompt mismatch rather than
 adding arbitrary story-specific exceptions.
+
+
+### Root-caused v6 impact/abstention conflict — disjoint outputs
+
+The actual local v6 trace proves both groups successfully passed fact extraction:
+the Pakistan solar report yielded 2 grounded claims and the Nvidia news
+group yielded 3 grounded claims. **Both impact-stage raw responses were
+then rejected by the same root-level Pydantic validator**
+`IMPACT_ABSTENTION_CONTRADICTION`, not by missing facts.
+The request schema simultaneously advertised `impacts`,
+`noImpactCategory` and `noImpactExplanation`, allowing the model to
+fill both an impact proposal and a mutually exclusive abstention reason.
+The validator correctly rejected this inconsistent contract.
+
+The Ollama pressure generation schema is now strictly
+`{"impacts":[...]}` **without any abstention properties**. A nonempty
+pressure response is fully checked for source indexes, verbatim excerpts,
+real company targets, uncertainty, and economic transmission.
+Only if the validated impact list is empty is a **separate native model
+request** made for `noImpactCategory` and `noImpactExplanation`;
+the separate schema cannot contain `impacts`. The extra request is
+conditional, never used for a nonempty accepted pressure result.
+
+Any unexpected abstention field inside the impact response is explicitly
+rejected, never silently stripped. This change addresses the observed
+dual-output root cause rather than weakening evidence validators or
+hand-labeling particular Pakistan or Nvidia news stories. Full local
+stage-by-stage trace stays enabled, and the next create-only experiment
+uses `market-pressure-first-real-v7.json`.
+
+This is a structural contract and CI fix; successful economic reasoning
+by the real on-device Gemma4 model is **not yet established**.
