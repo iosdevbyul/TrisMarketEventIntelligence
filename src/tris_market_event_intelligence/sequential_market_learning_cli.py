@@ -9,7 +9,8 @@ import hashlib
 import json
 import sqlite3
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, time
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,8 @@ SECTOR_ETFS = {
     "BROAD_MARKET": "SPY",
 }
 DIRECTIONS = {"POSITIVE", "NEGATIVE", "NEUTRAL"}
+NEW_YORK = ZoneInfo("America/New_York")
+MAX_ARTICLE_DISCOVERY_LAG = timedelta(hours=48)
 PREDICTION_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -221,6 +224,16 @@ def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], i
             if published_dt > observed:
                 continue
         if not row.get("title") or not row.get("summary"):
+            continue
+        # A title repeated as summary is not enough to interpret an event.
+        if str(row["summary"]).strip().casefold() == str(row["title"]).strip().casefold():
+            continue
+        # Exclude historical backfills accidentally measured against the
+        # market reaction to their much later ingestion date.
+        if not published:
+            continue
+        lag = observed - published_dt
+        if lag < timedelta(0) or lag > MAX_ARTICLE_DISCOVERY_LAG:
             continue
         items.append(row)
     items.sort(key=lambda a: (a["firstObservedAt"], a["articleId"]))
@@ -485,15 +498,27 @@ def yahoo_bars(client: httpx.Client, symbol: str, observed: datetime,
 def price_return(client: httpx.Client, symbol: str, observed: datetime,
                  horizon: timedelta, interval: str) -> dict:
     bars = yahoo_bars(client, symbol, observed, horizon, interval=interval)
-    prior = [(t, p) for t, p in bars if t < observed]
-    later = [(t, p) for t, p in bars if t >= observed + horizon]
-    if not prior or not later:
+    # Yahoo daily timestamps normally denote the SESSION OPEN, although
+    # their quoted "close" is unavailable until that day's market CLOSE.
+    # Comparing an open timestamp to a close price leaks future information.
+    # Represent each bar by a conservative 16:00 New York market close.
+    sessions = []
+    for stamp, price in bars:
+        session_day = stamp.astimezone(NEW_YORK).date()
+        close_at = datetime.combine(session_day, time(16, 0), NEW_YORK).astimezone(UTC)
+        sessions.append((close_at, price))
+    before_bars = [(t, p) for t, p in sessions if t <= observed]
+    after_bars = [(t, p) for t, p in sessions if t >= observed + horizon]
+    if not before_bars or not after_bars:
         raise ValueError("Price bars unavailable around event")
-    before, start = prior[-1]
-    after, end = later[0]
+    before, start = before_bars[-1]
+    after, end = after_bars[0]
+    if after <= before:
+        raise ValueError("Invalid market evaluation window")
     return {
         "baselineAt": before.isoformat(), "outcomeAt": after.isoformat(),
         "baselinePrice": start, "outcomePrice": end,
+        "actualWindowHours": (after - before).total_seconds() / 3600,
         "return": end / start - 1,
     }
 
@@ -565,6 +590,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     articles, heldout = load_articles(args.source_db, count, cutoff)
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
+        "eligibilityVersion": "fresh-substantive-v2",
+        "dailyBarAlignment": "ny-close-v2",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
         "count": count, "horizonHours": args.horizon_hours,
         "interval": args.interval, "model": args.model,
@@ -614,6 +641,13 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 if current and (current[0] != article["articleId"]
                                 or current[1] != article_hash):
                     raise ValueError("Changed article in resumed journal")
+                if current and current[5] == "SKIPPED_MODEL_ERROR":
+                    print(json.dumps({
+                        "seq": index, "articleId": article["articleId"],
+                        "correct": 0, "wrong": 0, "unverified": 0,
+                        "phase": "SKIPPED_MODEL_ERROR",
+                    }), flush=True)
+                    continue
                 if not current:
                     rules = learning_memory.select(db, seq=index, article=article)
                     relevant = learning_memory.rule_prompt(rules)
@@ -629,7 +663,32 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         article, articles[:index - 1], client,
                     )
                     context["marketContext"] = market_context
-                    prediction = predict_with_repair(model, context)
+                    try:
+                        prediction = predict_with_repair(model, context)
+                    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                        # Save a visible failure and move on. Never fabricate
+                        # targets, returns, or a corrective lesson.
+                        failure = {
+                            "summary": "", "impacts": [],
+                            "modelFailureReason": str(exc)[:500],
+                            "marketContext": market_context,
+                        }
+                        db.execute(
+                            "INSERT INTO steps VALUES (?,?,?,?,?,?,?,?)",
+                            (index, article["articleId"], observed.isoformat(),
+                             article_hash, json.dumps(failure),
+                             json.dumps({"impacts": []}),
+                             json.dumps({"diagnosis": "", "lesson": ""}),
+                             "SKIPPED_MODEL_ERROR"),
+                        )
+                        db.commit()
+                        print(json.dumps({
+                            "seq": index, "articleId": article["articleId"],
+                            "correct": 0, "wrong": 0, "unverified": 0,
+                            "phase": "SKIPPED_MODEL_ERROR",
+                            "reason": str(exc)[:180],
+                        }), flush=True)
+                        continue
                     prediction["marketContext"] = market_context
                     # To test rule impact, compare a no-candidate shadow prediction
                     # using the SAME article, before fetching realized prices.
@@ -726,10 +785,20 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 FROM steps
             """).fetchone()
             lessons_count = db.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
+            skipped_count = db.execute(
+                "SELECT COUNT(*) FROM steps WHERE phase='SKIPPED_MODEL_ERROR'"
+            ).fetchone()[0]
+            complete_count = db.execute(
+                "SELECT COUNT(*) FROM steps WHERE phase='COMPLETE'"
+            ).fetchone()[0]
             return {
-                "status": "COMPLETE" if totals[1] == count else "INSUFFICIENT_CHRONOLOGICAL_ARTICLES",
+                "status": ("COMPLETE" if complete_count == count
+                           else "PARTIAL_WITH_MODEL_ERRORS" if skipped_count
+                           else "INSUFFICIENT_ELIGIBLE_ARTICLES"),
                 "articlesRequested": count, "articlesAvailable": len(articles),
-                "articlesCompleted": totals[1], "lessons": lessons_count,
+                "articlesCompleted": complete_count,
+                "articlesSkippedModelError": skipped_count,
+                "lessons": lessons_count,
                 "holdoutReserved": heldout, "journal": str(args.journal),
                 "marketReturnsAnalyzed": any(
                     any(r["status"] != "UNVERIFIED" for r in json.loads(row[0])["impacts"])
@@ -741,9 +810,11 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 "evaluationMode": "RETROSPECTIVE_SEQUENTIAL_FEEDBACK",
                 "pointInTimeCertified": False,
                 "warning": (
-                    "Corrective lessons may include outcomes that occurred after "
-                    "subsequent articles were published; do not report this study "
-                    "as leakage-free historical prediction accuracy."
+                    "Only recently observed, substantive summaries are eligible. "
+                    "Daily candle evaluation uses conservative New York close "
+                    "times, not verified intraday attribution. Corrective lessons "
+                    "may include outcomes learned after other historical articles; "
+                    "this remains a retrospective study, not leakage-free accuracy."
                 ),
             }
     finally:
