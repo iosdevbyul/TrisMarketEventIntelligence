@@ -76,8 +76,9 @@ def test_audit_shows_prediction_outcome_and_feedback(tmp_path):
     assert "Check rate expectations" in md
     page = audit.html_report(result)
     assert "FINANCIALS" in page
-    assert "NEUTRAL" in page
-    assert "NEGATIVE" in page
+    # HTML localizes directions; the persisted machine-readable values remain unchanged.
+    assert "<td>중립</td>" in page
+    assert "<td>하락</td>" in page
     assert "100" in page and "98" in page
     assert "Bank margin pressure" in page
 
