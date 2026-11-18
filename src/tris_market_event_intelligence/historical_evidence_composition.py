@@ -412,8 +412,15 @@ def assess_question_axes(
         # Evidence presentation is mechanically grounded in official
         # curator claim text. No synthetic model prose, punctuation repair,
         # or future facts are introduced in this final step.
+        # Preserve contextual refs, but keep unrelated background from
+        # crowding documented decisions out of the short explanation.
+        substantive = [
+            item for item in candidate_input
+            if item["role"] in {"DIRECT_ANSWER", "INTERMEDIATE_DECISION"}
+        ]
+        narrative_candidates = substantive or candidate_input
         sorted_evidence = sorted(
-            candidate_input,
+            narrative_candidates,
             key=lambda item: (
                 priority[item["role"]], item["sourceDate"]
             ),
