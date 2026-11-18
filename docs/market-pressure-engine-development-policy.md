@@ -303,3 +303,55 @@ writes create-only `market-pressure-first-real-v5.json`; it requires
 human review of whether inferred directions, strengths, sources and
 affected targets are actually coherent. This is not a semantic
 accuracy result and must not automatically enable persistence.
+
+
+### Critical diagnostic correction after the real v5 rejected run
+
+The user's v5 Gemma4 run completed five model calls and both event groups
+were rejected with `MODEL_SCHEMA_INVALID` and a root-level
+`value_error`. The previous safe response omitted the precise validator
+reason AND erased the successfully extracted first-stage claims in the
+rejected-group summary. Therefore `factsCount: 0` in that report **does
+not prove Gemma4 extracted no facts**. The specific cause of the root
+validation rejection must not be guessed.
+
+Further prompt tuning without the underlying model response is suspended.
+An opt-in **private, create-only, durable 0600 JSONL trace** now captures:
+
+1. Source candidate inventory and selected IDs (with UTC cutoff).
+2. Original model system/user prompts and schema for each event-group,
+   fact-extraction and impact-generation call.
+3. Original raw Gemma4 reply, call number, stage and SHA-256 checksum.
+4. First-stage fact-validation checkpoints, with grounded claims.
+5. Exact Pydantic field locations, public error types and full local
+   validation errors/traceback after rejection. An unchanged partial trace
+   remains on disk if any model call or validator throws.
+6. Final per-group validation state and aggregate run status.
+
+Full prompts and replies are intentionally kept ONLY in the private
+local diagnostic file. They may include original news excerpts and
+other sensitive source metadata; **never commit or upload the full trace**.
+The ordinary service API and public result JSON do not include raw
+model prompts or full error tracebacks.
+
+```bash
+git pull --ff-only origin feature/general-market-pressure-engine
+# One instrumented run; no --persist; creates v6.json + v6.json.trace.jsonl
+bash scripts/verify-market-pressure.sh 2026-11-18 --run
+
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+TRACE="$DATA/market-pressure-first-real-v6.json.trace.jsonl"
+bash scripts/inspect-market-pressure-trace.sh "$TRACE"
+# The following intentionally prints full private prompts and model output.
+# Use locally when examining the precise reason; do not post publicly.
+bash scripts/inspect-market-pressure-trace.sh "$TRACE" --raw
+```
+
+If `v6` already exists, use a fresh `MARKET_PRESSURE_OUTPUT`
+environment variable to a new path; the corresponding default trace
+name is derived from that output path. Both are create-only.
+
+This phase is **root-cause diagnosis**, not another attempt to force
+positive or negative predictions. After inspecting the actual raw
+response, fix the observed validator/prompt mismatch rather than
+adding arbitrary story-specific exceptions.
