@@ -312,6 +312,8 @@ def markdown(report: dict[str, Any]) -> str:
             f"- 기사 URL: {_text(record['sourceUrl'])}",
             f"- AI 분석 요약: {_text(record['originalPredictionSummary'])}",
             f"- 발표 전 시장 근거: {_text(record.get('marketContext'))}",
+            f"- 최초 발표 시각: {_text(record.get('publishedAtReported'))}",
+            f"- 최초 수집 시각: {_text(record.get('firstObservedAt'))}",
             f"- 기대 대비 분석: {_text(record.get('surpriseAssessment'))}",
             f"- 대상 매핑 거부 기록: {_text(record.get('targetMappingRejections'))}",
             f"- 기사 내용: {_text(record['articleSummary'])}",
@@ -460,7 +462,8 @@ def html_report(report: dict[str, Any]) -> str:
             f"{esc(record['title'] or '제목을 원본 DB에서 찾을 수 없음')}"
             f" <small>기사 ID {esc(record['articleId'])}</small></summary>"
             "<div class='body'>"
-            f"<p><b>관측 시각:</b> {esc(record['firstObservedAt'])} · "
+            f"<p><b>원래 발표 시각:</b> {esc(record.get('publishedAtReported'))} · "
+            f"<b>최초 수집 시각:</b> {esc(record['firstObservedAt'])} · "
             f"<b>출처:</b> {esc(record['source'])}</p>"
             f"<p><b>기사 원문 링크:</b> {article_link(record['sourceUrl'])}</p>"
             f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
