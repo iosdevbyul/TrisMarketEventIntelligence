@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run both independent, prospective historical source-composition checks.
-# Never overwrite the saved FAA v1-v4 or FDA v1 comparison outputs.
+# Never overwrite the saved FAA v1-v5 or FDA v1-v2 comparison outputs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,12 +47,12 @@ run_case "FAA" \
     "research/faa-7379max-january-2024-event-chain.json" \
     "research/faa-2024-question-lifecycle.json" \
     "2024-01-13" "2024-01-25" \
-    "$DATA/faa-evidence-composed-v5.json"
+    "$DATA/faa-evidence-composed-v6.json"
 
 run_case "FDA" \
     "research/fda-covid-vaccine-2023-event-chain.json" \
     "research/fda-2023-question-lifecycle.json" \
     "2023-06-17" "2023-10-04" \
-    "$DATA/fda-evidence-composed-v2.json"
+    "$DATA/fda-evidence-composed-v3.json"
 
 echo "BOTH_CASES_GENERATED_REQUIRES_HUMAN_SEMANTIC_REVIEW"
