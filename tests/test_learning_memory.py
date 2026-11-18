@@ -159,3 +159,43 @@ def test_unverified_and_disjoint_targets_cannot_count_as_evidence():
         assert not row["comparable"]
         lm.reconcile(db, seq=2)
         assert lm.report(db)["pairedPITEligibleTrials"] == 0
+
+
+def test_active_rule_retired_after_paired_regression():
+    with sqlite3.connect(":memory:") as db:
+        lm.initialize(db)
+        origin = article(1)
+        lm.learn(
+            db, seq=1, article_id=1, article=origin,
+            evaluation=evaluation(origin["firstObservedAt"]), feedback=feedback(),
+        )
+        rule = lm.select(db, seq=2, article=article(2, 15))[0]
+        correct = {"impacts": [
+            {"targetType": "STOCK", "target": "NVDA", "direction": "POSITIVE"},
+        ]}
+        wrong = {"impacts": [
+            {"targetType": "STOCK", "target": "NVDA", "direction": "NEGATIVE"},
+        ]}
+        for seq in range(2, 7):
+            lm.compare_trial(
+                db, seq=seq, article=article(seq, 15 + seq),
+                candidate=rule, primary=correct, baseline=wrong,
+                evaluation=evaluation(article(seq, 15 + seq)["firstObservedAt"]),
+            )
+            lm.reconcile(db, seq=seq)
+        status, version = db.execute(
+            "SELECT status, version FROM memory_rules WHERE id=1"
+        ).fetchone()
+        assert (status, version) == ("ACTIVE", 3)
+        # Subsequent paired comparisons show the previously good rule losing.
+        for seq in range(7, 21):
+            lm.compare_trial(
+                db, seq=seq, article=article(seq, 20 + seq),
+                candidate=rule, primary=wrong, baseline=correct,
+                evaluation=evaluation(article(seq, 20 + seq)["firstObservedAt"]),
+            )
+            lm.reconcile(db, seq=seq)
+        assert db.execute(
+            "SELECT status, version FROM memory_rules WHERE id=1"
+        ).fetchone() == ("RETIRED", 4)
+        assert not lm.select(db, seq=22, article=article(22, 50))
