@@ -181,6 +181,8 @@ class DecisionScreenProvider(ComposedProvider):
                         role = "RELATED_CONTEXT"
                     if ref == ("faa-20240124-production", "no-production-expansion"):
                         role = "INTERMEDIATE_DECISION"
+                    if ref == ("faa-20240121-900er-inspection", "related-design"):
+                        role = "RELATED_CONTEXT"
                 elif "manufacturer-filings" in question:
                     if ref == ("fda-20230616-formula", "filing-still-needed"):
                         role = "RELATED_CONTEXT"
@@ -247,6 +249,8 @@ def test_later_official_decisions_are_reconciled_separately_from_final_records()
             for x in item["supportingEvidence"]
         }
         assert assessment["axesSemanticallyVerified"] is False
+        if "boeing-production-oversight" in question:
+            assert "737-900ER" not in item["explanation"]
 
 
 class UnsupportedDirectAnswerProvider(ComposedProvider):
