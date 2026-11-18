@@ -571,7 +571,7 @@ def run_replay(
                 len(source["claimCalls"]) for source in
                 assessment["sourceScopedComposition"]["sourceGenerationDiagnostics"]
             )
-            + int(bool(draft["visibleQuestions"]))
+            + 2 * len(draft["visibleQuestions"])
             if reasoning_mode == "staged-composed" else
             2 if draft is not None else 1
         ),
