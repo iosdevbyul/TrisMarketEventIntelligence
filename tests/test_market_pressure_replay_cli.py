@@ -38,7 +38,13 @@ def _trace_fixture(path: Path, *, missing_impact: bool = False) -> None:
         {
             "event": "LLM_REQUEST", "stage": "IMPACT_GENERATION",
             "call": 3, "modelId": "recorded-gemma",
-            "userInput": "{}",
+            "userInput": json.dumps({
+                "eventId": packet.eventId,
+                "groundedClaims": [
+                    {"index": index, **claim, "sourceVerification": "REPORTED_UNVERIFIED"}
+                    for index, claim in enumerate(first_pass()["claims"])
+                ],
+            }),
         },
     ]
     if not missing_impact:
