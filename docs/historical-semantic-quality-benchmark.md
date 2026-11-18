@@ -7,11 +7,12 @@ historical official-source event**, not whether it emits valid JSON. This
 evaluation is independent of DonghakStockVision and makes no stock-price,
 market-impact, or causal-completion assertion.
 
-The first benchmark uses eight question/cutoff observations across FAA
-January 2024 and FDA April–October 2023. Ground truth here is **retrospective
+The first **development benchmark** uses eight question/cutoff observations
+across FAA January 2024 and FDA April–October 2023. Ground truth here is **retrospective
 curator judgment over dated official-release paraphrases**, not original
 publication-time web captures. The benchmark is deliberately excluded from
-all model prompts and only read by the offline scorer.
+all model prompts and only read by the offline scorer. Because FAA/FDA were
+used repeatedly to guide design changes, they are NOT unseen holdouts.
 
 ## Dimensions
 
@@ -29,7 +30,9 @@ all model prompts and only read by the offline scorer.
 - **Explainability**: model-screened NOT_RELEVANT decisions are preserved
   for omission reviews; a selected claim does not validate its own relevance.
 
-The scorer reports individual failures alongside macro accuracy. A score of
+The scorer reports individual failures alongside macro accuracy. Its
+`evaluationSplitIsFrozenHoldout` trust gate deliberately fails on these
+FAA/FDA development cases even if every scored answer matches. A score of
 100% on eight observations does NOT establish generalization.
 
 ## Important adjudication case
@@ -80,6 +83,7 @@ The implemented gate is intentionally strict:
 | Independent event families | At least 5 |
 | Question/cutoff judgments | At least 30 |
 | Independent reference adjudication | Required |
+| Evaluation split | Previously untouched, frozen holdout |
 | Historical publication-time snapshot verification | Required |
 
 A benchmark can be structurally green while the **research trust gate stays
@@ -92,8 +96,10 @@ unreviewed external claims, or an assertion of verified economic causality.
 1. Grade the saved 2026-11-18 FAA/FDA runs and freeze that first baseline.
 2. Resolve disputed scoring definitions with independent reviewer evidence,
    and version the reference rather than silently editing a key.
-3. Introduce three additional independent official-source event families,
-   using genuinely historical, publication-time verifiable records.
+3. Introduce at least three additional independent official-source event
+   families, using genuinely historical, publication-time verifiable records.
+   Reserve these as frozen, previously untouched evaluation data, not as
+   further iterative prompt-tuning examples.
 4. Run a frozen holdout comparison with the same prompt/model settings,
    measuring error types rather than only aggregate success.
 5. Only after thresholds, source integrity, historical PIT, independent
