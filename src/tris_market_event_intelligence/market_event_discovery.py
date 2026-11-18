@@ -91,10 +91,17 @@ def recent_candidates(
     with sqlite3.connect(
         db_path.resolve().as_uri() + "?mode=ro", uri=True,
     ) as conn:
-        for table, source_kind in (
+        has_indicator_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='market_indicator_releases'"
+        ).fetchone() is not None
+        tables = [
             ("articles", "article"),
             ("economic_events", "economic-event"),
-        ):
+        ]
+        if has_indicator_table:
+            tables.append(("market_indicator_releases", "indicator-release"))
+        for table, source_kind in tables:
             # An article with a low DB ID may have a later publication
             # timestamp than thousands of newly inserted feed articles.
             # Do not truncate by ID before checking chronological eligibility.
@@ -124,6 +131,9 @@ def recent_candidates(
                         article_ids=(identifier,) if source_kind == "article" else (),
                         economic_event_ids=(
                             (identifier,) if source_kind == "economic-event" else ()
+                        ),
+                        indicator_release_ids=(
+                            (identifier,) if source_kind == "indicator-release" else ()
                         ),
                     )
                 except (ValueError, sqlite3.Error):
@@ -222,12 +232,16 @@ def discover_and_analyze(
                 row["recordId"] for row in rows
                 if row["kind"] == "economic-event"
             ),
+            indicator_release_ids=tuple(
+                row["recordId"] for row in rows
+                if row["kind"] == "indicator-release"
+            ),
         )
         report = analyze_pressure_two_stage(packet, provider)
         calls += report["modelCalls"]
         results.append({
             "proposalExplanation": group.connectionExplanation,
-            "groupSourceIds": [row["evidence"].sourceId for row in rows],
+            "groupSourceIds": [item.sourceId for item in packet.evidences],
             "analysis": report,
             "groupingVerified": False,
         })
