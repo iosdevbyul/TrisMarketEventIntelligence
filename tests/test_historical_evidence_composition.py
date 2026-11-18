@@ -329,3 +329,39 @@ def test_unproven_completion_is_quarantined_not_published() -> None:
     )
     assert all(x["completionEvidenceWarning"] is not None for x in axes)
     assert step["assessment"]["semanticAccuracyVerified"] is False
+
+
+class InconsistentEvidenceStateProvider(DecisionScreenProvider):
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if "regulatoryDecisionStage" in schema["properties"]:
+            self.calls += 1
+            envelope = json.loads(user)
+            self.inputs.append(envelope)
+            return json.dumps({
+                "regulatoryDecisionStage": "NOT_OBSERVED",
+                "implementationCompletionStatus": "NOT_OBSERVED",
+                "requestedEvidenceStatus": "NOT_OBSERVED",
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_intermediate_decision_conflicts_are_review_flags_not_overrides() -> None:
+    provider = InconsistentEvidenceStateProvider()
+    step = chain.run_replay(
+        fda(), date(2023, 10, 4), provider,
+        question_tracks=tracks(), reasoning_mode="staged-composed",
+    )
+    axes = step["assessment"]["independentQuestionAxes"]["questionAssessments"]
+    filings = next(
+        item for item in axes
+        if item["questionId"] == "fda-2023-manufacturer-filings-evidence"
+    )
+    assert filings["regulatoryDecisionStage"] == "NOT_OBSERVED"
+    assert filings["requestedEvidenceStatus"] == "NOT_OBSERVED"
+    assert "INTERMEDIATE_DECISION_WITH_NO_REGULATORY_DECISION" in (
+        filings["evidenceStateConsistencyFlags"]
+    )
+    assert "SELECTED_REGULATORY_ACTION_WITH_NO_REQUESTED_EVIDENCE" in (
+        filings["evidenceStateConsistencyFlags"]
+    )
+    assert filings["evidenceStateConsistencyVerified"] is False
