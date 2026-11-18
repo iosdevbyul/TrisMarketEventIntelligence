@@ -65,6 +65,7 @@ class ComposedProvider(StageProvider):
             envelope = json.loads(user)
             self.inputs.append(envelope)
             return json.dumps({
+                "primaryEvidenceIndex": 0,
                 "regulatoryDecisionStage": "ANNOUNCED",
                 "requestedEvidenceStatus": "PARTIAL",
                 "implementationCompletionStatus": "NOT_OBSERVED",
@@ -206,7 +207,18 @@ class DecisionScreenProvider(ComposedProvider):
             self.calls += 1
             envelope = json.loads(user)
             self.inputs.append(envelope)
+            candidates = envelope["screenedRelevantEvidence"]
+            primary_index = max(
+                range(len(candidates)),
+                key=lambda i: (
+                    {"DIRECT_ANSWER": 3, "INTERMEDIATE_DECISION": 2,
+                     "RELATED_CONTEXT": 1}[candidates[i]["role"]],
+                    candidates[i]["sourceDate"],
+                    i,
+                ),
+            )
             return json.dumps({
+                "primaryEvidenceIndex": primary_index,
                 "regulatoryDecisionStage": (
                     "AUTHORIZED"
                     if any(x["role"] == "DIRECT_ANSWER"
@@ -263,6 +275,7 @@ class UnsupportedDirectAnswerProvider(ComposedProvider):
             self.calls += 1
             self.inputs.append(json.loads(user))
             return json.dumps({
+                "primaryEvidenceIndex": 0,
                 "regulatoryDecisionStage": "AUTHORIZED",
                 "implementationCompletionStatus": "NOT_OBSERVED",
                 "directRecordAvailability": "NOT_OBSERVED",
@@ -312,6 +325,7 @@ class OverconfidentCompletionProvider(ComposedProvider):
             self.calls += 1
             self.inputs.append(json.loads(user))
             return json.dumps({
+                "primaryEvidenceIndex": 0,
                 "regulatoryDecisionStage": "ANNOUNCED",
                 "implementationCompletionStatus": "COMPLETED",
                 "directRecordAvailability": "NOT_OBSERVED",
@@ -346,6 +360,7 @@ class InconsistentEvidenceStateProvider(DecisionScreenProvider):
             envelope = json.loads(user)
             self.inputs.append(envelope)
             return json.dumps({
+                "primaryEvidenceIndex": 0,
                 "regulatoryDecisionStage": "NOT_OBSERVED",
                 "implementationCompletionStatus": "NOT_OBSERVED",
                 "directRecordAvailability": "NOT_OBSERVED",
@@ -385,6 +400,7 @@ class SplitEvidenceProvider(DecisionScreenProvider):
             self.calls += 1
             self.inputs.append(json.loads(user))
             return json.dumps({
+                "primaryEvidenceIndex": 0,
                 "regulatoryDecisionStage": "NOT_OBSERVED",
                 "implementationCompletionStatus": "UNKNOWN",
                 "requestedEvidenceStatus": "PARTIAL",
@@ -410,3 +426,87 @@ def test_original_documents_and_regulatory_progress_are_independent() -> None:
     assert filings["requestedEvidenceStatus"] == "PARTIAL"
     assert filings["implementationCompletionStatus"] == "UNKNOWN"
     assert step["assessment"]["semanticAccuracyVerified"] is False
+
+
+class PrimaryEvidenceProvider(DecisionScreenProvider):
+    """The model may prefer a precise contextual claim over a generic step."""
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if "regulatoryDecisionStage" in schema["properties"]:
+            self.calls += 1
+            envelope = json.loads(user)
+            self.inputs.append(envelope)
+            items = envelope["screenedRelevantEvidence"]
+            question = envelope["question"]["questionId"]
+            wanted = (
+                "production-audit" if "boeing-production-oversight" in question
+                else "xbb-recommendation"
+                if "authorized-formula" in question else None
+            )
+            index = next(
+                (i for i, item in enumerate(items)
+                 if item["claimId"] == wanted),
+                0,
+            )
+            return json.dumps({
+                "primaryEvidenceIndex": index,
+                "regulatoryDecisionStage": "ANNOUNCED",
+                "implementationCompletionStatus": "NOT_OBSERVED",
+                "requestedEvidenceStatus": "PARTIAL",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_primary_evidence_not_forced_by_role_priority() -> None:
+    from test_historical_official_event_chain import load as faa
+
+    for doc, question_tracks, cutoff, question, expected in (
+        (faa(), json.loads(Path(
+            "research/faa-2024-question-lifecycle.json"
+        ).read_text(encoding="utf-8")), date(2024, 1, 13),
+         "faa-2024-boeing-production-oversight-outcome",
+         "production-audit"),
+        (fda(), tracks(), date(2023, 6, 17),
+         "fda-2023-xbb15-authorized-formula",
+         "xbb-recommendation"),
+    ):
+        provider = PrimaryEvidenceProvider()
+        step = chain.run_replay(
+            doc, cutoff, provider,
+            question_tracks=question_tracks, reasoning_mode="staged-composed",
+        )
+        result = next(
+            x for x in step["assessment"]["independentQuestionAxes"][
+                "questionAssessments"
+            ] if x["questionId"] == question
+        )
+        assert result["claimId"] == expected
+        assert result["primaryEvidenceSelectionMethod"] == (
+            "MODEL_INDEX_BOUND_TO_VISIBLE_CLAIM"
+        )
+        assert result["baselinePrimaryEvidence"]["claimId"] != expected
+        assert step["modelCalls"] == provider.calls
+
+
+class OutOfRangePrimaryProvider(PrimaryEvidenceProvider):
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        raw = super().generate_json(system=system, user=user, schema=schema)
+        if "regulatoryDecisionStage" in schema["properties"]:
+            value = json.loads(raw)
+            value["primaryEvidenceIndex"] = 500
+            return json.dumps(value)
+        return raw
+
+
+def test_model_cannot_invent_out_of_range_primary_reference() -> None:
+    provider = OutOfRangePrimaryProvider()
+    with pytest.raises(
+        ComposedEvidenceError,
+        match="COMPOSED_PRIMARY_EVIDENCE_INDEX_INVALID",
+    ):
+        chain.run_replay(
+            fda(), date(2023, 6, 17), provider,
+            question_tracks=tracks(), reasoning_mode="staged-composed",
+        )
