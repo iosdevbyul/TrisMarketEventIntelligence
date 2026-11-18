@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh historical-semantic-score --benchmark REFERENCE_JSON --faa SAVED_FAA --fda SAVED_FDA [--output NEW_SCORE_JSON] [zero model calls]"
   echo "  bash scripts/news-learning-review.sh historical-staged-transfer --reference-chain FDA_JSON --reference-run SAVED_FDA_STAGED_JSON --reference-tracks FDA_QUESTIONS --challenge-chain FAA_JSON --challenge-run SAVED_FAA_STAGED_JSON --challenge-tracks FAA_QUESTIONS --output NEW_PRIVATE_COMPARISON_JSON [zero model calls]"
   echo "  bash scripts/news-learning-review.sh historical-event-chain --chain research/faa-7379max-january-2024-event-chain.json --as-of YYYY-MM-DD --preview|--run [--model gemma4:e2b --reasoning-mode staged-compact --output NEW_JSON]"
   echo "  bash scripts/news-learning-review.sh historical-event-chain --chain research/faa-7379max-january-2024-event-chain.json --as-of YYYY-MM-DD --preview|--run [--model gemma4:e2b --output NEW_JSON]"
@@ -179,6 +180,9 @@ case "$action" in
     ;;
   historical-event-chain)
     module="tris_market_event_intelligence.historical_official_event_chain_cli"
+    ;;
+  historical-semantic-score)
+    module="tris_market_event_intelligence.historical_semantic_quality_cli"
     ;;
   historical-staged-transfer)
     module="tris_market_event_intelligence.historical_cross_event_staged_transfer_cli"
