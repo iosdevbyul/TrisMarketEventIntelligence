@@ -8,6 +8,7 @@ MODE="${2:---preview}"
 PERSIST="${3:-}"
 DB="${MARKET_EVENT_DB:-$DATA/news.sqlite3}"
 OUTPUT="${MARKET_PRESSURE_OUTPUT:-$DATA/market-pressure-first-real-v6.json}"
+TRACE="${MARKET_PRESSURE_TRACE:-$OUTPUT.trace.jsonl}"
 
 if [[ "$MODE" != "--preview" && "$MODE" != "--run" ]] || \
    [[ -n "$PERSIST" && "$PERSIST" != "--persist" ]] || \
@@ -27,7 +28,11 @@ if [[ "$MODE" == "--run" ]]; then
     echo "OUTPUT_ALREADY_EXISTS: $OUTPUT" >&2
     exit 2
   fi
-  args+=(--model gemma4:e2b --output "$OUTPUT")
+  if [[ -e "$TRACE" || -L "$TRACE" ]]; then
+    echo "TRACE_ALREADY_EXISTS: $TRACE" >&2
+    exit 2
+  fi
+  args+=(--model gemma4:e2b --output "$OUTPUT" --trace "$TRACE")
   if [[ "$PERSIST" == "--persist" ]]; then
     args+=(--persist)
   fi
@@ -54,5 +59,7 @@ if [[ "$MODE" == "--run" ]]; then
     }]
   }' "$OUTPUT"
   echo "FULL_RESULT: $OUTPUT"
+  echo "PRIVATE_TRACE: $TRACE"
+  echo "TRACE_CONTAINS_RAW_NEWS_AND_MODEL_RESPONSES; DO_NOT_PUBLISH"
   echo "REQUIRES_HUMAN_SEMANTIC_REVIEW; NO_PRICE_FORECAST"
 fi
