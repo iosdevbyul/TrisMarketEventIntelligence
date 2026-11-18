@@ -34,7 +34,9 @@ python -m tris_market_event_intelligence.sequential_market_learning_cli \
   --journal "$DATA/sequential-learning-v1.sqlite3"
 ```
 
-The journal is **create/resume**, and never changes the source news DB.
+The journal is **create/resume/extend**: the same run can increase `--count`
+from 10 to 100 to 1,000 without reprocessing completed articles, provided
+all other parameters remain unchanged. It never changes the source news DB.
 Article predictions are committed before price evaluation. After each confirmed
 mistake, the AI writes a diagnosis and a corrective instruction for subsequent
 articles. Original errors remain immutable. There are no trade actions.
