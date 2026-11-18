@@ -504,26 +504,27 @@ def run_replay(
             # In composed mode, the LAST provider call assesses questions:
             # never attribute that call's tokens/stop to source prose.
             source_rows = assessment["sourceScopedComposition"]
-            source_calls = source_rows["sourceGenerationDiagnostics"]
-            source_explanations = source_rows["sourceExplanations"]
-            source_ids = source_rows["sourceCoverage"]["requiredSourceIds"]
             assessment["generationTerminationBySource"] = [
                 {
-                    "sourceId": source_id,
+                    "sourceId": source_call["sourceId"],
                     "claims": [
                         {
-                            "claimId": row["claimId"],
+                            "claimId": call["claimId"],
                             "diagnostic": diagnose_termination(
-                                metadata,
-                                narrative=row["explanation"],
+                                call["provider"],
+                                narrative=next(
+                                    row["explanation"] for row in
+                                    source_rows["sourceExplanations"]
+                                    if row["sourceId"] == source_call["sourceId"]
+                                    and row["claimId"] == call["claimId"]
+                                ),
                                 schema_character_limit=310,
                             ),
                         }
-                        for row in source_explanations
-                        if row["sourceId"] == source_id
+                        for call in source_call["claimCalls"]
                     ],
                 }
-                for source_id, metadata in zip(source_ids, source_calls)
+                for source_call in source_rows["sourceGenerationDiagnostics"]
             ]
             assessment["generationTerminationAnalysis"] = diagnose_termination(
                 stage_two_generation,
@@ -566,7 +567,10 @@ def run_replay(
         "curatorEvidenceLedger": curator_ledger,
         "questionLifecycle": lifecycle,
         "modelCalls": (
-            1 + len(assessment["sourceScopedComposition"]["sourceGenerationDiagnostics"])
+            1 + sum(
+                len(source["claimCalls"]) for source in
+                assessment["sourceScopedComposition"]["sourceGenerationDiagnostics"]
+            )
             + int(bool(draft["visibleQuestions"]))
             if reasoning_mode == "staged-composed" else
             2 if draft is not None else 1
