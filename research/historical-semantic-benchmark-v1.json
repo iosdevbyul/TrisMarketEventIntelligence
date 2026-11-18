@@ -1,6 +1,6 @@
 {
   "schemaVersion": "historical_semantic_benchmark_v1",
-  "purpose": "Reviewer-authored held-out scoring. Never load into model prompts or research runtime. Retrospective official-source paraphrases, NOT independently archived publication-time snapshots.",
+  "purpose": "Reviewer-authored development and regression scoring. Never load into model prompts or research runtime. Retrospective official-source paraphrases, NOT independently archived publication-time snapshots.",
   "reviewStatus": "PROVISIONAL_CURATOR_REFERENCE",
   "minimumIndependentEventFamiliesForTrust": 5,
   "minimumQuestionAssessmentsForTrust": 30,
@@ -230,5 +230,6 @@
         "UNKNOWN"
       ]
     }
-  ]
+  ],
+  "evaluationSplit": "DEVELOPMENT_REUSED_FOR_MODEL_TUNING"
 }
