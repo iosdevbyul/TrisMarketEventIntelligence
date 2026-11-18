@@ -14,9 +14,9 @@ from typing import Any
 
 import httpx
 
+from tris_market_event_intelligence import learning_memory
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 from tris_market_event_intelligence.llm_runtime import LLMSettings
-from tris_market_event_intelligence import learning_memory
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 SECTOR_ETFS = {
