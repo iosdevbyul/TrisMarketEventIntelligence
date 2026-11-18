@@ -32,6 +32,10 @@ def main() -> None:
     parser.add_argument("--lookback-days", type=int, default=10)
     parser.add_argument("--page", type=int, default=0)
     parser.add_argument("--max-groups", type=int, default=2)
+    parser.add_argument(
+        "--reasoning-mode", choices=("causal", "legacy"),
+        default="causal", help="Causal is event-agnostic; legacy retained for comparison",
+    )
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--trace", type=Path,
@@ -58,6 +62,11 @@ def main() -> None:
         }, ensure_ascii=False))
         return
 
+    if args.persist and args.reasoning_mode == "causal":
+        parser.error(
+            "GENERAL_CAUSAL_RESEARCH_NOT_SEMANTICALLY_VERIFIED: "
+            "--persist is disabled for new causal research"
+        )
     if args.output is None:
         parser.error("--run requires --output")
     if args.output.exists() or args.output.is_symlink():
@@ -93,6 +102,7 @@ def main() -> None:
                 args.db, as_of=args.as_of, provider=observed,
                 lookback_days=args.lookback_days, max_groups=args.max_groups,
                 as_of_time=args.as_of_time, page=args.page,
+                reasoning_mode=args.reasoning_mode,
             )
         except LLMExecutionError as exc:
             response = getattr(exc.__cause__, "response", None)
