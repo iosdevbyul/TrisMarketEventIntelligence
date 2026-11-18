@@ -39,6 +39,8 @@ def build(path: Path):
                                 "priceProxy": "XLF", "direction": "NEUTRAL",
                                 "actualDirection": "NEGATIVE", "status": "WRONG",
                                 "absoluteReturn": -0.02,
+                                "baselinePrice": 100,
+                                "outcomePrice": 98,
                                 "benchmarkReturn": -0.01,
                                 "excessReturn": -0.01,
                                 "baselineAt": "2026-11-14T14:30:00+00:00",
@@ -63,6 +65,8 @@ def test_audit_shows_prediction_outcome_and_feedback(tmp_path):
     assert row["outcomes"][0]["predictedDirection"] == "NEUTRAL"
     assert row["outcomes"][0]["observedDirection"] == "NEGATIVE"
     assert row["outcomes"][0]["absoluteReturn"] == -0.02
+    assert row["outcomes"][0]["baselinePrice"] == 100
+    assert row["outcomes"][0]["outcomePrice"] == 98
     assert row["outcomes"][0]["predictionReason"] == "Opposing interest-rate effects"
     assert row["correctiveRule"] == "Check rate expectations before direction"
     md = audit.markdown(result)
