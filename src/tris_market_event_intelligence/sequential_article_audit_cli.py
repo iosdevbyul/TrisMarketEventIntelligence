@@ -9,7 +9,7 @@ import argparse
 import json
 import sqlite3
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -246,11 +246,11 @@ def markdown(report: dict[str, Any]) -> str:
     lines = [
         "# 기사별 시장 영향 분석 감사 보고서",
         "",
-        f"- 처리 기사: {summary['articlesShown']}건 "
-        f"(COMPLETE {summary['articlesCompleted']}건)",
-        f"- 저장된 판정: 정답 {summary['predictionsCorrect']} / "
-        f"오답 {summary['predictionsWrong']} / "
-        f"검증 불가 {summary['predictionsUnverified']}",
+        (f"- 처리 기사: {summary['articlesShown']}건 "
+         f"(COMPLETE {summary['articlesCompleted']}건)"),
+        (f"- 저장된 판정: 정답 {summary['predictionsCorrect']} / "
+         f"오답 {summary['predictionsWrong']} / "
+         f"검증 불가 {summary['predictionsUnverified']}"),
         "- 주의: 정답·오답은 기존 시스템 판정이며 검증된 정답이 아닙니다.",
         "",
         "## 검증 경고",
@@ -291,16 +291,16 @@ def markdown(report: dict[str, Any]) -> str:
             lines.append("예측된 대상이 없거나 가격 평가가 기록되지 않았습니다.")
         for x in record["outcomes"]:
             lines.extend([
-                f"**{_text(x['target'])} ({_text(x['priceProxy'])}) — "
-                f"{_text(x['verdict'])}**",
-                f"- AI 예측: {_text(x['predictedDirection'])} "
-                f"(근거: {_text(x['predictionReason'])})",
-                f"- 실제 방향: {_text(x['observedDirection'])}; "
-                f"절대 수익률 {_percent(x['absoluteReturn'])}; "
-                f"벤치마크 수익률 {_percent(x['benchmarkReturn'])}; "
-                f"초과 수익률 {_percent(x['excessReturn'])}",
-                f"- 기준 가격 시각: {_text(x['baselineAt'])}; "
-                f"결과 가격 시각: {_text(x['outcomeAt'])}",
+                (f"**{_text(x['target'])} ({_text(x['priceProxy'])}) — "
+                 f"{_text(x['verdict'])}**"),
+                (f"- AI 예측: {_text(x['predictedDirection'])} "
+                 f"(근거: {_text(x['predictionReason'])})"),
+                (f"- 실제 방향: {_text(x['observedDirection'])}; "
+                 f"절대 수익률 {_percent(x['absoluteReturn'])}; "
+                 f"벤치마크 수익률 {_percent(x['benchmarkReturn'])}; "
+                 f"초과 수익률 {_percent(x['excessReturn'])}"),
+                (f"- 기준 가격 시각: {_text(x['baselineAt'])}; "
+                 f"결과 가격 시각: {_text(x['outcomeAt'])}"),
                 f"- 미검증 사유: {_text(x['unverifiedReason'])}",
                 "",
             ])
