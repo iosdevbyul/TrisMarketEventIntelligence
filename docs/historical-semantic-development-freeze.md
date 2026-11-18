@@ -51,10 +51,10 @@ Even `NO_MEASURED_REGRESSION` does not mean the model is reliable.
 
 ## Next acceptance experiment
 
-Prepare at least three **new event families** with dated, independently
+Prepare at least five **new, untouched event families** with dated, independently
 retrievable and publication-time authenticated regulator/official-source
-snapshots. Define 30+ cutoff/question judgments over at least five
-independent families in total; FAA/FDA must not count as an *unseen*
+snapshots. Define 30+ cutoff/question judgments on at least five
+previously untouched independent families. FAA/FDA cannot count as unseen
 holdout. A frozen answer key must never enter a model prompt or iterative
 tuning. Keep separate development and holdout result files, and require
 independent reviewers to adjudicate ambiguous question scopes and answer
