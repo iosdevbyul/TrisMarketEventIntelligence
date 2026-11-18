@@ -10,6 +10,7 @@ from tris_market_event_intelligence.market_evidence_pressure import MarketEviden
 from tris_market_event_intelligence.market_pressure_reasoning import (
     analyze_pressure_two_stage,
     ollama_pressure_schema,
+    ollama_abstention_schema,
 )
 
 
@@ -209,7 +210,7 @@ def test_ollama_impact_uses_portable_json_with_postvalidation() -> None:
     provider.generate_json = recorder
     result = analyze_pressure_two_stage(example(), provider)
     assert observed == [(0, False), (1, False)]
-    assert result["impactGenerationMode"] == "FLAT_SCHEMA_AND_PYDANTIC_VALIDATED"
+    assert result["impactGenerationMode"] == "DISJOINT_NATIVE_SCHEMAS_AND_PYDANTIC_VALIDATED"
     assert result["impacts"][0]["strength"] == "UNASSESSED"
 
 
@@ -447,4 +448,75 @@ def test_incomplete_abstention_stays_invalid() -> None:
         "noImpactExplanation": "",
     })
     with pytest.raises(ValueError, match="PARTIAL_ABSTENTION_REPORT"):
+        analyze_pressure_two_stage(example(), provider)
+
+
+def test_native_ollama_impact_schema_never_contains_abstention_fields() -> None:
+    schema = ollama_pressure_schema()
+    assert set(schema["properties"]) == {"impacts"}
+    assert schema["additionalProperties"] is False
+    assert "impacts" not in ollama_abstention_schema()["properties"]
+    assert set(ollama_abstention_schema()["required"]) == {
+        "noImpactCategory", "noImpactExplanation",
+    }
+
+
+def test_ollama_valid_impacts_never_generate_conflicting_abstention() -> None:
+    from types import SimpleNamespace
+
+    provider = QueueProvider(impacts={"impacts": [impact()]})
+    provider.settings = SimpleNamespace(kind="ollama")
+    output = analyze_pressure_two_stage(example(), provider)
+    assert output["modelCalls"] == 2
+    assert len(provider.prompts) == 2
+    assert len(output["impacts"]) == 1
+    assert output["noImpactAssessment"] is None
+
+
+def test_ollama_empty_impacts_use_separate_abstention_model_call() -> None:
+    from types import SimpleNamespace
+
+    class DisjointProvider(QueueProvider):
+        def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+            self.prompts.append(json.loads(user))
+            if len(self.prompts) == 1:
+                return json.dumps(first_pass())
+            if len(self.prompts) == 2:
+                assert set(schema["properties"]) == {"impacts"}
+                return '{"impacts":[]}'
+            assert len(self.prompts) == 3
+            assert set(schema["properties"]) == {
+                "noImpactCategory", "noImpactExplanation",
+            }
+            return json.dumps({
+                "noImpactCategory": "NO_DEFENSIBLE_ECONOMIC_CHANNEL",
+                "noImpactExplanation": (
+                    "No sourced observation in this event could be linked "
+                    "to a specific defensible market transmission channel."
+                ),
+            })
+
+    provider = DisjointProvider()
+    provider.settings = SimpleNamespace(kind="ollama")
+    report = analyze_pressure_two_stage(example(), provider)
+    assert report["modelCalls"] == 3
+    assert report["impacts"] == []
+    assert report["noImpactAssessment"]["category"] == (
+        "NO_DEFENSIBLE_ECONOMIC_CHANNEL"
+    )
+
+
+def test_ollama_rejects_abstention_fields_inside_impact_response() -> None:
+    from types import SimpleNamespace
+
+    provider = QueueProvider(impacts={
+        "impacts": [impact()],
+        "noImpactCategory": "OTHER",
+        "noImpactExplanation": (
+            "A contradictory explanation should never be accepted "
+            "alongside a valid market pressure hypothesis."
+        ),
+    })
+    provider.settings = SimpleNamespace(kind="ollama")
+    with pytest.raises(ValueError, match="IMPACT_STAGE_ABSTENTION_FIELDS_FORBIDDEN"):
         analyze_pressure_two_stage(example(), provider)
