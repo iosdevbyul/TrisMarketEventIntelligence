@@ -47,31 +47,33 @@ class ComposedProvider(StageProvider):
                     "the final outcome of later implementation."
                 ),
             })
-        if "assessments" in properties:
+        if properties and all(
+            key.startswith("claim_") for key in properties
+        ):
             self.calls += 1
             envelope = json.loads(user)
             self.inputs.append(envelope)
-            questions = envelope["visibleQuestions"]
             return json.dumps({
-                "assessments": [{
-                    "questionId": q["questionId"],
-                    "regulatoryActionProgress": "ANNOUNCED",
-                    "requestedEvidenceStatus": "NOT_OBSERVED",
-                    "sourceId": q["originalVisibleSourceId"],
-                    "claimId": q["originalVisibleClaimId"],
-                    "supportingEvidence": [{
-                        "sourceId": q["originalVisibleSourceId"],
-                        "claimId": q["originalVisibleClaimId"],
-                    }],
-                    "explanation": (
-                        "An official statement describes the action but "
-                        "the directly requested primary documents are absent."
-                    ),
-                    "remainingEvidence": (
-                        "The full official underlying records and evidence "
-                        "of completed implementation remain unavailable."
-                    ),
-                } for q in questions],
+                key: (
+                    "RELATED_CONTEXT" if index == 0 else "NOT_RELEVANT"
+                )
+                for index, key in enumerate(properties)
+            })
+        if "regulatoryActionProgress" in properties:
+            self.calls += 1
+            envelope = json.loads(user)
+            self.inputs.append(envelope)
+            return json.dumps({
+                "regulatoryActionProgress": "ANNOUNCED",
+                "requestedEvidenceStatus": "PARTIAL",
+                "explanation": (
+                    "The official source describes a regulatory step but "
+                    "does not establish final action or completed records."
+                ),
+                "remainingEvidence": (
+                    "The final supporting documents and complete "
+                    "implementation outcomes remain unobserved."
+                ),
             })
         return super().generate_json(
             system=system, user=user, schema=schema,
@@ -86,7 +88,7 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
         reasoning_mode="staged-composed",
     )
     assert run["modelCalls"] == provider.calls
-    assert run["modelCalls"] == 12
+    assert run["modelCalls"] == 18
     for step in run["replaySteps"]:
         assessment = step["assessment"]
         composition = assessment["sourceScopedComposition"]
@@ -101,7 +103,8 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
         axes = assessment["independentQuestionAxes"]["questionAssessments"]
         assert axes
         assert all(x["supportingEvidence"] for x in axes)
-        assert all(x["requestedEvidenceStatus"] == "NOT_OBSERVED" for x in axes)
+        assert all(x["requestedEvidenceStatus"] == "PARTIAL" for x in axes)
+        assert len(assessment["independentQuestionAxes"]["questionEvidenceScreens"]) == 2
         assert assessment["questionAxesDoNotOverwriteLegacyStatuses"] is True
         assert assessment["semanticAccuracyVerified"] is False
         assert assessment["generationTerminationAnalysis"][
@@ -130,14 +133,20 @@ def test_question_axes_new_evidence_input_is_cutoff_scoped() -> None:
         provider, question_tracks=tracks(),
         reasoning_mode="staged-composed",
     )
-    axis_inputs = [
+    screen_inputs = [
         value for value in provider.inputs
-        if "newlyExplainedClaims" in value
+        if "indexedVisibleOfficialClaims" in value
     ]
-    assert len(axis_inputs) == 2
-    assert len(axis_inputs[0]["newlyExplainedClaims"]) == 4
-    assert "fda-20230911-mrna" not in json.dumps(axis_inputs[0])
-    assert len(axis_inputs[1]["newlyExplainedClaims"]) == 4
+    answer_inputs = [
+        value for value in provider.inputs
+        if "screenedRelevantEvidence" in value
+    ]
+    assert len(screen_inputs) == len(answer_inputs) == 4
+    assert all(len(value["indexedVisibleOfficialClaims"]) == 4
+               for value in screen_inputs[:2])
+    assert all(len(value["indexedVisibleOfficialClaims"]) == 8
+               for value in screen_inputs[2:])
+    assert "fda-20230911-mrna" not in json.dumps(screen_inputs[:2])
 
 
 def test_per_claim_provenance_is_bound_to_visible_input_not_model_ids() -> None:
@@ -148,7 +157,7 @@ def test_per_claim_provenance_is_bound_to_visible_input_not_model_ids() -> None:
     )
     composition = step["assessment"]["sourceScopedComposition"]
     assert composition["claimProvenance"] == "ASSIGNED_FROM_INPUT_NOT_MODEL_GENERATED"
-    assert step["modelCalls"] == 6
+    assert step["modelCalls"] == 9
     assert len(provider.composed_inputs) == 4
     assert all("claim" in value for value in provider.composed_inputs)
     assert all(len(source["claimCalls"]) == 2 for source in
@@ -157,3 +166,93 @@ def test_per_claim_provenance_is_bound_to_visible_input_not_model_ids() -> None:
         len(group["claims"]) == 2
         for group in step["assessment"]["generationTerminationBySource"]
     )
+
+
+class DecisionScreenProvider(ComposedProvider):
+    """Synthetic selection fixtures for the source-review pipeline."""
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        properties = schema["properties"]
+        if properties and all(k.startswith("claim_") for k in properties):
+            self.calls += 1
+            envelope = json.loads(user)
+            self.inputs.append(envelope)
+            question = envelope["question"]["questionId"]
+            roles = {}
+            for idx, source in enumerate(envelope["indexedVisibleOfficialClaims"]):
+                ref = (source["sourceId"], source["claimId"])
+                role = "NOT_RELEVANT"
+                if "boeing-production-oversight" in question:
+                    if ref == ("faa-20240112-oversight", "production-audit"):
+                        role = "RELATED_CONTEXT"
+                    if ref == ("faa-20240124-production", "no-production-expansion"):
+                        role = "INTERMEDIATE_DECISION"
+                elif "manufacturer-filings" in question:
+                    if ref == ("fda-20230616-formula", "filing-still-needed"):
+                        role = "RELATED_CONTEXT"
+                    if ref == ("fda-20230911-mrna", "mrna-authorization"):
+                        role = "INTERMEDIATE_DECISION"
+                elif "inspection-process-approval" in question:
+                    if ref == ("faa-20240112-inspection-process", "additional-data"):
+                        role = "RELATED_CONTEXT"
+                    if ref == ("faa-20240124-production", "return-to-service"):
+                        role = "DIRECT_ANSWER"
+                elif "authorized-formula" in question:
+                    if ref == ("fda-20230616-formula", "xbb-recommendation"):
+                        role = "RELATED_CONTEXT"
+                    if ref == ("fda-20230911-mrna", "mrna-authorization"):
+                        role = "DIRECT_ANSWER"
+                roles[f"claim_{idx}"] = role
+            return json.dumps(roles)
+        if "regulatoryActionProgress" in properties:
+            self.calls += 1
+            envelope = json.loads(user)
+            self.inputs.append(envelope)
+            return json.dumps({
+                "regulatoryActionProgress": "AUTHORIZED"
+                if any(x["role"] == "DIRECT_ANSWER" for x
+                       in envelope["screenedRelevantEvidence"]) else "ANNOUNCED",
+                "requestedEvidenceStatus": "DIRECTLY_OBSERVED"
+                if any(x["role"] == "DIRECT_ANSWER" for x
+                       in envelope["screenedRelevantEvidence"]) else "PARTIAL",
+                "explanation": (
+                    "The regulator announced an intermediate decision or "
+                    "authorization, but a separate operational completion "
+                    "or original-review document may remain unavailable."
+                ),
+                "remainingEvidence": (
+                    "Underlying operational completion and detailed agency "
+                    "review records have not been independently verified."
+                ),
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_later_official_decisions_are_reconciled_separately_from_final_records() -> None:
+    from test_historical_official_event_chain import load as faa
+    from test_historical_temporal_question_lifecycle import tracks as fda_tracks
+    from test_historical_temporal_question_lifecycle_faa import tracks as faa_tracks
+
+    for chain_doc, question_tracks, cutoff, question, expected in (
+        (fda(), fda_tracks(), date(2023, 10, 4),
+         "fda-2023-manufacturer-filings-evidence",
+         ("fda-20230911-mrna", "mrna-authorization")),
+        (faa(), faa_tracks(), date(2024, 1, 25),
+         "faa-2024-boeing-production-oversight-outcome",
+         ("faa-20240124-production", "no-production-expansion")),
+    ):
+        provider = DecisionScreenProvider()
+        step = chain.run_replay(
+            chain_doc, cutoff, provider,
+            question_tracks=question_tracks, reasoning_mode="staged-composed",
+        )
+        assessment = step["assessment"]["independentQuestionAxes"]
+        item = next(x for x in assessment["questionAssessments"]
+                    if x["questionId"] == question)
+        assert (item["sourceId"], item["claimId"]) == expected
+        assert item["requestedEvidenceStatus"] == "PARTIAL"
+        assert expected in {
+            (x["sourceId"], x["claimId"])
+            for x in item["supportingEvidence"]
+        }
+        assert assessment["axesSemanticallyVerified"] is False
