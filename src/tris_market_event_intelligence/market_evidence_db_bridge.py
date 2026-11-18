@@ -58,6 +58,7 @@ def make_packet_from_db(
                 "sourceId": "article-" + str(identifier),
                 "kind": "NEWS",
                 "publishedDate": _date(published),
+                "publishedAt": published,
                 "sourceName": name,
                 "sourceUrl": url,
                 "excerpt": excerpt,
@@ -94,6 +95,7 @@ def make_packet_from_db(
             "sourceId": f"indicator-release-{identifier}-actual",
             "kind": "ECONOMIC_INDICATOR",
             "publishedDate": release.publishedAt.astimezone(UTC).date().isoformat(),
+            "publishedAt": release.publishedAt.isoformat(),
             "sourceName": release.actualSourceName,
             "sourceUrl": release.actualSourceUrl,
             "excerpt": release.actualExcerpt,
@@ -111,6 +113,7 @@ def make_packet_from_db(
                 "publishedDate": release.consensusPublishedAt.astimezone(
                     UTC,
                 ).date().isoformat(),
+                "publishedAt": release.consensusPublishedAt.isoformat(),
                 "sourceName": release.consensusSourceName,
                 "sourceUrl": release.consensusSourceUrl,
                 "excerpt": release.consensusExcerpt,
