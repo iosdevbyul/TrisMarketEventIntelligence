@@ -133,7 +133,7 @@ _ABSTENTION_CODES = frozenset({
 def _parse_impact_response(raw: str) -> tuple[PressureAnalysis, str | None]:
     payload = json.loads(raw)
     if not isinstance(payload, dict):
-        raise ValueError("IMPACT_RESPONSE_NOT_OBJECT")
+        raise TypeError("IMPACT_RESPONSE_NOT_OBJECT")
     original = payload.get("noImpactCategory")
     raw_label: str | None = None
     if isinstance(original, str) and original not in _ABSTENTION_CODES:
