@@ -10,8 +10,9 @@ import sqlite3
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from tris_market_event_intelligence.impact import ImpactAnalysisError
 from tris_market_event_intelligence.llm_runtime import LLMProvider
 from tris_market_event_intelligence.market_evidence_db_bridge import (
     make_packet_from_db,
@@ -199,6 +200,42 @@ def recent_candidates(
     }
 
 
+class _CountingProvider:
+    """Keep the exact real call count even when a model result is invalid."""
+
+    def __init__(self, provider: LLMProvider) -> None:
+        self.provider = provider
+        self.model_id = provider.model_id
+        self.settings = getattr(provider, "settings", None)
+        self.calls = 0
+
+    def generate_json(
+        self, *, system: str, user: str, schema: dict | None,
+    ) -> str:
+        self.calls += 1
+        return self.provider.generate_json(
+            system=system, user=user, schema=schema,
+        )
+
+
+def _safe_model_rejection(error: ValueError | TypeError) -> dict:
+    """Return only schema field paths/types, never excerpts or model text."""
+    if isinstance(error, ValidationError):
+        fields = [
+            {"path": ".".join(str(bit) for bit in item["loc"]),
+             "type": item["type"]}
+            for item in error.errors(include_input=False, include_context=False)[:24]
+        ]
+        code = "MODEL_SCHEMA_INVALID"
+    elif isinstance(error, ImpactAnalysisError):
+        fields = []
+        code = error.code
+    else:
+        fields = []
+        code = "MODEL_RESULT_INVALID"
+    return {"validationCode": code, "invalidFields": fields}
+
+
 def discover_and_analyze(
     db: Path, *, as_of: date, provider: LLMProvider,
     lookback_days: int = 10, max_groups: int = 2,
@@ -264,8 +301,27 @@ def discover_and_analyze(
                 if row["kind"] == "indicator-release"
             ),
         )
-        report = analyze_pressure_two_stage(packet, provider)
-        calls += report["modelCalls"]
+        counted = _CountingProvider(provider)
+        try:
+            report = analyze_pressure_two_stage(packet, counted)
+        except (ValueError, TypeError) as exc:
+            # An invalid model proposal is NOT an economic impact, and
+            # must not stop independent groups from being evaluated.
+            report = {
+                "schemaVersion": "multi_source_market_pressure_v2",
+                "status": "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW",
+                "eventId": packet.eventId,
+                "asOfDateExclusive": as_of.isoformat(),
+                "visibleSourceIds": [source.sourceId for source in packet.evidences],
+                "impacts": [],
+                "modelCalls": counted.calls,
+                "semanticAccuracyVerified": False,
+                "historicalPITVerified": False,
+                "marketReturnsAnalyzed": False,
+                "generalizationVerified": False,
+                **_safe_model_rejection(exc),
+            }
+        calls += counted.calls
         results.append({
             "proposalExplanation": group.connectionExplanation,
             "groupSourceIds": [item.sourceId for item in packet.evidences],
@@ -274,7 +330,12 @@ def discover_and_analyze(
         })
     return {
         "schemaVersion": "market_pressure_auto_cycle_v1",
-        "status": "CANDIDATE_EVENTS_REQUIRE_REVIEW",
+        "status": (
+            "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+            if any(item["analysis"]["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+                   for item in results)
+            else "CANDIDATE_EVENTS_REQUIRE_REVIEW"
+        ),
         "asOfDateExclusive": as_of.isoformat(),
         "inventory": inventory, "modelCalls": calls,
         "events": results,
