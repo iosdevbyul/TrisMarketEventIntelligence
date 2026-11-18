@@ -108,11 +108,13 @@ def recent_candidates(
     effective_cutoff = as_of_time or datetime.combine(
         as_of, time.min, tzinfo=UTC,
     )
-    selected: list[dict] = []
+    # All tables share one stable chronological order BEFORE paging.
+    # The previous per-table growing prefix caused pages to overlap or skip
+    # candidates when the source mix changed across page boundaries.
+    ordered: list[tuple[datetime, str, int]] = []
     skipped = 0
     matching_in_window = 0
     deduplicated = 0
-    dedup_keys: set[str] = set()
     with sqlite3.connect(
         db_path.resolve().as_uri() + "?mode=ro", uri=True,
     ) as conn:
@@ -127,75 +129,70 @@ def recent_candidates(
         if has_indicator_table:
             tables.append(("market_indicator_releases", "indicator-release"))
         for table, source_kind in tables:
-            # An article with a low DB ID may have a later publication
-            # timestamp than thousands of newly inserted feed articles.
-            # Do not truncate by ID before checking chronological eligibility.
             rows = conn.execute(
                 f"SELECT id, published_at FROM {table} "
                 "WHERE published_at IS NOT NULL",
             )
-            options: list[tuple[datetime, int]] = []
             for identifier, published in rows:
-                if not _eligible_date(published, effective_cutoff, lookback_days):
+                if not _eligible_date(
+                    published, effective_cutoff, lookback_days,
+                ):
                     skipped += 1
                     continue
                 timestamp = datetime.fromisoformat(published).astimezone(UTC)
-                options.append((timestamp, identifier))
-            options.sort(reverse=True)
-            matching_in_window += len(options)
-            table_selected = 0
-            for _, identifier in options:
-                if table_selected >= per_table * (page + 1) + 1:
-                    break
-                try:
-                    packet = make_packet_from_db(
-                        db_path,
-                        event_id="discovery-candidate",
-                        subject="Candidate event evidence",
-                        as_of=as_of.isoformat(),
-                        as_of_time=(as_of_time.isoformat() if as_of_time else None),
-                        article_ids=(identifier,) if source_kind == "article" else (),
-                        economic_event_ids=(
-                            (identifier,) if source_kind == "economic-event" else ()
-                        ),
-                        indicator_release_ids=(
-                            (identifier,) if source_kind == "indicator-release" else ()
-                        ),
-                    )
-                except (ValueError, sqlite3.Error):
-                    skipped += 1
-                    continue
-                source: MarketEvidence = packet.evidences[0]
-                # Repeated publisher feeds can duplicate the same press
-                # release with new article IDs or alternate tracking URLs.
-                key = (
-                    source.sourceName.casefold() + ":"
-                    + source.excerpt.casefold().strip()
-                )
-                if key in dedup_keys:
-                    deduplicated += 1
-                    continue
-                dedup_keys.add(key)
-                selected.append({
-                    "kind": source_kind,
-                    "recordId": identifier,
-                    "evidence": source,
-                    "publishedAtUTC": _.isoformat(),
-                })
-                table_selected += 1
-    selected.sort(
-        key=lambda row: (row["publishedAtUTC"], row["kind"], row["recordId"]),
-        reverse=True,
-    )
-    # Maintain a bounded model context while accounting for all in-window
-    # records and retaining time-eligible older database IDs.
-    total_pre_pagination = len(selected)
-    selected = selected[page * 24:(page + 1) * 24]
+                ordered.append((timestamp, source_kind, identifier))
+
+    ordered.sort(reverse=True)
+    matching_in_window = len(ordered)
+    selected_all: list[dict] = []
+    dedup_keys: set[str] = set()
+    # We only hydrate the first K+1 distinct valid source records. The same
+    # deterministic prefix is scanned on every page, preventing page drift.
+    page_size = 24
+    target_count = (page + 1) * page_size + 1
+    for stamp, source_kind, identifier in ordered:
+        if len(selected_all) >= target_count:
+            break
+        try:
+            packet = make_packet_from_db(
+                db_path,
+                event_id="discovery-candidate",
+                subject="Candidate event evidence",
+                as_of=as_of.isoformat(),
+                as_of_time=(as_of_time.isoformat() if as_of_time else None),
+                article_ids=(identifier,) if source_kind == "article" else (),
+                economic_event_ids=(
+                    (identifier,) if source_kind == "economic-event" else ()
+                ),
+                indicator_release_ids=(
+                    (identifier,) if source_kind == "indicator-release" else ()
+                ),
+            )
+        except (ValueError, sqlite3.Error):
+            skipped += 1
+            continue
+        source: MarketEvidence = packet.evidences[0]
+        dedup_key = (
+            source.sourceName.casefold() + ":"
+            + source.excerpt.casefold().strip()
+        )
+        if dedup_key in dedup_keys:
+            deduplicated += 1
+            continue
+        dedup_keys.add(dedup_key)
+        selected_all.append({
+            "kind": source_kind,
+            "recordId": identifier,
+            "evidence": source,
+            "publishedAtUTC": stamp.isoformat(),
+        })
+    has_more = len(selected_all) > (page + 1) * page_size
+    selected = selected_all[page * page_size:(page + 1) * page_size]
     return selected, {
         "candidateCount": len(selected),
         "candidatePage": page,
-        "hasMoreCandidatePages": total_pre_pagination > (page + 1) * 24,
-        "examinedEligibleBeforePage": total_pre_pagination,
+        "hasMoreCandidatePages": has_more,
+        "examinedEligibleBeforePage": len(selected_all),
         "matchedWithinWindow": matching_in_window,
         "skippedInvalidOrOutOfWindow": skipped,
         "deduplicated": deduplicated,
