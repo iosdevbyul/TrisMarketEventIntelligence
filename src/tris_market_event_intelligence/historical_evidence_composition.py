@@ -21,14 +21,10 @@ class Strict(BaseModel):
 
 
 class SourceExplanation(Strict):
-    sourceId: str
-    claimId: str
+    # Provenance is attached from the one-claim input envelope, never
+    # model-invented identifiers. Both text fields remain model-authored.
     explanation: str = Field(min_length=35, max_length=310)
     limitation: str = Field(min_length=25, max_length=230)
-
-
-class SourceExplanations(Strict):
-    items: list[SourceExplanation] = Field(min_length=1, max_length=12)
 
 
 class QuestionEvidenceRef(Strict):
@@ -56,16 +52,16 @@ class AllQuestionAxes(Strict):
     assessments: list[QuestionAxes] = Field(default_factory=list, max_length=12)
 
 
-_SOURCE_SYSTEM = """Explain EACH listed claim of ONE dated official source,
-producing exactly one short item per claim with its exact sourceId and
-claimId. Every claim is required: DO NOT select only the most salient one.
-Explain all separately announced actions, even if they share one release.
-Use only source claims and already validated model change assertions.
-Name regulator, action type and relevant product/aircraft scope. Distinguish
-recommendation, authorization, implementation and completion. Do not
-invent results, costs, price outcomes or future data. No opaque IDs in
-prose. Identify what each claim does not establish in its limitation.
-All prose must end in full-sentence punctuation. Return strict JSON."""
+_SOURCE_SYSTEM = """Explain ONLY the single dated official claim given.
+Write one concise complete factual sentence describing the regulator,
+decision or action and its exact aircraft/product scope. Distinguish
+recommendation, authorization, implementation and completion. Then write
+one concise limitation describing exactly what this claim does not
+establish. No future facts, economic effects, stock prices, inferred
+causality, unobserved results or IDs in prose. Both sentences must end
+with punctuation. Return ONLY the two schema fields: explanation and
+limitation. The invoking system attaches the source and claim IDs from
+the cutoff-visible official record; you must not generate those IDs."""
 
 _QUESTIONS_SYSTEM = """Evaluate every visible official source claim and
 every supplied source-scoped explanation relevant to EACH research question.
@@ -129,53 +125,64 @@ def generate_composed_explanation(
     ]
     if not new_sources:
         raise ComposedEvidenceError("COMPOSED_NO_NEW_SOURCE")
-    available = _refs(packet)
     changes = draft["modelAuthoredChangeItems"]
-    explanations = []
-    diagnostics = []
+    explanations: list[dict] = []
+    diagnostics: list[dict] = []
     for source in new_sources:
         source_id = source["sourceId"]
         grounded = [x for x in changes if x["sourceId"] == source_id]
         if not grounded:
             raise ComposedEvidenceError("COMPOSED_SOURCE_CHANGE_MISSING")
-        schema = SourceExplanations.model_json_schema()
-        schema["properties"]["items"]["minItems"] = len(source["claims"])
-        schema["properties"]["items"]["maxItems"] = len(source["claims"])
-        raw = provider.generate_json(
-            system=_SOURCE_SYSTEM,
-            user=json.dumps({
-                "asOfDateExclusive": packet["asOfDateExclusive"],
-                "source": {
+        source_diagnostics: dict = {
+            "sourceId": source_id, "claimCalls": [],
+        }
+        for claim in source["claims"]:
+            claim_id = claim["claimId"]
+            relevant_changes = [
+                x for x in grounded if x["claimId"] == claim_id
+            ]
+            # The full original official claim is the evidence boundary.
+            # The stage-one change is supplementary model text, never proof.
+            raw = provider.generate_json(
+                system=_SOURCE_SYSTEM,
+                user=json.dumps({
+                    "asOfDateExclusive": packet["asOfDateExclusive"],
                     "sourceId": source_id,
                     "sourceDate": source["sourceDate"],
-                    "claims": source["claims"],
-                },
-                "validatedModelChanges": grounded,
-                "historicalPITVerified": False,
-            }, ensure_ascii=False),
-            schema=schema,
-        )
-        diagnostics.append(getattr(provider, "last_generation_diagnostics", None))
-        parsed = SourceExplanations.model_validate_json(raw)
-        items = [x.model_dump() for x in parsed.items]
-        required = {(source_id, x["claimId"]) for x in source["claims"]}
-        submitted = [(x["sourceId"], x["claimId"]) for x in items]
-        if (
-            len(submitted) != len(required)
-            or set(submitted) != required
-            or len(set(submitted)) != len(submitted)
-            or any(
-                (x["sourceId"], x["claimId"]) not in available
-                or not _complete(x["explanation"])
-                or not _complete(x["limitation"])
-                or is_observed_market_result(x["explanation"])
-                or is_observed_market_result(x["limitation"])
-                for x in items
+                    "claim": claim,
+                    "modelChangeForClaim": relevant_changes,
+                    "historicalPITVerified": False,
+                }, ensure_ascii=False),
+                schema=SourceExplanation.model_json_schema(),
             )
-        ):
-            raise ComposedEvidenceError("COMPOSED_SOURCE_CLAIM_COVERAGE_INVALID")
-        indexed = {x["claimId"]: x for x in items}
-        explanations.extend(indexed[claim["claimId"]] for claim in source["claims"])
+            generation = getattr(provider, "last_generation_diagnostics", None)
+            parsed = SourceExplanation.model_validate_json(raw)
+            if not _complete(parsed.explanation):
+                raise ComposedEvidenceError(
+                    "COMPOSED_SOURCE_EXPLANATION_INCOMPLETE:"
+                    + source_id + ":" + claim_id
+                )
+            if not _complete(parsed.limitation):
+                raise ComposedEvidenceError(
+                    "COMPOSED_SOURCE_LIMITATION_INCOMPLETE:"
+                    + source_id + ":" + claim_id
+                )
+            if (is_observed_market_result(parsed.explanation)
+                    or is_observed_market_result(parsed.limitation)):
+                raise ComposedEvidenceError(
+                    "COMPOSED_SOURCE_UNSUPPORTED_OUTCOME:"
+                    + source_id + ":" + claim_id
+                )
+            # IDs are authoritative input metadata, not generated model claims.
+            explanations.append({
+                "sourceId": source_id,
+                "claimId": claim_id,
+                **parsed.model_dump(),
+            })
+            source_diagnostics["claimCalls"].append({
+                "claimId": claim_id, "provider": generation,
+            })
+        diagnostics.append(source_diagnostics)
     narrative = " ".join(x["explanation"] for x in explanations)
     limitations = " ".join(x["limitation"] for x in explanations)
     if len(narrative) > 2400 or len(limitations) > 2400:
@@ -199,7 +206,8 @@ def generate_composed_explanation(
                 for x in explanations
             ],
         },
-        "narrativeAssembly": "VERBATIM_SOURCE_MODEL_SENTENCES",
+        "narrativeAssembly": "VERBATIM_CLAIM_MODEL_SENTENCES",
+        "claimProvenance": "ASSIGNED_FROM_INPUT_NOT_MODEL_GENERATED",
         "modelTextRewritten": False,
         "semanticAccuracyVerified": False,
         "historicalPITVerified": False,
