@@ -170,3 +170,25 @@ Optional settings: `MARKET_EVENT_HOST` (loopback-only) and `MARKET_EVENT_PORT` (
 No real-world news collection or AI analysis is implemented in the foundation phase. The health endpoint alone is not a production-readiness signal.
 
 ## Project responsibility boundary (Stage 3 revised)\n\nSee [docs/news-impact-ownership.md](docs/news-impact-ownership.md) for the ownership contract and migration notes. The first additive `news_impact_signal_v1` schema accepts directional strength (`LOW`, `MODERATE`, `HIGH`, or `UNASSESSED`), an optional **news pressure index from 0 to 100, not a price percentage**, and provenance. Existing `market-impact-v8` records are adapted with `UNASSESSED` rather than inventing a strength score. Producing genuinely evidence-supported strength estimates is a separate model upgrade and evaluation task. Legacy minute-price study utilities remain for compatibility but are excluded from this module's future product scope.\n
+
+### Pre-event market expectations and surprise assessment (sequential study)
+
+New sequential predictions capture the evidence available **before** each article's
+`firstObservedAt` timestamp. The contextual evidence contains up to five earlier
+related articles (keyword-overlap candidates, not verified duplicates), a conservative
+earlier SPY daily-close trend, and an explicit UNKNOWN consensus status. The
+Gemma response may separately describe the economic impact, surprise versus market
+expectations, novelty, possible prior pricing, and the expected price direction.
+When no verifiable consensus source is connected, the surprise classification must
+remain UNKNOWN; an earlier price increase alone never proves that an event was
+priced in. No completed prior prediction is overwritten.
+
+The HTML audit groups STOCK, SECTOR and MARKET targets separately and now shows
+this evidence beside the original prediction, reasons and price outcomes. Legacy
+entries without a surprise assessment remain visibly unavailable. These fields are
+*analytical hypotheses* rather than verified market expectations or causal evidence.
+
+The sequential feedback process remains **retrospective** and is not a leakage-free
+forward-test benchmark. The proposed A/B/C performance comparison (article-only
+vs pre-event context vs context plus learned rules) requires distinct controlled
+runs and chronological held-out scoring; no such performance gain is claimed here.
