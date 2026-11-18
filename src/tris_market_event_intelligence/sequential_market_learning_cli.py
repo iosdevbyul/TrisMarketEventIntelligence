@@ -182,16 +182,20 @@ def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], i
     # Reserve a chronological holdout before choosing training examples.
     train_end = int(len(items) * 0.8)
     train = items[:train_end]
+    # A retrospective feedback study is deliberately sequential by ARTICLE,
+    # not by calendar day. Multiple stories may be published on the same day.
+    # This mode is NOT a point-in-time-valid historical forecast benchmark:
+    # after an outcome has been revealed, its lesson can influence another
+    # article published before that outcome was publicly knowable.
+    # Chronological holdout articles remain excluded from lessons.
     selected = []
-    last = None
-    # Daily candles can settle after weekends. Spacing observations by at
-    # least five days prevents obvious outcome-to-next-article leakage.
+    seen = set()
     for row in train:
-        observed = timestamp(row["firstObservedAt"])
-        if last is not None and observed < last + timedelta(days=5):
+        fingerprint = row.get("textSha256") or row.get("sourceUrl") or row["articleId"]
+        if fingerprint in seen:
             continue
+        seen.add(fingerprint)
         selected.append(row)
-        last = observed
         if len(selected) >= count:
             break
     return selected, len(items) - train_end
@@ -372,25 +376,9 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 db.commit()
             for index, article in enumerate(articles, start=1):
                 observed = timestamp(article["firstObservedAt"])
-                # Feedback learned from this outcome may only influence an article
-                # published AFTER the evaluated horizon. Otherwise skip it.
-                if index > 1:
-                    previous = db.execute(
-                        "SELECT observed_at FROM steps WHERE seq=?",
-                        (index - 1,),
-                    ).fetchone()
-                    if previous and observed < timestamp(previous[0]) + horizon:
-                        raise ValueError("Overlapping evaluation windows: cannot avoid leakage")
-                    past = db.execute(
-                        "SELECT evaluation_json FROM steps WHERE seq=?", (index - 1,),
-                    ).fetchone()
-                    if past and past[0]:
-                        report = json.loads(past[0])
-                        for assessed in report["impacts"]:
-                            if assessed["status"] != "UNVERIFIED" and (
-                                timestamp(assessed["outcomeAt"]) >= observed
-                            ):
-                                raise ValueError("Previous observed price outcome overlaps next article")
+                # Retrospective adaptation deliberately evaluates one article,
+                # corrects mistakes, and only then predicts the next article.
+                # See explicit leakage caveat in the result and README.
                 article_hash = hashlib.sha256(
                     json.dumps(article, sort_keys=True).encode()
                 ).hexdigest()
@@ -469,7 +457,13 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         "SELECT evaluation_json FROM steps WHERE evaluation_json IS NOT NULL"
                     )
                 ),
-                "warning": "Retrospective study; model pretrained knowledge is not PIT-certified",
+                "evaluationMode": "RETROSPECTIVE_SEQUENTIAL_FEEDBACK",
+                "pointInTimeCertified": False,
+                "warning": (
+                    "Corrective lessons may include outcomes that occurred after "
+                    "subsequent articles were published; do not report this study "
+                    "as leakage-free historical prediction accuracy."
+                ),
             }
     finally:
         if owned:
