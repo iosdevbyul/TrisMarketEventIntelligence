@@ -176,3 +176,29 @@ def test_invalid_model_output_does_not_become_prediction():
 
     with pytest.raises(ValueError, match="AFTER_3_ATTEMPTS"):
         seq.predict_with_repair(AlwaysInvalid(), {"article": {}})
+
+
+def test_gemma_sector_name_in_target_type_is_normalized():
+    """Regression for the real FINANCIALS / NEUTRAL output."""
+    for target in (None, "financial services", "XLF", "FINANCIALS"):
+        impact = {
+            "targetType": "FINANCIALS",
+            "direction": "NEUTRAL",
+            "reason": "Rates offset demand",
+        }
+        if target is not None:
+            impact["target"] = target
+        output = seq.canonical_prediction({"impacts": [impact]})
+        assert output["impacts"] == [{
+            "targetType": "SECTOR", "target": "FINANCIALS", "priceProxy": "XLF",
+            "direction": "NEUTRAL", "reason": "Rates offset demand",
+        }]
+
+
+def test_broad_market_name_in_target_type_is_normalized():
+    prediction = seq.canonical_prediction({"impacts": [{
+        "targetType": "BROAD_MARKET",
+        "direction": "NEGATIVE", "reason": "Broad market risk",
+    }]})
+    assert prediction["impacts"][0]["targetType"] == "MARKET"
+    assert prediction["impacts"][0]["priceProxy"] == "SPY"
