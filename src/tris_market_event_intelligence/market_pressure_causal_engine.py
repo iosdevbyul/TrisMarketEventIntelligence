@@ -75,7 +75,7 @@ class CausalPath(Strict):
     pressureDirection: Literal["POSITIVE", "NEGATIVE"]
     evidenceClaimIndexes: list[int] = Field(min_length=1, max_length=6)
     observedExcerpt: str = Field(min_length=12, max_length=800)
-    economicSteps: list[EconomicStep] = Field(min_length=1, max_length=4)
+    economicSteps: list[EconomicStep] = Field(min_length=1, max_length=3)
     competingExplanation: str = Field(min_length=12, max_length=350)
 
 
@@ -89,7 +89,7 @@ class CausalCandidate(Strict):
         "CLOUD", "HEALTHCARE",
     ]
     horizon: Literal["SHORT_TERM", "MEDIUM_TERM"]
-    causalPaths: list[CausalPath] = Field(min_length=1, max_length=4)
+    causalPaths: list[CausalPath] = Field(min_length=1, max_length=3)
     missingEvidence: list[str] = Field(default_factory=list, max_length=5)
     uncertaintyExplanation: str = Field(min_length=20, max_length=400)
     strength: Literal["UNASSESSED"]
@@ -130,7 +130,7 @@ def causal_output_schema() -> dict:
             },
             "observedExcerpt": {"type": "string", "minLength": 12},
             "economicSteps": {
-                "type": "array", "minItems": 1, "maxItems": 4, "items": step,
+                "type": "array", "minItems": 1, "maxItems": 3, "items": step,
             },
             "competingExplanation": {"type": "string", "minLength": 12},
         },
@@ -158,7 +158,7 @@ def causal_output_schema() -> dict:
                 "type": "string", "enum": ["SHORT_TERM", "MEDIUM_TERM"],
             },
             "causalPaths": {
-                "type": "array", "minItems": 1, "maxItems": 4, "items": path,
+                "type": "array", "minItems": 1, "maxItems": 3, "items": path,
             },
             "missingEvidence": {
                 "type": "array", "maxItems": 5,
@@ -177,7 +177,7 @@ def causal_output_schema() -> dict:
         "type": "object", "additionalProperties": False,
         "properties": {
             "candidateImpacts": {
-                "type": "array", "maxItems": 8, "items": candidate,
+                "type": "array", "maxItems": 4, "items": candidate,
             },
         },
         "required": ["candidateImpacts"],
@@ -200,7 +200,10 @@ def _validate_candidate(candidate: CausalCandidate, claims: FactAnalysis,
         # Company targets must appear in one of the actually cited excerpts.
         # Sector and market exposures are explicitly marked as INFERRED.
     cited_claims = [
-        claim for claim in claims.claims if claim.sourceId in cited_ids
+        claims.claims[index] for index in sorted({
+            index for path in candidate.causalPaths
+            for index in path.evidenceClaimIndexes
+        })
     ]
     if candidate.targetType == "COMPANY" and not any(
         candidate.targetName in claim.excerpt for claim in cited_claims
@@ -210,14 +213,10 @@ def _validate_candidate(candidate: CausalCandidate, claims: FactAnalysis,
     derived_direction = (
         "MIXED" if len(signs) == 2 else next(iter(signs))
     )
-    unverified = any(
-        sources[sid].verification == "REPORTED_UNVERIFIED"
-        for sid in cited_ids
-    )
     return {
         **candidate.model_dump(),
         "direction": derived_direction,
-        "uncertainty": "HIGH" if unverified else "HIGH",
+        "uncertainty": "HIGH",
         "supportingSourceIds": sorted(cited_ids),
         "citedClaimIndexes": sorted({
             index for path in candidate.causalPaths
@@ -301,7 +300,7 @@ def analyze_general_causal(packet: MarketEvidencePacket,
         if not isinstance(payload, dict) or set(payload) != {"candidateImpacts"}:
             raise ValueError("CAUSAL_RESPONSE_NOT_OBJECT")
         proposals = payload["candidateImpacts"]
-        if not isinstance(proposals, list) or len(proposals) > 8:
+        if not isinstance(proposals, list) or len(proposals) > 4:
             raise ValueError("CAUSAL_RESPONSE_BOUNDS_INVALID")
         for i, proposal in enumerate(proposals):
             try:
