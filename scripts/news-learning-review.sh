@@ -184,6 +184,9 @@ case "$action" in
   historical-semantic-score)
     module="tris_market_event_intelligence.historical_semantic_quality_cli"
     ;;
+  historical-semantic-compare)
+    module="tris_market_event_intelligence.historical_semantic_regression_cli"
+    ;;
   historical-staged-transfer)
     module="tris_market_event_intelligence.historical_cross_event_staged_transfer_cli"
     ;;
