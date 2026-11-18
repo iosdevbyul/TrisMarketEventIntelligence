@@ -47,12 +47,12 @@ run_case "FAA" \
     "research/faa-7379max-january-2024-event-chain.json" \
     "research/faa-2024-question-lifecycle.json" \
     "2024-01-13" "2024-01-25" \
-    "$DATA/faa-evidence-composed-v7.json"
+    "$DATA/faa-evidence-composed-v8.json"
 
 run_case "FDA" \
     "research/fda-covid-vaccine-2023-event-chain.json" \
     "research/fda-2023-question-lifecycle.json" \
     "2023-06-17" "2023-10-04" \
-    "$DATA/fda-evidence-composed-v4.json"
+    "$DATA/fda-evidence-composed-v5.json"
 
 echo "BOTH_CASES_GENERATED_REQUIRES_HUMAN_SEMANTIC_REVIEW"
