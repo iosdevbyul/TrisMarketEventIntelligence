@@ -24,6 +24,8 @@ def _stage(system: str) -> str:
         return "EVENT_GROUPING"
     if "financial news and economic-indicator evidence reader" in system:
         return "FACT_EXTRACTION"
+    if "Analyze arbitrary dated company news" in system:
+        return "CAUSAL_PATH_GENERATION"
     if "CONDITIONAL economic MARKET PRESSURE" in system:
         return "IMPACT_GENERATION"
     if "Diagnose why a financial news/indicator event" in system:
