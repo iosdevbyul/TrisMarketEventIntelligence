@@ -51,7 +51,7 @@ class GroupAndImpactProvider:
             "evidence_excerpt": "increased input costs",
             "uncertainty": "HIGH", "drivers": [],
             "entities": [], "targetType": "MARKET",
-            "targetName": "US equities", "strength": "UNKNOWN",
+            "targetName": "US equities", "strength": "UNASSESSED",
             "strengthRationale": (
                 "No sourced basis allows a quantified pressure magnitude."
             ),
