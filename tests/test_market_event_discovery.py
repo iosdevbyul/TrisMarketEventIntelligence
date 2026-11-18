@@ -116,3 +116,43 @@ def test_recent_candidates_are_read_only_and_bounded(tmp_path: Path) -> None:
     assert len(candidates) <= 24
     assert all(row["evidence"].verification == "REPORTED_UNVERIFIED"
                for row in candidates)
+
+
+class InvalidPressureProvider(GroupAndImpactProvider):
+    """Simulate the observed free-form multi-field Gemma4 output."""
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        result = super().generate_json(system=system, user=user, schema=schema)
+        if len(self.inputs) != 3:
+            return result
+        proposed = json.loads(result)
+        impact = proposed["impacts"][0]
+        impact["market"] = "Semiconductor Market"
+        impact["sector"] = "Advanced Chip Manufacturing"
+        impact["horizon"] = "Medium to Long-Term"
+        impact["claimIndexes"] = []
+        return json.dumps(proposed)
+
+
+def test_malformed_gemma_impact_is_quarantined_without_inventing_signals(
+    tmp_path: Path,
+) -> None:
+    db = populated_db(tmp_path / "news.sqlite3")
+    provider = InvalidPressureProvider()
+    result = discover_and_analyze(
+        db, as_of=date(2024, 2, 15), provider=provider,
+    )
+    assert result["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+    assert result["modelCalls"] == 3
+    assert len(provider.inputs) == 3
+    assert len(result["events"]) == 1
+    rejected = result["events"][0]["analysis"]
+    assert rejected["modelCalls"] == 2
+    assert rejected["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+    assert rejected["impacts"] == []
+    assert rejected["validationCode"] == "MODEL_SCHEMA_INVALID"
+    fields = {item["path"] for item in rejected["invalidFields"]}
+    assert "impacts.0.market" in fields
+    assert "impacts.0.claimIndexes" in fields
+    assert "Semiconductor Market" not in json.dumps(rejected)
+    assert rejected["semanticAccuracyVerified"] is False
+    assert rejected["marketReturnsAnalyzed"] is False
