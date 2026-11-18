@@ -60,13 +60,14 @@ class ComposedProvider(StageProvider):
                 )
                 for index, key in enumerate(properties)
             })
-        if "regulatoryActionProgress" in properties:
+        if "regulatoryDecisionStage" in properties:
             self.calls += 1
             envelope = json.loads(user)
             self.inputs.append(envelope)
             return json.dumps({
-                "regulatoryActionProgress": "ANNOUNCED",
+                "regulatoryDecisionStage": "ANNOUNCED",
                 "requestedEvidenceStatus": "PARTIAL",
+                "implementationCompletionStatus": "NOT_OBSERVED",
             })
         return super().generate_json(
             system=system, user=user, schema=schema,
@@ -197,17 +198,18 @@ class DecisionScreenProvider(ComposedProvider):
                         role = "DIRECT_ANSWER"
                 roles[f"claim_{idx}"] = role
             return json.dumps(roles)
-        if "regulatoryActionProgress" in properties:
+        if "regulatoryDecisionStage" in properties:
             self.calls += 1
             envelope = json.loads(user)
             self.inputs.append(envelope)
             return json.dumps({
-                "regulatoryActionProgress": (
+                "regulatoryDecisionStage": (
                     "AUTHORIZED"
                     if any(x["role"] == "DIRECT_ANSWER"
                            for x in envelope["screenedRelevantEvidence"])
                     else "ANNOUNCED"
                 ),
+                "implementationCompletionStatus": "NOT_OBSERVED",
                 "requestedEvidenceStatus": (
                     "DIRECTLY_OBSERVED"
                     if any(x["role"] == "DIRECT_ANSWER"
@@ -249,11 +251,11 @@ def test_later_official_decisions_are_reconciled_separately_from_final_records()
 
 class UnsupportedDirectAnswerProvider(ComposedProvider):
     def generate_json(self, *, system: str, user: str, schema: dict) -> str:
-        if "regulatoryActionProgress" in schema["properties"]:
+        if "regulatoryDecisionStage" in schema["properties"]:
             self.calls += 1
             self.inputs.append(json.loads(user))
             return json.dumps({
-                "regulatoryActionProgress": "AUTHORIZED",
+                "regulatoryDecisionStage": "AUTHORIZED",
                 "requestedEvidenceStatus": "DIRECTLY_OBSERVED",
             })
         return super().generate_json(system=system, user=user, schema=schema)
@@ -291,3 +293,34 @@ def test_question_prose_reuses_visible_claim_text_without_generation() -> None:
         assert answer["explanation"].endswith(".")
         assert len(answer["explanation"]) <= 450
     assert step["modelCalls"] == provider.calls == 13
+
+
+class OverconfidentCompletionProvider(ComposedProvider):
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if "regulatoryDecisionStage" in schema["properties"]:
+            self.calls += 1
+            self.inputs.append(json.loads(user))
+            return json.dumps({
+                "regulatoryDecisionStage": "ANNOUNCED",
+                "implementationCompletionStatus": "COMPLETED",
+                "requestedEvidenceStatus": "PARTIAL",
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_unproven_completion_is_quarantined_not_published() -> None:
+    provider = OverconfidentCompletionProvider()
+    step = chain.run_replay(
+        fda(), date(2023, 6, 17), provider,
+        question_tracks=tracks(), reasoning_mode="staged-composed",
+    )
+    axes = step["assessment"]["independentQuestionAxes"]["questionAssessments"]
+    assert len(axes) == 2
+    assert all(x["regulatoryActionProgress"] == "ANNOUNCED" for x in axes)
+    assert all(x["implementationCompletionStatus"] == "UNKNOWN" for x in axes)
+    assert all(
+        x["modelReportedImplementationCompletionStatus"] == "COMPLETED"
+        for x in axes
+    )
+    assert all(x["completionEvidenceWarning"] is not None for x in axes)
+    assert step["assessment"]["semanticAccuracyVerified"] is False
