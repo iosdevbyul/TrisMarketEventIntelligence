@@ -376,3 +376,44 @@ def test_model_must_still_cite_real_claims_after_flat_schema_generation() -> Non
     provider = QueueProvider(impacts={"impacts": [proposed]})
     with pytest.raises(ValueError, match="claimIndexes"):
         analyze_pressure_two_stage(example(), provider)
+
+
+def test_single_article_unsupported_novelty_downgrades_without_losing_facts() -> None:
+    packet = example().model_dump(mode="json")
+    packet["evidences"] = [packet["evidences"][0]]
+    claim = first_pass()["claims"][0]
+    claim["novelty"] = "NEW_INFORMATION"
+    provider = QueueProvider(
+        facts={"claims": [claim]}, impacts={"impacts": [impact()]},
+    )
+    output = analyze_pressure_two_stage(
+        MarketEvidencePacket.model_validate(packet), provider,
+    )
+    assert output["modelCalls"] == 2
+    assert output["groundedClaims"][0]["novelty"] == "UNKNOWN"
+    assert output["impacts"][0]["supportingSourceIds"] == ["s1"]
+    assert output["semanticAccuracyVerified"] is False
+
+
+def test_market_mechanism_task_distinguishes_source_quote_from_inference() -> None:
+    provider = QueueProvider()
+    result = analyze_pressure_two_stage(example(), provider)
+    assert result["modelCalls"] == 2
+    assert "The economic channel is your inference" in (
+        provider.prompts[1]["analysisTask"]
+    )
+    assert provider.prompts[1]["groundedClaims"][0]["excerpt"] == FACT_QUOTE
+
+
+def test_single_source_novelty_guard_still_rejects_fabricated_evidence() -> None:
+    raw = example().model_dump(mode="json")
+    raw["evidences"] = [raw["evidences"][0]]
+    claim = first_pass()["claims"][0]
+    claim["excerpt"] = "An invented official rate cut with no source."
+    claim["novelty"] = "NEW_INFORMATION"
+    provider = QueueProvider(facts={"claims": [claim]})
+    with pytest.raises(ImpactAnalysisError, match="Claim not present"):
+        analyze_pressure_two_stage(
+            MarketEvidencePacket.model_validate(raw), provider,
+        )
+    assert len(provider.prompts) == 1
