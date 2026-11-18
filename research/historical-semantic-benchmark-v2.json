@@ -1,0 +1,302 @@
+{
+  "schemaVersion": "historical_semantic_benchmark_v2",
+  "purpose": "Development-set supplementary evidence-axis scoring. Provisional judgments only. Not an unseen holdout or publication-time snapshots.",
+  "reviewStatus": "PROVISIONAL_CURATOR_REFERENCE",
+  "minimumIndependentEventFamiliesForTrust": 5,
+  "minimumQuestionAssessmentsForTrust": 30,
+  "requiredHistoricalPITVerification": true,
+  "thresholds": {
+    "sourceCoverage": 1,
+    "requiredEvidenceRecall": 1,
+    "decisionAccuracy": 0.95,
+    "evidenceStatusAccuracy": 0.95,
+    "completionSafety": 1,
+    "criticalErrors": 0,
+    "directRecordAccuracy": 0.95,
+    "indirectProgressAccuracy": 0.95,
+    "modelCompletionClaimRate": 0
+  },
+  "cases": [
+    {
+      "id": "faa-early-inspection",
+      "event": "FAA",
+      "date": "2024-01-13",
+      "questionId": "faa-2024-7379-inspection-process-approval",
+      "required": [
+        [
+          "faa-20240112-inspection-process",
+          "additional-data"
+        ]
+      ],
+      "forbidden": [
+        [
+          "faa-20240124-production",
+          "return-to-service"
+        ]
+      ],
+      "decision": [
+        "ANNOUNCED",
+        "NOT_OBSERVED"
+      ],
+      "evidence": [
+        "PARTIAL"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "IN_PROGRESS",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED"
+      ]
+    },
+    {
+      "id": "faa-early-oversight",
+      "event": "FAA",
+      "date": "2024-01-13",
+      "questionId": "faa-2024-boeing-production-oversight-outcome",
+      "required": [
+        [
+          "faa-20240112-oversight",
+          "production-audit"
+        ]
+      ],
+      "forbidden": [
+        [
+          "faa-20240124-production",
+          "no-production-expansion"
+        ]
+      ],
+      "decision": [
+        "ANNOUNCED"
+      ],
+      "evidence": [
+        "PARTIAL"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "IN_PROGRESS",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED"
+      ]
+    },
+    {
+      "id": "faa-late-inspection",
+      "event": "FAA",
+      "date": "2024-01-25",
+      "questionId": "faa-2024-7379-inspection-process-approval",
+      "required": [
+        [
+          "faa-20240124-production",
+          "return-to-service"
+        ]
+      ],
+      "forbidden": [],
+      "decision": [
+        "AUTHORIZED"
+      ],
+      "evidence": [
+        "DIRECTLY_OBSERVED"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "IN_PROGRESS",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "PARTIAL",
+        "DIRECTLY_OBSERVED"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED"
+      ]
+    },
+    {
+      "id": "faa-late-oversight",
+      "event": "FAA",
+      "date": "2024-01-25",
+      "questionId": "faa-2024-boeing-production-oversight-outcome",
+      "required": [
+        [
+          "faa-20240124-production",
+          "no-production-expansion"
+        ],
+        [
+          "faa-20240112-oversight",
+          "production-audit"
+        ]
+      ],
+      "forbidden": [],
+      "decision": [
+        "RESTRICTED"
+      ],
+      "evidence": [
+        "PARTIAL"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "IN_PROGRESS",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "NOT_OBSERVED",
+        "PARTIAL"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED"
+      ]
+    },
+    {
+      "id": "fda-early-formula",
+      "event": "FDA",
+      "date": "2023-06-17",
+      "questionId": "fda-2023-xbb15-authorized-formula",
+      "required": [
+        [
+          "fda-20230616-formula",
+          "xbb-recommendation"
+        ]
+      ],
+      "forbidden": [
+        [
+          "fda-20230911-mrna",
+          "mrna-authorization"
+        ]
+      ],
+      "decision": [
+        "ANNOUNCED",
+        "NOT_OBSERVED"
+      ],
+      "evidence": [
+        "PARTIAL",
+        "NOT_OBSERVED"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "NOT_OBSERVED",
+        "PARTIAL"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED",
+        "UNKNOWN"
+      ]
+    },
+    {
+      "id": "fda-early-filings",
+      "event": "FDA",
+      "date": "2023-06-17",
+      "questionId": "fda-2023-manufacturer-filings-evidence",
+      "required": [
+        [
+          "fda-20230616-formula",
+          "filing-still-needed"
+        ]
+      ],
+      "forbidden": [
+        [
+          "fda-20230911-mrna",
+          "mrna-authorization"
+        ]
+      ],
+      "decision": [
+        "NOT_OBSERVED"
+      ],
+      "evidence": [
+        "PARTIAL"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED",
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ]
+    },
+    {
+      "id": "fda-late-formula",
+      "event": "FDA",
+      "date": "2023-10-04",
+      "questionId": "fda-2023-xbb15-authorized-formula",
+      "required": [
+        [
+          "fda-20230911-mrna",
+          "mrna-authorization"
+        ]
+      ],
+      "forbidden": [],
+      "decision": [
+        "AUTHORIZED"
+      ],
+      "evidence": [
+        "DIRECTLY_OBSERVED"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "DIRECTLY_OBSERVED",
+        "PARTIAL"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED",
+        "NOT_OBSERVED"
+      ]
+    },
+    {
+      "id": "fda-late-filings",
+      "event": "FDA",
+      "date": "2023-10-04",
+      "questionId": "fda-2023-manufacturer-filings-evidence",
+      "required": [
+        [
+          "fda-20230911-mrna",
+          "mrna-authorization"
+        ]
+      ],
+      "forbidden": [],
+      "decision": [
+        "NOT_OBSERVED",
+        "AUTHORIZED"
+      ],
+      "evidence": [
+        "PARTIAL"
+      ],
+      "completion": [
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "directRecordAvailability": [
+        "NOT_OBSERVED"
+      ],
+      "indirectRegulatoryProgress": [
+        "OBSERVED"
+      ]
+    }
+  ],
+  "evaluationSplit": "DEVELOPMENT_REUSED_FOR_MODEL_TUNING",
+  "referenceNotes": {
+    "directRecords": "These provisional status alternatives are explicitly scoped to the question, and may include ambiguity where a press release itself establishes authorization but not underlying source files.",
+    "rawCompletion": "Any model assertion of completed implementation, even when quarantined by the presentation layer, is scored separately as a model reliability concern.",
+    "developmentLeakage": "FAA/FDA were used to tune the architecture. This reference cannot pass the frozen holdout gate."
+  }
+}
