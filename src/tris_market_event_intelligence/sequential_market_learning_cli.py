@@ -564,6 +564,17 @@ def evaluate(model_prediction: dict, observed: datetime, horizon: timedelta,
 
 def next_lesson(model: Any, article: dict, prediction: dict,
                 evaluation: dict) -> dict:
+    # A title-only RSS item cannot support a causal diagnosis. Even if an
+    # unrelated market move disagrees with a direction, don't teach the model
+    # to attribute the market move to a headline with missing policy details.
+    if str(article.get("summary", "")).strip().casefold() == str(
+        article.get("title", "")
+    ).strip().casefold():
+        return {
+            "diagnosis": "INSUFFICIENT_ARTICLE_CONTENT: only a headline was supplied; "
+                         "price direction mismatch is not evidence of causation",
+            "lesson": "",
+        }
     wrong = [r for r in evaluation["impacts"] if r["status"] == "WRONG"]
     if not wrong:
         return {"diagnosis": "", "lesson": ""}
