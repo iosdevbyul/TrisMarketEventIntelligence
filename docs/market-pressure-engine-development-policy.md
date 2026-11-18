@@ -267,3 +267,39 @@ untouched. CI tests include the exact natural-language category form that
 caused the actual failure, unrelated unknown strings, correct enum inputs,
 conflicting impacts, and malformed explanations. Full market-impact judgment
 quality remains to be tested on the user's installed Gemma4.
+
+
+### First real v4 run: zero accepted pressures despite fact extraction
+
+The user ran the local `gemma4:e2b` market-pressure cycle and shared its
+review-only summary. It completed **five actual model calls** and produced
+two event groups. An article about solar adoption in Pakistan was rejected
+at structural model validation, with a root `value_error` (the precise
+cause is NOT established from the sanitized report). A group of Nvidia
+earnings and leadership articles produced three source-bound claims but
+returned an explicit `NO_DEFENSIBLE_ECONOMIC_CHANNEL` abstention.
+
+This is **NOT evidence that those economic events exert zero market
+pressure**. The missing conceptual distinction was that a publisher
+reports the underlying event, while economic transmission is an
+explicitly labeled conditional *inference* by this module. The source
+need not contain a stock-market explanation for a legitimate,
+high-uncertainty economic mechanism to be considered. The v5 prompt
+clarifies that distinction across all corporate, macroeconomic,
+infrastructure, supply and policy topics, without hardcoding a news
+story or answer direction.
+
+A single source cannot establish information novelty relative to
+earlier coverage. An unsupported `NEW_INFORMATION` label is therefore
+downgraded to `UNKNOWN` while preserving the verbatim quoted fact;
+an invented quotation, company or future source is still rejected.
+Empty optional abstention placeholders in native Ollama JSON are
+treated as absent, not as conflicting economic judgments; nonempty
+and incomplete abstention claims remain invalid. Regression tests
+cover both boundaries.
+
+The v4 research JSON is preserved. The next opt-in local experiment
+writes create-only `market-pressure-first-real-v5.json`; it requires
+human review of whether inferred directions, strengths, sources and
+affected targets are actually coherent. This is not a semantic
+accuracy result and must not automatically enable persistence.
