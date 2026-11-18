@@ -1,0 +1,184 @@
+"""Two-pass event understanding and qualitative pressure validation."""
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from tris_market_event_intelligence.impact import ImpactAnalysisError
+from tris_market_event_intelligence.market_evidence_pressure import MarketEvidencePacket
+from tris_market_event_intelligence.market_pressure_reasoning import (
+    analyze_pressure_two_stage,
+)
+
+
+def example() -> MarketEvidencePacket:
+    return MarketEvidencePacket.model_validate({
+        "eventId": "multi-source-market",
+        "subject": "Financing conditions and industry investment",
+        "asOfDateExclusive": "2024-02-15",
+        "evidences": [
+            {
+                "sourceId": "s1", "kind": "ECONOMIC_INDICATOR",
+                "publishedDate": "2024-02-13",
+                "sourceName": "Official price release",
+                "sourceUrl": "https://www.bls.gov/news.release/cpi.toc.htm",
+                "excerpt": (
+                    "The official agency release reported that consumer prices "
+                    "increased 0.3 percent during the reference month."
+                ),
+                "verification": "VERIFIED_SOURCE",
+                "indicatorName": "Consumer price index",
+                "indicatorValue": "0.3 percent",
+            },
+            {
+                "sourceId": "s2", "kind": "NEWS",
+                "publishedDate": "2024-02-14",
+                "sourceName": "Industry report",
+                "sourceUrl": "https://www.example.org/news",
+                "excerpt": (
+                    "A news report said that companies might postpone "
+                    "expansion plans because of higher financing costs."
+                ),
+                "verification": "REPORTED_UNVERIFIED",
+            },
+            {
+                "sourceId": "future", "kind": "NEWS",
+                "publishedDate": "2024-02-20",
+                "sourceName": "Future earnings",
+                "sourceUrl": "https://www.example.org/future",
+                "excerpt": (
+                    "A later financial release described a surprise increase "
+                    "in earnings that was not yet available."
+                ),
+                "verification": "REPORTED_UNVERIFIED",
+            },
+        ],
+    })
+
+
+FACT_QUOTE = "consumer prices increased 0.3 percent"
+NEWS_QUOTE = "companies might postpone expansion plans"
+
+
+def first_pass() -> dict:
+    return {
+        "claims": [
+            {"sourceId": "s1", "excerpt": FACT_QUOTE,
+             "factKind": "REPORTED_FACT", "novelty": "UNKNOWN", "entities": []},
+            {"sourceId": "s2", "excerpt": NEWS_QUOTE,
+             "factKind": "FORECAST", "novelty": "UNKNOWN", "entities": []},
+        ],
+    }
+
+
+def impact() -> dict:
+    return {
+        "market": "US", "sector": "BROAD_MARKET",
+        "direction": "NEGATIVE", "horizon": "SHORT_TERM",
+        "rationale": (
+            "The published price index could constrain rate-cut expectations, "
+            "raising the discount rate applied to future earnings and "
+            "potentially weighing on US equity valuations; the market "
+            "consensus, positioning, and priced-in effects are unknown."
+        ),
+        "evidence_excerpt": FACT_QUOTE,
+        "uncertainty": "HIGH",
+        "drivers": ["conditional discount rate effect"],
+        "entities": [], "targetType": "MARKET", "targetName": "US equities",
+        "strength": "UNKNOWN",
+        "strengthRationale": (
+            "The release alone cannot determine magnitude or positioning."
+        ),
+        "transmissionChannel": "DISCOUNT_RATE",
+        "claimIndexes": [0],
+        "countervailingFactors": ["other demand factors may offset impact"],
+    }
+
+
+class QueueProvider:
+    model_id = "mock-two-stage"
+
+    def __init__(self, facts: dict | None = None, impacts: dict | None = None):
+        self.facts = facts if facts is not None else first_pass()
+        self.impacts = impacts if impacts is not None else {"impacts": [impact()]}
+        self.prompts: list[dict] = []
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        self.prompts.append(json.loads(user))
+        return json.dumps(self.facts if len(self.prompts) == 1 else self.impacts)
+
+
+def test_two_stage_market_pressure_is_grounded_and_excludes_future() -> None:
+    p = QueueProvider()
+    result = analyze_pressure_two_stage(example(), p)
+    assert result["modelCalls"] == 2
+    assert result["visibleSourceIds"] == ["s1", "s2"]
+    assert result["excludedFutureSourceIds"] == ["future"]
+    assert result["impacts"][0]["direction"] == "NEGATIVE"
+    assert result["impacts"][0]["strength"] == "UNKNOWN"
+    assert result["impacts"][0]["supportingSourceIds"] == ["s1"]
+    assert result["historicalPITVerified"] is False
+    assert result["marketReturnsAnalyzed"] is False
+    assert len(p.prompts) == 2
+    assert "later financial release" not in json.dumps(p.prompts)
+    assert "outcomeLabelsAvailable" in p.prompts[1]
+
+
+def test_fact_hallucination_rejected_before_second_llm_call() -> None:
+    facts = first_pass()
+    facts["claims"][0]["excerpt"] = "A fabricated rate cut was announced."
+    p = QueueProvider(facts=facts)
+    with pytest.raises(ImpactAnalysisError, match="Claim not present"):
+        analyze_pressure_two_stage(example(), p)
+    assert len(p.prompts) == 1
+
+
+def test_impact_citation_must_match_extracted_claim() -> None:
+    i = impact()
+    i["claimIndexes"] = [1]
+    p = QueueProvider(impacts={"impacts": [i]})
+    with pytest.raises(ImpactAnalysisError, match="missing from cited claims"):
+        analyze_pressure_two_stage(example(), p)
+
+
+def test_company_target_must_be_named_in_source() -> None:
+    i = impact()
+    i["targetType"], i["targetName"] = "COMPANY", "ImaginaryCorp"
+    p = QueueProvider(impacts={"impacts": [i]})
+    with pytest.raises(ImpactAnalysisError, match="Company not identified"):
+        analyze_pressure_two_stage(example(), p)
+
+
+def test_unknown_direction_cannot_confidently_claim_strength() -> None:
+    i = impact()
+    i["direction"], i["strength"] = "UNCERTAIN", "HIGH"
+    p = QueueProvider(impacts={"impacts": [i]})
+    with pytest.raises(ValueError, match="UNCERTAIN_DIRECTION"):
+        analyze_pressure_two_stage(example(), p)
+
+
+def test_high_strength_from_only_unverified_reports_rejected() -> None:
+    i = impact()
+    i["claimIndexes"] = [1]
+    i["evidence_excerpt"] = NEWS_QUOTE
+    i["strength"] = "HIGH"
+    p = QueueProvider(impacts={"impacts": [i]})
+    with pytest.raises(ImpactAnalysisError, match="High pressure strength"):
+        analyze_pressure_two_stage(example(), p)
+
+
+def test_model_returns_no_claims_without_inventing_impacts() -> None:
+    p = QueueProvider(facts={"claims": []})
+    output = analyze_pressure_two_stage(example(), p)
+    assert output["modelCalls"] == 1
+    assert output["impacts"] == []
+    assert len(p.prompts) == 1
+
+
+def test_unverified_news_does_not_allow_medium_uncertainty() -> None:
+    i = impact()
+    i["uncertainty"] = "MEDIUM"
+    p = QueueProvider(impacts={"impacts": [i]})
+    with pytest.raises((ValueError, ImpactAnalysisError)):
+        analyze_pressure_two_stage(example(), p)
