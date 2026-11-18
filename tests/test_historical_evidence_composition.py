@@ -28,7 +28,6 @@ class ComposedProvider(StageProvider):
             envelope = json.loads(user)
             self.inputs.append(envelope)
             self.composed_inputs.append(envelope)
-            claim = envelope["claim"]
             if self.wrong_scope:
                 return json.dumps({
                     "explanation": "The regulator described a source action without finishing the sentence",
