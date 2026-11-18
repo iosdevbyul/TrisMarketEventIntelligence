@@ -93,3 +93,40 @@ def test_unassessed_strength_keeps_uncertainty_without_inventing_magnitude() -> 
     )
     assert result["modelStrengthPreserved"] == "UNASSESSED"
     assert result["observedMarketReactionVerified"] is False
+
+
+def test_actual_pakistan_solar_adoption_is_not_future_supplier_revenue() -> None:
+    hypothesis = _hypothesis()
+    hypothesis["transmissionChannel"] = "DEMAND"
+    hypothesis["direction"] = "POSITIVE"
+    hypothesis["strengthRationale"] = (
+        "An increase from 1% to 28% shows substantial solar adoption."
+    )
+    cited = [{
+        "sourceId": "article-20779",
+        "sourceVerification": "REPORTED_UNVERIFIED",
+        "excerpt": (
+            "People installing their own solar panels has helped boost "
+            "the solar share of Pakistan's electricity from 1% to 28%"
+        ),
+    }]
+    flags = assess_reasoning_quality(hypothesis, cited)["riskFlags"]
+    assert "OBSERVED_ADOPTION_NOT_EVIDENCE_OF_FUTURE_REVENUE" in flags
+    assert "QUALITATIVE_STRENGTH_NOT_EMPIRICALLY_VERIFIED" in flags
+
+
+def test_explicit_future_orders_source_avoids_adoption_extrapolation_flag() -> None:
+    hypothesis = _hypothesis()
+    hypothesis["transmissionChannel"] = "DEMAND"
+    hypothesis["direction"] = "POSITIVE"
+    cited = [{
+        "sourceId": "article-204",
+        "sourceVerification": "VERIFIED_SOURCE",
+        "excerpt": (
+            "Solar adoption climbed while future orders for equipment "
+            "were reported in signed supplier contracts."
+        ),
+    }]
+    assert "OBSERVED_ADOPTION_NOT_EVIDENCE_OF_FUTURE_REVENUE" not in (
+        assess_reasoning_quality(hypothesis, cited)["riskFlags"]
+    )
