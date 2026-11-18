@@ -58,6 +58,10 @@ class ComposedProvider(StageProvider):
                     "requestedEvidenceStatus": "NOT_OBSERVED",
                     "sourceId": q["originalVisibleSourceId"],
                     "claimId": q["originalVisibleClaimId"],
+                    "supportingEvidence": [{
+                        "sourceId": q["originalVisibleSourceId"],
+                        "claimId": q["originalVisibleClaimId"],
+                    }],
                     "explanation": (
                         "An official statement describes the action but "
                         "the directly requested primary documents are absent."
@@ -95,6 +99,7 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
         )
         axes = assessment["independentQuestionAxes"]["questionAssessments"]
         assert axes
+        assert all(x["supportingEvidence"] for x in axes)
         assert all(x["requestedEvidenceStatus"] == "NOT_OBSERVED" for x in axes)
         assert assessment["questionAxesDoNotOverwriteLegacyStatuses"] is True
         assert assessment["semanticAccuracyVerified"] is False
@@ -115,3 +120,20 @@ def test_invalid_source_output_is_never_composed_or_filled_in() -> None:
             question_tracks=tracks(), reasoning_mode="staged-composed",
         )
     assert provider.calls == 2
+
+
+def test_question_axes_new_evidence_input_is_cutoff_scoped() -> None:
+    provider = ComposedProvider()
+    chain.run_sequence(
+        fda(), [date(2023, 6, 17), date(2023, 10, 4)],
+        provider, question_tracks=tracks(),
+        reasoning_mode="staged-composed",
+    )
+    axis_inputs = [
+        value for value in provider.inputs
+        if "newlyExplainedClaims" in value
+    ]
+    assert len(axis_inputs) == 2
+    assert len(axis_inputs[0]["newlyExplainedClaims"]) == 4
+    assert "fda-20230911-mrna" not in json.dumps(axis_inputs[0])
+    assert len(axis_inputs[1]["newlyExplainedClaims"]) == 4
