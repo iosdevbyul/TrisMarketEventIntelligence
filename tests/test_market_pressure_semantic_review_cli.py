@@ -37,6 +37,10 @@ def test_review_exposes_actual_reasoning_and_provenance(tmp_path: Path) -> None:
     )
     assert accepted["references"][0]["sourceId"] == "s1"
     assert accepted["humanReview"]["humanDecision"] == "PENDING"
+    assert accepted["economicReasoningQuality"]["gateStatus"] == (
+        "HUMAN_SEMANTIC_REVIEW_REQUIRED"
+    )
+    assert accepted["economicReasoningQuality"]["economicAccuracyVerified"] is False
     assert accepted["humanReview"]["strengthSupported"] is None
     assert "SINGLE_CITED_SOURCE_NOT_INDEPENDENT_CORROBORATION" in (
         accepted["reviewFlags"]
