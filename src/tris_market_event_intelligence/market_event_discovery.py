@@ -82,9 +82,11 @@ def _eligible_date(
 def recent_candidates(
     db_path: Path, *, as_of: date, lookback_days: int = 10,
     per_table: int = 24, as_of_time: datetime | None = None,
+    page: int = 0,
 ) -> tuple[list[dict], dict]:
     """Search entire indexed source history within UTC cutoff, no id-based prefix."""
-    if not 1 <= lookback_days <= 120 or not 1 <= per_table <= 48:
+    if (not 1 <= lookback_days <= 120 or not 1 <= per_table <= 48
+            or type(page) is not int or not 0 <= page <= 20):
         raise ValueError("INVALID_DISCOVERY_BOUNDS")
     if db_path.is_symlink() or not db_path.is_file():
         raise ValueError("MARKET_SOURCE_DB_MISSING")
@@ -133,7 +135,7 @@ def recent_candidates(
             matching_in_window += len(options)
             table_selected = 0
             for _, identifier in options:
-                if table_selected >= per_table:
+                if table_selected >= per_table * (page + 1):
                     break
                 try:
                     packet = make_packet_from_db(
@@ -177,9 +179,13 @@ def recent_candidates(
     )
     # Maintain a bounded model context while accounting for all in-window
     # records and retaining time-eligible older database IDs.
-    selected = selected[:24]
+    total_pre_pagination = len(selected)
+    selected = selected[page * 24:(page + 1) * 24]
     return selected, {
         "candidateCount": len(selected),
+        "candidatePage": page,
+        "hasMoreCandidatePages": total_pre_pagination > (page + 1) * 24,
+        "examinedEligibleBeforePage": total_pre_pagination,
         "matchedWithinWindow": matching_in_window,
         "skippedInvalidOrOutOfWindow": skipped,
         "deduplicated": deduplicated,
@@ -192,13 +198,14 @@ def discover_and_analyze(
     db: Path, *, as_of: date, provider: LLMProvider,
     lookback_days: int = 10, max_groups: int = 2,
     as_of_time: datetime | None = None,
+    page: int = 0,
 ) -> dict:
     """Run selection, source-index-bound grouping and two-stage pressure."""
     if not 1 <= max_groups <= 3:
         raise ValueError("INVALID_MAX_GROUPS")
     candidates, inventory = recent_candidates(
         db, as_of=as_of, lookback_days=lookback_days,
-        as_of_time=as_of_time,
+        as_of_time=as_of_time, page=page,
     )
     if not candidates:
         return {
