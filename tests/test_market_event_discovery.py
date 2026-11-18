@@ -149,6 +149,9 @@ def test_malformed_gemma_impact_is_quarantined_without_inventing_signals(
     assert rejected["modelCalls"] == 2
     assert rejected["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
     assert rejected["impacts"] == []
+    assert rejected["validationStage"] == "IMPACT_GENERATION"
+    assert len(rejected["groundedClaims"]) == 1
+    assert rejected["groundedClaims"][0]["excerpt"] == "increased input costs"
     assert rejected["validationCode"] == "MODEL_SCHEMA_INVALID"
     fields = {item["path"] for item in rejected["invalidFields"]}
     assert "impacts.0.market" in fields
@@ -156,3 +159,38 @@ def test_malformed_gemma_impact_is_quarantined_without_inventing_signals(
     assert "Semiconductor Market" not in json.dumps(rejected)
     assert rejected["semanticAccuracyVerified"] is False
     assert rejected["marketReturnsAnalyzed"] is False
+
+
+class ConflictingAbstentionProvider(GroupAndImpactProvider):
+    """Reproduce one root-level Pydantic error, not a missing-source issue."""
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        result = super().generate_json(system=system, user=user, schema=schema)
+        if len(self.inputs) == 3:
+            record = json.loads(result)
+            record["noImpactCategory"] = "OTHER"
+            record["noImpactExplanation"] = (
+                "The model declares that the event has no economic impact "
+                "while also proposing a conditional market effect."
+            )
+            return json.dumps(record)
+        return result
+
+
+def test_root_validation_reason_and_first_pass_claims_are_not_lost(
+    tmp_path: Path,
+) -> None:
+    db = populated_db(tmp_path / "news.sqlite3")
+    provider = ConflictingAbstentionProvider()
+    result = discover_and_analyze(
+        db, as_of=date(2024, 2, 15), provider=provider,
+    )
+    analysis = result["events"][0]["analysis"]
+    assert result["modelCalls"] == 3
+    assert analysis["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+    assert analysis["validationCode"] == "MODEL_SCHEMA_INVALID"
+    assert analysis["validationReasonCode"] == "IMPACT_ABSTENTION_CONTRADICTION"
+    assert analysis["invalidFields"] == [{"path": "", "type": "value_error"}]
+    assert analysis["validationStage"] == "IMPACT_GENERATION"
+    assert analysis["groundedClaims"][0]["sourceId"] == "article-1"
+    assert analysis["impacts"] == []
