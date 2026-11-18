@@ -279,7 +279,7 @@ def reconcile(db: sqlite3.Connection, *, seq: int) -> None:
     """Promote only on independent, chronologically eligible paired evidence."""
     rules = db.execute(
         """SELECT id, status FROM memory_rules
-           WHERE status IN ('CANDIDATE','VALIDATING')"""
+           WHERE status IN ('CANDIDATE','VALIDATING','ACTIVE')"""
     ).fetchall()
     for rule_id, old_status in rules:
         events, wins, losses = db.execute(
