@@ -6,6 +6,7 @@ usage() {
   echo "Usage:"
   echo "  bash scripts/news-learning-review.sh market-pressure-replay --trace PRIVATE_V7_JSONL [offline, zero Ollama calls]"
   echo "  bash scripts/news-learning-review.sh market-pressure-semantic-review --trace PRIVATE_V7_JSONL --output NEW_PRIVATE_REVIEW_JSON [offline, zero Ollama calls]"
+  echo "  bash scripts/news-learning-review.sh market-pressure-semantic-finalize --review EDITED_PRIVATE_REVIEW_JSON --reviewer NAME --output NEW_PRIVATE_AUDIT_JSON [offline, human judgments required]"
   echo "  bash scripts/news-learning-review.sh market-indicator-import --db PRIVATE_DB --input REVIEWED_RELEASES_JSON --preview|--import"
   echo "  bash scripts/news-learning-review.sh market-pressure-cycle --db PRIVATE_NEWS_SQLITE --as-of YYYY-MM-DD --preview|--run [--lookback-days 10 --max-groups 2 --model gemma4:e2b --output NEW_JSON]"
   echo "  bash scripts/news-learning-review.sh market-evidence-pressure --db PRIVATE_NEWS_SQLITE --article-id ID --economic-event-id ID --event-id EVENT --subject SUBJECT --as-of YYYY-MM-DD --preview|--run [--model gemma4:e2b --output NEW_JSON]"
@@ -187,6 +188,9 @@ case "$action" in
     ;;
   market-indicator-import)
     module="tris_market_event_intelligence.market_indicator_releases_cli"
+    ;;
+  market-pressure-semantic-finalize)
+    module="tris_market_event_intelligence.market_pressure_semantic_finalize_cli"
     ;;
   market-pressure-semantic-review)
     module="tris_market_event_intelligence.market_pressure_semantic_review_cli"
