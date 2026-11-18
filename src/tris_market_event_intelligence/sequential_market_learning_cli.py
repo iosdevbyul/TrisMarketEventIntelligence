@@ -346,8 +346,8 @@ def init_journal(db: sqlite3.Connection) -> None:
 def recover_unsupported_targets(raw: dict[str, Any]) -> dict[str, Any]:
     """On exhausted retries, preserve valid impacts; explicitly reject unsupported ones.
 
-    Only unsupported non-stock mapping may be excluded. Other validation errors
-    (invalid direction, missing reason, duplicates) still fail closed.
+    Only unsupported non-stock targets and malformed stock ticker syntax may
+    be excluded. Invalid directions, missing reasons, and duplicates fail closed.
     """
     items = raw.get("impacts")
     if not isinstance(items, list) or len(items) > 8:
@@ -358,12 +358,16 @@ def recover_unsupported_targets(raw: dict[str, Any]) -> dict[str, Any]:
         try:
             canonical_prediction({"summary": "", "impacts": [item]})
         except ValueError as exc:
-            if str(exc) != "Unsupported non-stock target":
+            code = {
+                "Unsupported non-stock target": "UNSUPPORTED_NON_STOCK_TARGET",
+                "Malformed ticker": "MALFORMED_STOCK_TICKER",
+            }.get(str(exc))
+            if code is None:
                 raise
             rejected.append({
                 "targetType": item.get("targetType"),
                 "target": item.get("target"),
-                "reasonCode": "UNSUPPORTED_NON_STOCK_TARGET",
+                "reasonCode": code,
             })
         else:
             valid.append(item)
@@ -390,7 +394,9 @@ def predict_with_repair(model: Any, payload: dict) -> dict:
                 "for SECTOR, target MUST be one of " +
                 ", ".join(k for k in SECTOR_ETFS if k != "BROAD_MARKET") +
                 "; for MARKET, target MUST be BROAD_MARKET; "
-                "for STOCK, target MUST be a real ticker, not an industry name. "
+                "for STOCK, target MUST be a single ticker (1-12 chars, "
+                "A-Z, 0-9, dot or hyphen only), not a company name, list, "
+                "country, industry or prose. "
                 "The valid direction values are POSITIVE, NEGATIVE, NEUTRAL. "
                 "Do not invent proxies or unsupported sector names. "
                 "Omit unclear targets rather than guessing."
@@ -419,7 +425,7 @@ def predict_with_repair(model: Any, payload: dict) -> dict:
             return prediction
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             last_error = str(exc)[:180]
-    if last_error == "Unsupported non-stock target" and last_raw is not None:
+    if last_error in {"Unsupported non-stock target", "Malformed ticker"} and last_raw is not None:
         prediction = recover_unsupported_targets(last_raw)
         # Guard surprise claims just as strictly on this recovery path.
         context = payload.get("marketContext", {})
