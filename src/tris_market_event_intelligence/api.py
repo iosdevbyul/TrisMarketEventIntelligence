@@ -15,6 +15,7 @@ from tris_market_event_intelligence.api_queries import (
     database_ready,
 )
 from tris_market_event_intelligence.news_pressure_store import NewsPressureStore
+from tris_market_event_intelligence.market_pressure_results_store import MarketPressureResultStore
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
@@ -128,6 +129,22 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         except (OSError, sqlite3.Error, ValueError) as exc:
             raise HTTPException(
                 status_code=503, detail="News pressure signal database unavailable"
+            ) from exc
+
+    @app.get("/api/v1/market-pressure-research")
+    def list_market_pressure_research(
+        after_id: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        # Read-only; never initialize/migrate or invoke the LLM on GET.
+        try:
+            return MarketPressureResultStore(path).list_results(
+                after_id=after_id, limit=limit,
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Market pressure research database unavailable",
             ) from exc
 
     return app
