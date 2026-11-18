@@ -208,6 +208,8 @@ def inspect(journal: Path, *, limit: int = 1000,
                 "originalPredictionSummary": prediction.get("summary"),
                 "surpriseAssessment": prediction.get("surpriseAssessment"),
                 "marketContext": prediction.get("marketContext"),
+                "targetMappingRejections": prediction.get("targetMappingRejections", []),
+                "recoveryStatus": prediction.get("recoveryStatus"),
                 "predictedImpacts": predicted,
                 "outcomes": outcomes,
                 "diagnosis": feedback.get("diagnosis"),
@@ -311,6 +313,7 @@ def markdown(report: dict[str, Any]) -> str:
             f"- AI 분석 요약: {_text(record['originalPredictionSummary'])}",
             f"- 발표 전 시장 근거: {_text(record.get('marketContext'))}",
             f"- 기대 대비 분석: {_text(record.get('surpriseAssessment'))}",
+            f"- 대상 매핑 거부 기록: {_text(record.get('targetMappingRejections'))}",
             f"- 기사 내용: {_text(record['articleSummary'])}",
             "",
         ])
@@ -416,6 +419,17 @@ def html_report(report: dict[str, Any]) -> str:
                 "<th>저장된 판정</th></tr></thead><tbody>"
                 + rows + "</tbody></table>"
             )
+        rejected_targets = record.get("targetMappingRejections") or []
+        rejected_list = "".join(
+            f"<li>{esc(item.get('targetType'))}: {esc(item.get('target'))} "
+            f"— {esc(item.get('reasonCode'))}</li>"
+            for item in rejected_targets
+        ) or "<li>없음</li>"
+        mapping_notice = (
+            f"<p><b>대상 매핑 상태:</b> {esc(record.get('recoveryStatus'))}</p>"
+            f"<p><b>거부된 미지원 대상 (예측·평가 제외):</b></p>"
+            f"<ul>{rejected_list}</ul>"
+        )
         context = record.get("marketContext") or {}
         surprise = record.get("surpriseAssessment") or {}
         earlier = "".join(
@@ -454,6 +468,7 @@ def html_report(report: dict[str, Any]) -> str:
             + "<h3>발표 전 시장 기대·새로운 정보 분석</h3>"
             + assessment_text
             + "".join(tables)
+            + mapping_notice
             + f"<p><b>실패 원인 진단:</b> {esc(record['diagnosis'])}</p>"
             f"<p><b>다음 기사 수정 규칙:</b> {esc(record['correctiveRule'])}</p>"
             f"<p><b>해당 분석에 적용한 규칙:</b></p><ul>{applied}</ul>"
