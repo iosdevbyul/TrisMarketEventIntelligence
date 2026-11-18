@@ -221,3 +221,55 @@ def test_ollama_portable_json_still_rejects_invalid_impact() -> None:
     provider.settings = SimpleNamespace(kind="ollama")
     with pytest.raises(ValueError, match="direction"):
         analyze_pressure_two_stage(example(), provider)
+
+
+def test_empty_real_model_impact_must_report_explainable_abstention() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [],
+        "noImpactCategory": "NO_IDENTIFIABLE_AFFECTED_TARGET",
+        "noImpactExplanation": (
+            "The cited headlines contain no reliably identifiable economic "
+            "exposure for a particular market, industry or company."
+        ),
+    })
+    result = analyze_pressure_two_stage(example(), provider)
+    assert result["impacts"] == []
+    assert result["noImpactAssessment"]["category"] == (
+        "NO_IDENTIFIABLE_AFFECTED_TARGET"
+    )
+    assert result["noImpactAssessment"]["explanation"]
+    assert result["modelCalls"] == 2
+
+
+def test_unexplained_empty_result_is_not_marked_quality_pass() -> None:
+    result = analyze_pressure_two_stage(
+        example(), QueueProvider(impacts={"impacts": []}),
+    )
+    assert result["noImpactAssessment"]["category"] == "UNEXPLAINED_ABSTENTION"
+    assert result["semanticAccuracyVerified"] is False
+
+
+def test_unverified_news_can_support_qualified_pressure_not_forced_silence() -> None:
+    proposed = impact()
+    proposed["evidence_excerpt"] = NEWS_QUOTE
+    proposed["claimIndexes"] = [1]
+    proposed["strength"] = "LOW"
+    proposed["uncertainty"] = "HIGH"
+    provider = QueueProvider(impacts={"impacts": [proposed]})
+    result = analyze_pressure_two_stage(example(), provider)
+    assert result["impacts"][0]["strength"] == "LOW"
+    assert result["impacts"][0]["uncertainty"] == "HIGH"
+    assert result["impacts"][0]["supportingSourceIds"] == ["s2"]
+    assert result["noImpactAssessment"] is None
+
+
+def test_empty_explanation_with_nonempty_impact_rejected() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [impact()],
+        "noImpactCategory": "OTHER",
+        "noImpactExplanation": (
+            "The model contradicts itself by both answering and abstaining."
+        ),
+    })
+    with pytest.raises(ValueError, match="IMPACT_ABSTENTION_CONTRADICTION"):
+        analyze_pressure_two_stage(example(), provider)
