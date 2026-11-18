@@ -474,13 +474,21 @@ def assess_question_axes(
             if item["role"] in {"DIRECT_ANSWER", "INTERMEDIATE_DECISION"}
         ]
         narrative_candidates = substantive or candidate_input
-        sorted_evidence = sorted(
-            narrative_candidates,
-            key=lambda item: (
-                priority[item["role"]], item["sourceDate"]
+        sorted_evidence = [
+            primary,
+            *sorted(
+                (
+                    item for item in narrative_candidates
+                    if (item["sourceId"], item["claimId"]) != (
+                        primary["sourceId"], primary["claimId"]
+                    )
+                ),
+                key=lambda item: (
+                    priority[item["role"]], item["sourceDate"]
+                ),
+                reverse=True,
             ),
-            reverse=True,
-        )
+        ]
         narrative_parts: list[str] = []
         for item in sorted_evidence:
             sentence = item["text"]
@@ -503,6 +511,13 @@ def assess_question_axes(
         # legitimately use NOT_OBSERVED for original documents even when
         # a related authorization has been announced.
         consistency_flags: list[str] = []
+        if (
+            primary["role"] == "RELATED_CONTEXT"
+            and substantive
+        ):
+            consistency_flags.append(
+                "CONTEXT_PRIMARY_SELECTED_OVER_SUBSTANTIVE_ACTION"
+            )
         if (
             answer.requestedEvidenceStatus == "NOT_OBSERVED"
             and substantive
