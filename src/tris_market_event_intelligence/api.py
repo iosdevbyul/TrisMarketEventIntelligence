@@ -14,8 +14,8 @@ from tris_market_event_intelligence.api_queries import (
     claims_database_ready,
     database_ready,
 )
-from tris_market_event_intelligence.news_pressure_store import NewsPressureStore
 from tris_market_event_intelligence.market_pressure_results_store import MarketPressureResultStore
+from tris_market_event_intelligence.news_pressure_store import NewsPressureStore
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
