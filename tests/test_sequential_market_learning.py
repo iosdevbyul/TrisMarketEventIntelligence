@@ -308,3 +308,72 @@ def test_legacy_prediction_without_surprise_is_explicitly_unknown():
     })
     assert prediction["surpriseAssessment"]["expectationStatus"] == "UNKNOWN"
     assert prediction["surpriseAssessment"]["pricedInStatus"] == "UNKNOWN"
+
+
+def test_sector_etf_proxy_is_normalized_without_guessing():
+    output = seq.canonical_prediction({"impacts": [
+        {"targetType": "SECTOR", "target": "SMH",
+         "direction": "NEGATIVE", "reason": "Supply limits"},
+        {"targetType": "MARKET", "target": "SPY",
+         "direction": "NEUTRAL", "reason": "Offsetting effects"},
+    ]})
+    assert output["impacts"][0]["target"] == "SEMICONDUCTORS"
+    assert output["impacts"][0]["priceProxy"] == "SMH"
+    assert output["impacts"][1]["target"] == "BROAD_MARKET"
+
+
+def test_unrecognized_sector_is_rejected_without_aborting_other_targets():
+    class InvalidSectorModel:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_json(self, *, system, user, schema):
+            self.calls += 1
+            return json.dumps({
+                "summary": "Positive news",
+                "impacts": [
+                    {"targetType": "SECTOR", "target": "UNLISTED_INDUSTRY",
+                     "direction": "POSITIVE", "reason": "New order"},
+                    {"targetType": "STOCK", "target": "NVDA",
+                     "direction": "POSITIVE", "reason": "Direct exposure"},
+                ],
+            })
+    model = InvalidSectorModel()
+    output = seq.predict_with_repair(model, {
+        "marketContext": {
+            "consensus": {"status": "UNKNOWN"},
+            "earlierRelatedArticles": [],
+        },
+    })
+    assert model.calls == 3
+    assert [i["target"] for i in output["impacts"]] == ["NVDA"]
+    assert output["recoveryStatus"] == "PARTIAL_TARGET_MAPPING"
+    assert output["targetMappingRejections"][0]["target"] == "UNLISTED_INDUSTRY"
+    assert output["surpriseAssessment"]["expectationStatus"] == "UNKNOWN"
+
+
+def test_every_unsupported_target_is_abstention_not_a_false_hit():
+    class UnsupportedOnly:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({"summary": "unclear", "impacts": [
+                {"targetType": "SECTOR", "target": "UNSUPPORTED",
+                 "direction": "POSITIVE", "reason": "Unknown exposure"},
+            ]})
+    output = seq.predict_with_repair(UnsupportedOnly(), {
+        "marketContext": {"consensus": {"status": "UNKNOWN"},
+                          "earlierRelatedArticles": []},
+    })
+    assert output["impacts"] == []
+    assert output["recoveryStatus"] == "NO_VALID_TARGETS"
+    assert len(output["targetMappingRejections"]) == 1
+
+
+def test_invalid_direction_remains_hard_error_after_retries():
+    class InvalidDirection:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({"summary": "unclear", "impacts": [
+                {"targetType": "SECTOR", "target": "BAD_SECTOR",
+                 "direction": "SIDEWAYS", "reason": "Unknown"},
+            ]})
+    with pytest.raises(ValueError, match="AFTER_3_ATTEMPTS"):
+        seq.predict_with_repair(InvalidDirection(), {"article": {}})
