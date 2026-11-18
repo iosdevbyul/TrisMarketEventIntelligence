@@ -182,3 +182,12 @@ def test_unverified_news_does_not_allow_medium_uncertainty() -> None:
     p = QueueProvider(impacts={"impacts": [i]})
     with pytest.raises((ValueError, ImpactAnalysisError)):
         analyze_pressure_two_stage(example(), p)
+
+
+
+def test_economic_surprise_requires_sourced_actual_and_consensus() -> None:
+    proposed = impact()
+    proposed["expectationComparison"] = "ABOVE_EXPECTATION"
+    p = QueueProvider(impacts={"impacts": [proposed]})
+    with pytest.raises(ImpactAnalysisError, match="lacks sourced consensus"):
+        analyze_pressure_two_stage(example(), p)
