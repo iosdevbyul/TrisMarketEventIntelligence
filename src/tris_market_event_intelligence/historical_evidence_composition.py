@@ -47,6 +47,8 @@ class QuestionAxes(Strict):
         "NOT_OBSERVED", "IN_PROGRESS", "COMPLETED", "UNKNOWN",
     ]
     completionEvidenceWarning: str | None
+    evidenceStateConsistencyFlags: list[str]
+    evidenceStateConsistencyVerified: bool
     requestedEvidenceStatus: Literal[
         "NOT_OBSERVED", "PARTIAL", "DIRECTLY_OBSERVED",
     ]
@@ -443,6 +445,40 @@ def assess_question_axes(
             raise ComposedEvidenceError(
                 "COMPOSED_QUESTION_NARRATIVE_UNAVAILABLE"
             )
+        # These are REVIEW signals only, not corrections: the evidence
+        # screen and the state labels are both model-authored. A model can
+        # legitimately use NOT_OBSERVED for original documents even when
+        # a related authorization has been announced.
+        consistency_flags: list[str] = []
+        if (
+            answer.requestedEvidenceStatus == "NOT_OBSERVED"
+            and substantive
+        ):
+            consistency_flags.append(
+                "SELECTED_REGULATORY_ACTION_WITH_NO_REQUESTED_EVIDENCE"
+            )
+        if (
+            answer.regulatoryDecisionStage == "NOT_OBSERVED"
+            and any(
+                item["role"] == "INTERMEDIATE_DECISION"
+                for item in substantive
+            )
+        ):
+            consistency_flags.append(
+                "INTERMEDIATE_DECISION_WITH_NO_REGULATORY_DECISION"
+            )
+        if (
+            answer.regulatoryDecisionStage == "ANNOUNCED"
+            and any(
+                item["role"] == "INTERMEDIATE_DECISION"
+                for item in substantive
+            )
+        ):
+            consistency_flags.append(
+                "ANNOUNCED_STAGE_MAY_UNDERSTATE_LATER_ACTION"
+            )
+        if completion_warning is not None:
+            consistency_flags.append(completion_warning)
         remaining = {
             "DIRECTLY_OBSERVED": (
                 "The selected dated official claim directly answers "
@@ -476,6 +512,8 @@ def assess_question_axes(
                 answer.implementationCompletionStatus
             ),
             "completionEvidenceWarning": completion_warning,
+            "evidenceStateConsistencyFlags": consistency_flags,
+            "evidenceStateConsistencyVerified": False,
             "requestedEvidenceStatus": answer.requestedEvidenceStatus,
             "explanation": " ".join(narrative_parts),
             "remainingEvidence": remaining,
