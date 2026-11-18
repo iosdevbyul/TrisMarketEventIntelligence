@@ -100,7 +100,7 @@ bash scripts/news-learning-review.sh market-evidence-pressure \
   --output /path/to/new-private-market-pressure-result.json
 ```
 
-The output is create-only, and the model is called exactly once.
+The output is create-only. The default two-stage engine first extracts\nsource-bound claims and then reasons about conditional pressure and qualitative\nstrength. This uses up to two model calls per event; the prior one-call\ncontract is available only with `--single-stage-compat`.
 No model installation or implicit source downloads take place.
 
 ## Existing news.sqlite3 adapter (read-only)
@@ -130,7 +130,7 @@ For a real run, use the same arguments with `--run --model gemma4:e2b
 Selecting relevant IDs is still manual and is not yet an automated event
 clustering/deduplication or reliable economic-series ingestion workflow.
 
-## What still needs validation
+See [the current full product contract](market-pressure-engine-development-policy.md)\nfor automatic candidate discovery and the review-only two-stage process.\n\n## What still needs validation
 
 1. Automatic event-cluster selection across the existing collector and a
    time-verified dedicated economic-series source, eliminating manual ID selection.
