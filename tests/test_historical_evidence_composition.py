@@ -256,6 +256,7 @@ class UnsupportedDirectAnswerProvider(ComposedProvider):
             self.inputs.append(json.loads(user))
             return json.dumps({
                 "regulatoryDecisionStage": "AUTHORIZED",
+                "implementationCompletionStatus": "NOT_OBSERVED",
                 "requestedEvidenceStatus": "DIRECTLY_OBSERVED",
             })
         return super().generate_json(system=system, user=user, schema=schema)
