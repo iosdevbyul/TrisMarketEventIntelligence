@@ -429,7 +429,7 @@ def html_report(report: dict[str, Any]) -> str:
             f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
             f"<p><b>Gemma 분석:</b> {esc(record['originalPredictionSummary'])}</p>"
             + "".join(tables)
-            f"<p><b>실패 원인 진단:</b> {esc(record['diagnosis'])}</p>"
+            + f"<p><b>실패 원인 진단:</b> {esc(record['diagnosis'])}</p>"
             f"<p><b>다음 기사 수정 규칙:</b> {esc(record['correctiveRule'])}</p>"
             f"<p><b>해당 분석에 적용한 규칙:</b></p><ul>{applied}</ul>"
             "</div></details>"
