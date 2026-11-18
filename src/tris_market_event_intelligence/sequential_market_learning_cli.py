@@ -503,7 +503,9 @@ def price_return(client: httpx.Client, symbol: str, observed: datetime,
         sessions.append((close_at, price))
     sessions.sort()
     prior = [(t, p) for t, p in sessions if t < observed]
-    later = [(t, p) for t, p in sessions if t >= observed]
+    # A release stamped exactly at the close cannot use that same close
+    # as its post-release reaction; start with the next trading session.
+    later = [(t, p) for t, p in sessions if t > observed]
     if not prior or not later:
         raise ValueError("Price bars unavailable around release")
     before, start = prior[-1]
