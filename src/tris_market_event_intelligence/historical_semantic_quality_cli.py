@@ -17,7 +17,10 @@ def _pairs(items: list[dict[str, Any]]) -> set[tuple[str, str]]:
 
 
 def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
-    if benchmark.get("schemaVersion") != "historical_semantic_benchmark_v1":
+    if benchmark.get("schemaVersion") not in {
+        "historical_semantic_benchmark_v1",
+        "historical_semantic_benchmark_v2",
+    }:
         raise ValueError("BENCHMARK_SCHEMA_UNSUPPORTED")
     index: dict[tuple[str, str, str], tuple[dict, dict]] = {}
     event_pit: dict[str, bool] = {}
@@ -44,6 +47,7 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
                 if key in index:
                     raise ValueError("DUPLICATE_ASSESSMENT:" + repr(key))
                 index[key] = (result, screens[result["questionId"]])
+    is_v2 = benchmark["schemaVersion"] == "historical_semantic_benchmark_v2"
     details: list[dict] = []
     totals = defaultdict(int)
     for case in benchmark["cases"]:
@@ -72,6 +76,18 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         decision_ok = result.get("regulatoryDecisionStage") in case["decision"]
         evidence_ok = result.get("requestedEvidenceStatus") in case["evidence"]
         completion_ok = result.get("implementationCompletionStatus") in case["completion"]
+        direct_ok = (
+            result.get("directRecordAvailability")
+            in case.get("directRecordAvailability", [])
+        ) if is_v2 else None
+        indirect_ok = (
+            result.get("indirectRegulatoryProgress")
+            in case.get("indirectRegulatoryProgress", [])
+        ) if is_v2 else None
+        model_completion_reported = (
+            result.get("modelReportedImplementationCompletionStatus")
+            == "COMPLETED"
+        ) if is_v2 else None
         # Hard safety failure: any COMPLETED decision is not sufficiently
         # grounded until explicit independent source-level completion evidence
         # verification exists. The current mode deliberately never claims it.
@@ -88,6 +104,10 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
             ("evaluatedCases", 1),
         ):
             totals[name] += value
+        if is_v2:
+            totals["directRecordCorrect"] += int(bool(direct_ok))
+            totals["indirectProgressCorrect"] += int(bool(indirect_ok))
+            totals["modelCompletionClaims"] += int(bool(model_completion_reported))
         errors = []
         if missing:
             errors.append("REQUIRED_CLAIM_MISSING")
@@ -103,6 +123,13 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
             errors.append("REQUESTED_EVIDENCE_STATUS_MISMATCH")
         if not completion_safe:
             errors.append("COMPLETION_SAFETY_FAILURE")
+        if is_v2:
+            if not direct_ok:
+                errors.append("DIRECT_RECORD_STATUS_MISMATCH")
+            if not indirect_ok:
+                errors.append("INDIRECT_PROGRESS_STATUS_MISMATCH")
+            if model_completion_reported:
+                errors.append("MODEL_UNVERIFIED_COMPLETION_CLAIM")
         totals["criticalErrors"] += len(errors)
         details.append({
             "id": case["id"],
@@ -121,6 +148,15 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
             "completionObserved": result.get("implementationCompletionStatus"),
             "completionAllowed": case["completion"],
             "warnings": result.get("evidenceStateConsistencyFlags", []),
+            **({
+                "directRecordObserved": result.get("directRecordAvailability"),
+                "directRecordAllowed": case["directRecordAvailability"],
+                "indirectProgressObserved": result.get("indirectRegulatoryProgress"),
+                "indirectProgressAllowed": case["indirectRegulatoryProgress"],
+                "modelReportedCompletion": result.get(
+                    "modelReportedImplementationCompletionStatus"
+                ),
+            } if is_v2 else {}),
             "errors": errors,
         })
     denominator = totals["evaluatedCases"] or 1
@@ -138,10 +174,21 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         "completionSafety": totals["completionSafe"] / denominator,
         "criticalErrors": totals["criticalErrors"],
     }
+    if is_v2:
+        rates.update({
+            "directRecordAccuracy": totals["directRecordCorrect"] / denominator,
+            "indirectProgressAccuracy": (
+                totals["indirectProgressCorrect"] / denominator
+            ),
+            "modelCompletionClaimRate": (
+                totals["modelCompletionClaims"] / denominator
+            ),
+        })
     thresholds = benchmark["thresholds"]
     threshold_checks = {
         key: (
-            value <= thresholds[key] if key == "criticalErrors"
+            value <= thresholds[key]
+            if key in {"criticalErrors", "modelCompletionClaimRate"}
             else value >= thresholds[key]
         )
         for key, value in rates.items()
@@ -168,7 +215,10 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         ),
     }
     return {
-        "schemaVersion": "historical_semantic_score_v1",
+        "schemaVersion": (
+            "historical_semantic_score_v2" if is_v2
+            else "historical_semantic_score_v1"
+        ),
         "referenceStatus": benchmark["reviewStatus"],
         "evaluationSplit": benchmark.get("evaluationSplit", "UNSPECIFIED"),
         "status": (
