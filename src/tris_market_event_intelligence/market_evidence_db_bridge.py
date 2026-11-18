@@ -27,6 +27,7 @@ def make_packet_from_db(
     db: Path, *, event_id: str, subject: str, as_of: str,
     article_ids: tuple[int, ...] = (), economic_event_ids: tuple[int, ...] = (),
     indicator_release_ids: tuple[int, ...] = (),
+    as_of_time: str | None = None,
 ) -> MarketEvidencePacket:
     if (
         not article_ids and not economic_event_ids and not indicator_release_ids
@@ -124,5 +125,6 @@ def make_packet_from_db(
         "eventId": event_id,
         "subject": subject,
         "asOfDateExclusive": as_of,
+        "asOfTimestampExclusive": as_of_time,
         "evidences": evidences,
     })
