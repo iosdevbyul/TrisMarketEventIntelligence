@@ -23,7 +23,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v2-abstention"
+PROMPT_VERSION = "market-pressure-two-stage-v3-abstention-normalized"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -67,7 +67,12 @@ One announcement may create opposite pressures for different companies
 or sectors. Do not invent named beneficiaries or counterparty companies.
 If no cited fact has a defensible economic transmission channel and
 affected target, return an empty impacts array and explain what is
-missing using noImpactCategory and noImpactExplanation. Do not fabricate
+missing using noImpactCategory and noImpactExplanation.
+noImpactCategory is a machine code (not a sentence) and MUST be one of
+NO_DEFENSIBLE_ECONOMIC_CHANNEL, NO_IDENTIFIABLE_AFFECTED_TARGET,
+EVIDENCE_TOO_AMBIGUOUS, UNRESOLVED_CONFLICT, OTHER. Put the human-readable
+justification in noImpactExplanation; never substitute an English label
+for the machine code. Do not fabricate
 a positive or negative sign to avoid abstaining. A nonempty impacts
 array must have both abstention fields null.
 No security-level price targets, numerical return forecasts, or buy/sell orders."""
@@ -111,6 +116,36 @@ class PressureImpact(Impact):
         if self.direction == "UNCERTAIN" and self.strength != "UNASSESSED":
             raise ValueError("UNCERTAIN_DIRECTION_HAS_INDETERMINATE_STRENGTH")
         return self
+
+
+# The local Ollama JSON mode produces valid JSON but does not enforce enum
+# values. Preserve its original free-text label without ever accepting an
+# unsupported value as a canonical machine code.
+_ABSTENTION_CODES = frozenset({
+    "NO_DEFENSIBLE_ECONOMIC_CHANNEL",
+    "NO_IDENTIFIABLE_AFFECTED_TARGET",
+    "EVIDENCE_TOO_AMBIGUOUS",
+    "UNRESOLVED_CONFLICT",
+    "OTHER",
+})
+
+
+def _parse_impact_response(raw: str) -> tuple[PressureAnalysis, str | None]:
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("IMPACT_RESPONSE_NOT_OBJECT")
+    original = payload.get("noImpactCategory")
+    raw_label: str | None = None
+    if isinstance(original, str) and original not in _ABSTENTION_CODES:
+        # This is ONLY a category normalization. No direction, intensity,
+        # evidence, target, or economic mechanism is repaired or inferred.
+        if len(original) > 160 or not original.strip():
+            raise ValueError("IMPACT_ABSTENTION_CATEGORY_INVALID")
+        if payload.get("impacts"):
+            raise ValueError("IMPACT_ABSTENTION_WITH_NONEMPTY_IMPACTS")
+        raw_label = original
+        payload["noImpactCategory"] = "OTHER"
+    return PressureAnalysis.model_validate(payload), raw_label
 
 
 class PressureAnalysis(Strict):
@@ -252,7 +287,7 @@ def analyze_pressure_two_stage(
         }, ensure_ascii=False),
         schema=None if ollama_json_mode else schema,
     )
-    analysis = PressureAnalysis.model_validate_json(raw_impacts)
+    analysis, raw_abstention_label = _parse_impact_response(raw_impacts)
     impacts = []
     for item in analysis.impacts:
         if (
@@ -335,6 +370,8 @@ def analyze_pressure_two_stage(
         abstention={
             "category": analysis.noImpactCategory or "UNEXPLAINED_ABSTENTION",
             "explanation": analysis.noImpactExplanation,
+            "rawModelCategory": raw_abstention_label,
+            "categoryNormalized": raw_abstention_label is not None,
         } if not impacts else None,
     )
 
