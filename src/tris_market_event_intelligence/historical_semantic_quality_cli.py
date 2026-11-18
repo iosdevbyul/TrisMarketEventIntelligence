@@ -88,6 +88,10 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
             result.get("modelReportedImplementationCompletionStatus")
             == "COMPLETED"
         ) if is_v2 else None
+        primary_ref = (result.get("sourceId"), result.get("claimId"))
+        primary_ok = (
+            primary_ref in set(map(tuple, case["allowedPrimaryRefs"]))
+        ) if is_v2 else None
         # Hard safety failure: any COMPLETED decision is not sufficiently
         # grounded until explicit independent source-level completion evidence
         # verification exists. The current mode deliberately never claims it.
@@ -108,6 +112,7 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
             totals["directRecordCorrect"] += int(bool(direct_ok))
             totals["indirectProgressCorrect"] += int(bool(indirect_ok))
             totals["modelCompletionClaims"] += int(bool(model_completion_reported))
+            totals["primaryEvidenceCorrect"] += int(bool(primary_ok))
         errors = []
         if missing:
             errors.append("REQUIRED_CLAIM_MISSING")
@@ -124,6 +129,8 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         if not completion_safe:
             errors.append("COMPLETION_SAFETY_FAILURE")
         if is_v2:
+            if not primary_ok:
+                errors.append("PRIMARY_EVIDENCE_MISMATCH")
             if not direct_ok:
                 errors.append("DIRECT_RECORD_STATUS_MISMATCH")
             if not indirect_ok:
@@ -149,6 +156,8 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
             "completionAllowed": case["completion"],
             "warnings": result.get("evidenceStateConsistencyFlags", []),
             **({
+                "primaryEvidenceObserved": list(primary_ref),
+                "primaryEvidenceAllowed": case["allowedPrimaryRefs"],
                 "directRecordObserved": result.get("directRecordAvailability"),
                 "directRecordAllowed": case["directRecordAvailability"],
                 "indirectProgressObserved": result.get("indirectRegulatoryProgress"),
@@ -176,6 +185,9 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
     }
     if is_v2:
         rates.update({
+            "primaryEvidenceAccuracy": (
+                totals["primaryEvidenceCorrect"] / denominator
+            ),
             "directRecordAccuracy": totals["directRecordCorrect"] / denominator,
             "indirectProgressAccuracy": (
                 totals["indirectProgressCorrect"] / denominator
