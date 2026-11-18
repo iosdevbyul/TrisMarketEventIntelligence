@@ -182,3 +182,25 @@ def test_html_source_url_rejects_javascript_scheme():
     html = audit.html_report(report)
     assert "원문 링크 없음" in html
     assert "href=" not in html
+
+
+def test_audit_displays_rejected_mapping_without_fabricating_outcome(tmp_path):
+    path = tmp_path / "journal.sqlite3"
+    build(path)
+    with sqlite3.connect(path) as db:
+        row = db.execute("SELECT prediction_json FROM steps WHERE seq=1").fetchone()
+        prediction = json.loads(row[0])
+        prediction["targetMappingRejections"] = [{
+            "targetType": "SECTOR",
+            "target": "UNLISTED_INDUSTRY",
+            "reasonCode": "UNSUPPORTED_NON_STOCK_TARGET",
+        }]
+        prediction["recoveryStatus"] = "PARTIAL_TARGET_MAPPING"
+        db.execute("UPDATE steps SET prediction_json=? WHERE seq=1",
+                   (json.dumps(prediction),))
+        db.commit()
+    report = audit.inspect(path)
+    page = audit.html_report(report)
+    assert "UNLISTED_INDUSTRY" in page
+    assert "PARTIAL_TARGET_MAPPING" in page
+    assert report["summary"]["predictionsWrong"] == 1
