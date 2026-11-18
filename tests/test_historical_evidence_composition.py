@@ -67,14 +67,6 @@ class ComposedProvider(StageProvider):
             return json.dumps({
                 "regulatoryActionProgress": "ANNOUNCED",
                 "requestedEvidenceStatus": "PARTIAL",
-                "explanation": (
-                    "The official source describes a regulatory step but "
-                    "does not establish final action or completed records."
-                ),
-                "remainingEvidence": (
-                    "The final supporting documents and complete "
-                    "implementation outcomes remain unobserved."
-                ),
             })
         return super().generate_json(
             system=system, user=user, schema=schema,
@@ -210,20 +202,17 @@ class DecisionScreenProvider(ComposedProvider):
             envelope = json.loads(user)
             self.inputs.append(envelope)
             return json.dumps({
-                "regulatoryActionProgress": "AUTHORIZED"
-                if any(x["role"] == "DIRECT_ANSWER" for x
-                       in envelope["screenedRelevantEvidence"]) else "ANNOUNCED",
-                "requestedEvidenceStatus": "DIRECTLY_OBSERVED"
-                if any(x["role"] == "DIRECT_ANSWER" for x
-                       in envelope["screenedRelevantEvidence"]) else "PARTIAL",
-                "explanation": (
-                    "The regulator announced an intermediate decision or "
-                    "authorization, but a separate operational completion "
-                    "or original-review document may remain unavailable."
+                "regulatoryActionProgress": (
+                    "AUTHORIZED"
+                    if any(x["role"] == "DIRECT_ANSWER"
+                           for x in envelope["screenedRelevantEvidence"])
+                    else "ANNOUNCED"
                 ),
-                "remainingEvidence": (
-                    "Underlying operational completion and detailed agency "
-                    "review records have not been independently verified."
+                "requestedEvidenceStatus": (
+                    "DIRECTLY_OBSERVED"
+                    if any(x["role"] == "DIRECT_ANSWER"
+                           for x in envelope["screenedRelevantEvidence"])
+                    else "PARTIAL"
                 ),
             })
         return super().generate_json(system=system, user=user, schema=schema)
@@ -258,32 +247,23 @@ def test_later_official_decisions_are_reconciled_separately_from_final_records()
         assert assessment["axesSemanticallyVerified"] is False
 
 
-class InvalidQuestionAnswerProvider(ComposedProvider):
+class UnsupportedDirectAnswerProvider(ComposedProvider):
     def generate_json(self, *, system: str, user: str, schema: dict) -> str:
         if "regulatoryActionProgress" in schema["properties"]:
             self.calls += 1
-            envelope = json.loads(user)
-            self.inputs.append(envelope)
+            self.inputs.append(json.loads(user))
             return json.dumps({
-                "regulatoryActionProgress": "ANNOUNCED",
-                "requestedEvidenceStatus": "PARTIAL",
-                "explanation": (
-                    "The available source documents a regulator action "
-                    "but does not establish the completed review process"
-                ),
-                "remainingEvidence": (
-                    "Final underlying review records were not available "
-                    "in the quoted regulatory source."
-                ),
+                "regulatoryActionProgress": "AUTHORIZED",
+                "requestedEvidenceStatus": "DIRECTLY_OBSERVED",
             })
         return super().generate_json(system=system, user=user, schema=schema)
 
 
-def test_invalid_question_answer_identifies_question_and_field() -> None:
-    provider = InvalidQuestionAnswerProvider()
+def test_directly_observed_requires_explicit_direct_answer_role() -> None:
+    provider = UnsupportedDirectAnswerProvider()
     with pytest.raises(
         ComposedEvidenceError,
-        match=r"COMPOSED_QUESTION_ANSWER_INVALID:.*:EXPLANATION_INCOMPLETE",
+        match="COMPOSED_QUESTION_DIRECT_ANSWER_UNSUPPORTED",
     ):
         chain.run_replay(
             fda(), date(2023, 6, 17), provider,
@@ -291,41 +271,23 @@ def test_invalid_question_answer_identifies_question_and_field() -> None:
         )
 
 
-class OnceIncompleteQuestionProvider(ComposedProvider):
-    def __init__(self) -> None:
-        super().__init__()
-        self.failed_question_once = False
-
-    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
-        if ("regulatoryActionProgress" in schema["properties"]
-                and not self.failed_question_once):
-            self.failed_question_once = True
-            self.calls += 1
-            self.inputs.append(json.loads(user))
-            return json.dumps({
-                "regulatoryActionProgress": "ANNOUNCED",
-                "requestedEvidenceStatus": "PARTIAL",
-                "explanation": (
-                    "The source describes a specific regulator action "
-                    "without final completion information"
-                ),
-                "remainingEvidence": (
-                    "The final decision records were not present in "
-                    "the dated official release."
-                ),
-            })
-        return super().generate_json(system=system, user=user, schema=schema)
-
-
-def test_one_invalid_question_answer_is_regenerated_and_counted() -> None:
-    provider = OnceIncompleteQuestionProvider()
+def test_question_prose_reuses_visible_claim_text_without_generation() -> None:
+    provider = DecisionScreenProvider()
     step = chain.run_replay(
-        fda(), date(2023, 6, 17), provider,
+        fda(), date(2023, 10, 4), provider,
         question_tracks=tracks(), reasoning_mode="staged-composed",
     )
-    assert provider.failed_question_once
-    assert step["modelCalls"] == provider.calls == 10
-    diagnostics = step["assessment"]["independentQuestionAxes"]["generationDiagnostics"]
-    assert len(diagnostics["relevanceScreenCalls"]) == 2
-    assert len(diagnostics["questionAnswerCalls"]) == 3
-    assert step["assessment"]["semanticAccuracyVerified"] is False
+    assessment = step["assessment"]["independentQuestionAxes"]
+    assert assessment["questionNarrativeAssembly"] == (
+        "VERBATIM_VISIBLE_SOURCE_CLAIMS"
+    )
+    source_texts = {
+        claim["text"]
+        for source in step["eligibleSources"]
+        for claim in source["claims"]
+    }
+    for answer in assessment["questionAssessments"]:
+        assert any(text in answer["explanation"] for text in source_texts)
+        assert answer["explanation"].endswith(".")
+        assert len(answer["explanation"]) <= 450
+    assert step["modelCalls"] == provider.calls == 13
