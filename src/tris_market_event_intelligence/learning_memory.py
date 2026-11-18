@@ -314,14 +314,18 @@ def report(db: sqlite3.Connection) -> dict[str, Any]:
         "SELECT status, COUNT(*) FROM memory_rules GROUP BY status",
     ).fetchall()}
     total, right, wrong, unverified = 0, 0, 0, 0
-    for (raw,) in db.execute(
-        "SELECT evaluation_json FROM steps WHERE evaluation_json IS NOT NULL"
-    ):
-        for impact in json.loads(raw)["impacts"]:
-            total += 1
-            right += impact["status"] == "CORRECT"
-            wrong += impact["status"] == "WRONG"
-            unverified += impact["status"] == "UNVERIFIED"
+    has_steps = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='steps'"
+    ).fetchone()
+    if has_steps:
+        for (raw,) in db.execute(
+            "SELECT evaluation_json FROM steps WHERE evaluation_json IS NOT NULL"
+        ):
+            for impact in json.loads(raw)["impacts"]:
+                total += 1
+                right += impact["status"] == "CORRECT"
+                wrong += impact["status"] == "WRONG"
+                unverified += impact["status"] == "UNVERIFIED"
     eligible_trials = db.execute(
         "SELECT COUNT(*) FROM memory_rule_trials WHERE eligible=1 AND comparable=1",
     ).fetchone()[0]
