@@ -134,7 +134,7 @@ def analyze_market_evidence(
     """Generate one bounded multi-source analysis of conditional pressure."""
     visible = [
         item for item in packet.evidences
-        if item.publishedDate < packet.asOfDateExclusive
+        if cutoff_visible(packet, item)
     ]
     if not visible:
         raise ValueError("MARKET_EVIDENCE_EMPTY_AT_CUTOFF")
@@ -215,7 +215,7 @@ The model's qualitative pressure is provisional, not verified returns.
         "promptVersion": PROMPT_VERSION,
         "visibleSourceIds": [s.sourceId for s in visible],
         "excludedFutureSourceIds": [
-            s.sourceId for s in packet.evidences if s.publishedDate >= packet.asOfDateExclusive
+            s.sourceId for s in packet.evidences if not cutoff_visible(packet, s)
         ],
         "visibleEvidenceSha256": _digest(payload),
         "historicalPITVerified": False,
