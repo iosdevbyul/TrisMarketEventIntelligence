@@ -343,3 +343,23 @@ def test_global_pagination_has_no_source_overlap_or_omissions(
     ]
     assert "economic-event-7" in flattened
     assert "article-1" in flattened
+    balanced_pages = []
+    for page in range(5):
+        candidates, info = recent_candidates(
+            db, as_of=date(2024, 2, 15), lookback_days=14,
+            page=page, sampling_mode="source_balanced",
+        )
+        balanced_pages.append([row["evidence"].sourceId for row in candidates])
+        assert info["samplingMode"] == "source_balanced"
+        if not info["hasMoreCandidatePages"]:
+            break
+    balanced = [sid for page in balanced_pages for sid in page]
+    assert len(balanced) == len(flattened)
+    assert set(balanced) == set(flattened)
+    assert len(balanced) == len(set(balanced))
+    assert len([sid for sid in balanced_pages[0] if sid.startswith(
+        "economic-event-"
+    )]) >= 10
+    assert len([sid for sid in pages[0] if sid.startswith(
+        "economic-event-"
+    )]) < 10
