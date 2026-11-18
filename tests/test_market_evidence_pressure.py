@@ -154,3 +154,26 @@ def test_empty_cutoff_rejected_without_model_call() -> None:
     with pytest.raises(ValueError, match="MARKET_EVIDENCE_EMPTY_AT_CUTOFF"):
         analyze_market_evidence(MarketEvidencePacket.model_validate(raw), provider)
     assert provider.inputs == []
+
+
+def test_exact_cutoff_uses_utc_instant_not_publisher_calendar_day() -> None:
+    raw = sample().model_dump(mode="json")
+    raw["asOfDateExclusive"] = "2024-02-14"
+    raw["asOfTimestampExclusive"] = "2024-02-14T10:00:00+09:00"
+    # Cutoff is 2024-02-14 01:00 UTC. The same local-date article
+    # published at 00:30 UTC is visible; a 03:00 UTC article is not.
+    raw["evidences"][0]["publishedAt"] = "2024-02-13T18:30:00-05:00"
+    raw["evidences"][1]["publishedAt"] = "2024-02-14T00:30:00+00:00"
+    raw["evidences"][2]["publishedAt"] = "2024-02-16T00:30:00+00:00"
+    p = MarketEvidencePacket.model_validate(raw)
+    provider = FakeMarketProvider()
+    report = analyze_market_evidence(p, provider)
+    assert report["visibleSourceIds"] == ["indicator-one", "news-one"]
+    assert report["excludedFutureSourceIds"] == ["future-one"]
+
+
+def test_exact_cutoff_refuses_date_only_sources() -> None:
+    raw = sample().model_dump(mode="json")
+    raw["asOfTimestampExclusive"] = "2024-02-15T09:30:00+00:00"
+    with pytest.raises(ValueError, match="PRECISE_REPLAY_REQUIRES_SOURCE_TIMESTAMPS"):
+        MarketEvidencePacket.model_validate(raw)
