@@ -24,7 +24,7 @@ FAA/FDA regulatory decisions is not the product acceptance criterion.
 | Event understanding | Extract cited reported facts, forecasts, opinions and novelty status | Model-assisted, review required |
 | Economic transmission | State conditional channel from event to cash flows, demand, costs, funding, discount rates, FX, etc. | Model-assisted, review required |
 | Target attribution | Distinguish market, sector and named company, with company names constrained to cited excerpts | Implemented |
-| Direction, strength, uncertainty | Existing Impact direction and uncertainty scales; add LOW/MEDIUM/HIGH/UNKNOWN conditional pressure strength | Implemented; semantic accuracy not verified |
+| Direction, strength, uncertainty | Existing Impact direction and uncertainty scales; add LOW/MODERATE/HIGH/UNASSESSED conditional pressure strength | Implemented; semantic accuracy not verified |
 | Publication | Create-only JSON research artifact, source digest and model/version audit | CLI; not yet integrated into production API |
 
 The new general path reuses `impact.Impact` and the existing conservative
@@ -42,7 +42,7 @@ or previously merged impact calculations.
   source authenticity. If any analysis input was unverified, the
   current policy forces `HIGH` uncertainty across the analysis.
 - An `UNCERTAIN` direction cannot be assigned a confident
-  non-UNKNOWN strength.
+  non-UNASSESSED strength.
 - A HIGH strength conclusion cannot rest entirely on unverified
   reported sources. Even an official report does not independently
   verify economic causality, magnitude or whether a market priced it in.
