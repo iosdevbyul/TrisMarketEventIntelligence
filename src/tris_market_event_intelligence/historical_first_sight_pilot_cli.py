@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -19,7 +19,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from tris_market_event_intelligence.llm_runtime import (
-    LLMCapabilities, LLMProvider, LLMSettings,
+    LLMCapabilities,
+    LLMProvider,
+    LLMSettings,
 )
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
@@ -157,7 +159,7 @@ def capture(packet: dict, *, client: httpx.Client | None = None) -> dict:
     return {
         "schemaVersion": "independent_first_pass_capture_v1",
         "packetSha256": _hash(packet),
-        "captureTimeUTC": datetime.now(timezone.utc).isoformat(),
+        "captureTimeUTC": datetime.now(UTC).isoformat(),
         "historicalPITVerified": False,
         "sourceVerification": "CURRENT_OFFICIAL_PAGE_EXCERPTS_ONLY",
         "sources": inventory,
