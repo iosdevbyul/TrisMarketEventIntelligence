@@ -18,7 +18,10 @@ from tris_market_event_intelligence.impact import (
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
 from tris_market_event_intelligence.llm_runtime import LLMProvider
-from tris_market_event_intelligence.market_evidence_pressure import MarketEvidencePacket
+from tris_market_event_intelligence.market_evidence_pressure import (
+    MarketEvidencePacket,
+    cutoff_visible,
+)
 
 PROMPT_VERSION = "market-pressure-two-stage-v1"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
@@ -116,7 +119,7 @@ def _identity(value: dict) -> str:
 def _visible(packet: MarketEvidencePacket) -> list:
     visible = [
         source for source in packet.evidences
-        if source.publishedDate < packet.asOfDateExclusive
+        if cutoff_visible(packet, source)
     ]
     if not visible:
         raise ValueError("MARKET_EVIDENCE_EMPTY_AT_CUTOFF")
@@ -137,6 +140,10 @@ def analyze_pressure_two_stage(
         "eventId": packet.eventId,
         "subject": packet.subject,
         "cutoff": packet.asOfDateExclusive.isoformat(),
+        "cutoffTimestamp": (
+            packet.asOfTimestampExclusive.isoformat()
+            if packet.asOfTimestampExclusive else None
+        ),
         "sources": input_sources,
     })
     raw_facts = provider.generate_json(
@@ -145,6 +152,10 @@ def analyze_pressure_two_stage(
             "eventId": packet.eventId,
             "subject": packet.subject,
             "asOfDateExclusive": packet.asOfDateExclusive.isoformat(),
+            "asOfTimestampExclusive": (
+                packet.asOfTimestampExclusive.isoformat()
+                if packet.asOfTimestampExclusive else None
+            ),
             "visibleSources": input_sources,
             "historicalPITVerified": False,
         }, ensure_ascii=False),
@@ -309,7 +320,7 @@ def _report(
         "visibleSourceIds": [s.sourceId for s in visible],
         "excludedFutureSourceIds": [
             s.sourceId for s in packet.evidences
-            if s.publishedDate >= packet.asOfDateExclusive
+            if not cutoff_visible(packet, s)
         ],
         "groundedClaims": claims,
         "impacts": impacts,
