@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import date
 from pathlib import Path
 
@@ -290,3 +291,55 @@ def test_invalid_reasoning_mode_fails_before_model(tmp_path: Path) -> None:
             provider=provider, reasoning_mode="per-company-rules",
         )
     assert provider.calls == []
+
+
+def test_global_pagination_has_no_source_overlap_or_omissions(
+    tmp_path: Path,
+) -> None:
+    db = populated_db(tmp_path / "news.sqlite3")
+    with sqlite3.connect(db) as conn:
+        for index in range(10, 67):
+            day = 14 - (index - 10) // 15
+            hour = (index - 10) % 15
+            conn.execute(
+                "INSERT INTO articles VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    index, "feed-" + str(index % 3),
+                    "https://example.org/unique/" + str(index),
+                    "Distinct economic release " + str(index),
+                    "An unrelated event about industry input " + str(index),
+                    f"2024-02-{day:02d}T{hour:02d}:00:00+00:00",
+                ),
+            )
+        for index in range(10, 23):
+            conn.execute(
+                "INSERT INTO economic_events VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    index, "POLICY",
+                    "A separate policy event " + str(index)
+                    + " changed an economic obligation.",
+                    "policy-" + str(index),
+                    "https://example.org/policy/" + str(index),
+                    f"2024-02-13T{index-10:02d}:30:00+00:00",
+                    "CANDIDATE",
+                ),
+            )
+    pages = []
+    inventory = []
+    for page in range(5):
+        candidates, info = recent_candidates(
+            db, as_of=date(2024, 2, 15), lookback_days=14, page=page,
+        )
+        pages.append([row["evidence"].sourceId for row in candidates])
+        inventory.append(info)
+        if not info["hasMoreCandidatePages"]:
+            break
+    flattened = [sid for page in pages for sid in page]
+    assert len(flattened) == len(set(flattened))
+    assert len(flattened) == 72
+    assert [len(page) for page in pages] == [24, 24, 24]
+    assert [info["hasMoreCandidatePages"] for info in inventory] == [
+        True, True, False,
+    ]
+    assert "economic-event-7" in flattened
+    assert "article-1" in flattened
