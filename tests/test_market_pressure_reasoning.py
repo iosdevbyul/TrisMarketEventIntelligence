@@ -191,3 +191,33 @@ def test_economic_surprise_requires_sourced_actual_and_consensus() -> None:
     p = QueueProvider(impacts={"impacts": [proposed]})
     with pytest.raises(ImpactAnalysisError, match="lacks sourced consensus"):
         analyze_pressure_two_stage(example(), p)
+
+
+def test_ollama_impact_uses_portable_json_with_postvalidation() -> None:
+    from types import SimpleNamespace
+
+    provider = QueueProvider()
+    provider.settings = SimpleNamespace(kind="ollama")
+    original = provider.generate_json
+    observed: list[tuple[int, bool]] = []
+
+    def recorder(*, system: str, user: str, schema: dict | None) -> str:
+        observed.append((len(observed), schema is None))
+        return original(system=system, user=user, schema=schema)
+
+    provider.generate_json = recorder
+    result = analyze_pressure_two_stage(example(), provider)
+    assert observed == [(0, False), (1, True)]
+    assert result["impactGenerationMode"] == "JSON_PYDANTIC_VALIDATED"
+    assert result["impacts"][0]["strength"] == "UNASSESSED"
+
+
+def test_ollama_portable_json_still_rejects_invalid_impact() -> None:
+    from types import SimpleNamespace
+
+    invalid = impact()
+    invalid["direction"] = "ALWAYS_RISE"
+    provider = QueueProvider(impacts={"impacts": [invalid]})
+    provider.settings = SimpleNamespace(kind="ollama")
+    with pytest.raises(ValueError, match="direction"):
+        analyze_pressure_two_stage(example(), provider)
