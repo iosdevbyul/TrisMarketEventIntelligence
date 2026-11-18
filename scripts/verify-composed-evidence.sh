@@ -29,15 +29,20 @@ run_case() {
         status,
         modelCalls,
         historicalPITVerified,
-        steps: [
-            .replaySteps[] | {
-                date: .asOfDateExclusive,
-                whatChanged: .assessment.whatChanged,
-                questionAxes: .assessment.independentQuestionAxes.questionAssessments,
-                questionEvidenceScreens: (
-                    .assessment.independentQuestionAxes.questionEvidenceScreens
-                ),
-                sourceCoverage: .assessment.sourceScopedComposition.sourceCoverage
+        questions: [
+            .replaySteps[] as $step |
+            $step.assessment.independentQuestionAxes.questionAssessments[] | {
+                cutoff: $step.asOfDateExclusive,
+                questionId,
+                primary: {sourceId, claimId},
+                baselinePrimaryEvidence,
+                regulatoryDecisionStage,
+                requestedEvidenceStatus,
+                directRecordAvailability,
+                indirectRegulatoryProgress,
+                implementationCompletionStatus,
+                modelReportedImplementationCompletionStatus,
+                evidenceStateConsistencyFlags
             }
         ]
     }' "$output"
@@ -55,4 +60,23 @@ run_case "FDA" \
     "2023-06-17" "2023-10-04" \
     "$DATA/fda-evidence-composed-v6.json"
 
+SCORE="$DATA/historical-semantic-score-faa-v9-fda-v6-v2.json"
+if [[ -e "$SCORE" || -L "$SCORE" ]]; then
+    echo "OUTPUT_ALREADY_EXISTS: $SCORE" >&2
+    exit 1
+fi
+bash scripts/news-learning-review.sh historical-semantic-score \
+    --benchmark research/historical-semantic-benchmark-v2.json \
+    --faa "$DATA/faa-evidence-composed-v9.json" \
+    --fda "$DATA/fda-evidence-composed-v6.json" \
+    --output "$SCORE" >/dev/null
+jq '{
+    status, rates, trustGate,
+    failedCases: [
+        .caseResults[] | select(.status != "PASS") |
+        {id, errors, primaryEvidenceObserved, decisionObserved,
+         evidenceObserved, modelReportedCompletion}
+    ]
+}' "$SCORE"
+echo "FULL_SCORE_ARTIFACT: $SCORE"
 echo "BOTH_CASES_GENERATED_REQUIRES_HUMAN_SEMANTIC_REVIEW"
