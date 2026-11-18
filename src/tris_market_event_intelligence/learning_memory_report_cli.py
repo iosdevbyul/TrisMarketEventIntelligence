@@ -55,10 +55,10 @@ def inspect(journal: Path) -> dict:
             "failurePatterns": groups,
             "rules": rules,
             "notes": [
-                "Rule ACTIVE status requires later paired PIT-eligible evidence, "
-                "not simply having been suggested by the model.",
-                "The retrospective feedback stream can use later observed outcomes "
-                "in earlier article predictions. It is not a leakage-free backtest.",
+                ("Rule ACTIVE status requires later paired PIT-eligible evidence, "
+                 "not simply having been suggested by the model."),
+                ("The retrospective feedback stream can use later observed outcomes "
+                 "in earlier article predictions. It is not a leakage-free backtest."),
                 "Holdout evaluation has not been executed by this command.",
             ],
         }
