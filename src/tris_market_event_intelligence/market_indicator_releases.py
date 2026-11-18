@@ -7,7 +7,6 @@ is attached. This adapter does not pretend to be an automatic data vendor.
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from contextlib import closing
 from datetime import datetime
