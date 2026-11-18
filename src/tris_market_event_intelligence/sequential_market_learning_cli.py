@@ -319,6 +319,8 @@ def evaluate(model_prediction: dict, observed: datetime, horizon: timedelta,
                 excessReturn=(change - benchmark["return"]
                               if "error" not in benchmark else None),
                 baselineAt=result["baselineAt"], outcomeAt=result["outcomeAt"],
+                baselinePrice=result.get("baselinePrice"),
+                outcomePrice=result.get("outcomePrice"),
             )
         output.append(row)
     return {"interval": interval, "horizonHours": horizon.total_seconds() / 3600,
