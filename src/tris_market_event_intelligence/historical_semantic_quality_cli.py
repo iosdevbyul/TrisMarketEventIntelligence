@@ -1,7 +1,7 @@
 """Score saved historical replay artifacts against separate reviewer references.
 
 This CLI NEVER calls an LLM and is not imported by the replay pipeline.
-Annotations are retrospective, provisional and not historical PIT proof.
+FAA/FDA development annotations are not a frozen, independently scored holdout.
 """
 from __future__ import annotations
 
@@ -163,10 +163,14 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         "independentGoldReviewComplete": (
             benchmark.get("reviewStatus") == "INDEPENDENTLY_VERIFIED"
         ),
+        "evaluationSplitIsFrozenHoldout": (
+            benchmark.get("evaluationSplit") == "FROZEN_HOLDOUT"
+        ),
     }
     return {
         "schemaVersion": "historical_semantic_score_v1",
         "referenceStatus": benchmark["reviewStatus"],
+        "evaluationSplit": benchmark.get("evaluationSplit", "UNSPECIFIED"),
         "status": (
             "RESEARCH_TRUST_CANDIDATE"
             if all(trust_gate.values()) else "NOT_YET_TRUSTWORTHY"
@@ -179,6 +183,7 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         "limitations": [
             "Retrospective curator paraphrases are not archived historical PIT.",
             "Matching an answer label is not evidence of independent causal truth.",
+            "FAA/FDA cases were used during development; only unseen frozen holdouts support generalization.",
             "This scorer is isolated from model inputs and never revises them.",
         ],
     }
