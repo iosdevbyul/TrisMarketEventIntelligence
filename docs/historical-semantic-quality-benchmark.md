@@ -105,3 +105,28 @@ unreviewed external claims, or an assertion of verified economic causality.
 5. Only after thresholds, source integrity, historical PIT, independent
    adjudication and repeatability are verified should an analyst describe
    Gemma4 as sufficiently reliable for the **measured** event question class.
+
+## Baseline measurement and next two-axis reasoning candidate
+
+The user's offline score on FAA v7 / FDA v4 gave source coverage and required
+reference recall 100%, decision classification 7/8 (87.5%), evidence status
+7/8 (87.5%), completion-safety 8/8 (100%) and two reference mismatches.
+Trust remained NOT_YET_TRUSTWORTHY, as intended. These are **development**
+cases, and the reference has not received independent adjudication.
+
+The FDA manufacturer-filings mismatch is diagnostically important: publicly
+announced authorizations are intermediate progress but **not the original
+manufacturer filing receipts or the detailed agency-review records**.
+Future model answers now separately classify `directRecordAvailability`
+(NOT_OBSERVED / PARTIAL / DIRECTLY_OBSERVED / UNKNOWN) and
+`indirectRegulatoryProgress` (NOT_OBSERVED / OBSERVED / UNKNOWN), alongside
+the existing `requestedEvidenceStatus`. The system preserves old scorer
+results on FAA v7/FDA v4; new axes must be evaluated prospectively and cannot
+retroactively prove that the old output was correct. Contradictions are
+flagged for human review, never silently rewritten.
+
+The next prospective model artifacts will be FAA v8 / FDA v5 using the same
+existing `scripts/verify-composed-evidence.sh`; even if this development
+comparison improves, **it is not evidence of untouched-holdout
+performance**. Source integrity and publication-time availability remain
+unverified and must be established before any research-trust declaration.
