@@ -9,6 +9,7 @@ from tris_market_event_intelligence.impact import ImpactAnalysisError
 from tris_market_event_intelligence.market_evidence_pressure import MarketEvidencePacket
 from tris_market_event_intelligence.market_pressure_reasoning import (
     analyze_pressure_two_stage,
+    ollama_pressure_schema,
 )
 
 
@@ -207,8 +208,8 @@ def test_ollama_impact_uses_portable_json_with_postvalidation() -> None:
 
     provider.generate_json = recorder
     result = analyze_pressure_two_stage(example(), provider)
-    assert observed == [(0, False), (1, True)]
-    assert result["impactGenerationMode"] == "JSON_PYDANTIC_VALIDATED"
+    assert observed == [(0, False), (1, False)]
+    assert result["impactGenerationMode"] == "FLAT_SCHEMA_AND_PYDANTIC_VALIDATED"
     assert result["impacts"][0]["strength"] == "UNASSESSED"
 
 
@@ -351,4 +352,27 @@ def test_abstention_normalization_rejects_invalid_explanations() -> None:
         "noImpactExplanation": "Unknown.",
     })
     with pytest.raises(ValueError, match="ABSTENTION_EXPLANATION_TOO_SHORT"):
+        analyze_pressure_two_stage(example(), provider)
+
+
+def test_flat_native_ollama_schema_forces_citations_and_machine_codes() -> None:
+    schema = ollama_pressure_schema()
+    raw = json.dumps(schema)
+    assert "$ref" not in raw
+    assert "$defs" not in raw
+    assert "allOf" not in raw
+    item = schema["properties"]["impacts"]["items"]
+    assert item["additionalProperties"] is False
+    assert "claimIndexes" in item["required"]
+    assert item["properties"]["claimIndexes"]["minItems"] == 1
+    assert item["properties"]["market"]["enum"] == ["US", "KR", "GLOBAL"]
+    assert "Semiconductor Market" not in raw
+    assert item["properties"]["uncertainty"]["enum"] == ["HIGH"]
+
+
+def test_model_must_still_cite_real_claims_after_flat_schema_generation() -> None:
+    proposed = impact()
+    proposed["claimIndexes"] = []
+    provider = QueueProvider(impacts={"impacts": [proposed]})
+    with pytest.raises(ValueError, match="claimIndexes"):
         analyze_pressure_two_stage(example(), provider)
