@@ -6,6 +6,7 @@ and content are read from the checksum-verified archived news cohort when presen
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import sqlite3
 from collections import Counter
@@ -329,6 +330,111 @@ def markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+
+def html_report(report: dict[str, Any]) -> str:
+    """Generate a standalone, searchable report for opening in any browser."""
+    esc = lambda value: html.escape(str(value if value is not None else "—"), quote=True)
+    summary = report["summary"]
+    sections = []
+    for record in report["articles"]:
+        outcomes = []
+        for impact in record["outcomes"]:
+            status = impact["verdict"]
+            cls = "good" if status == "CORRECT" else (
+                "bad" if status == "WRONG" else "unknown"
+            )
+            outcomes.append(
+                "<tr>"
+                f"<td>{esc(impact['target'])} ({esc(impact['priceProxy'])})</td>"
+                f"<td>{esc(impact['predictedDirection'])}</td>"
+                f"<td>{esc(impact['observedDirection'])}</td>"
+                f"<td>{esc(_percent(impact['absoluteReturn']))}</td>"
+                f"<td>{esc(_percent(impact['excessReturn']))}</td>"
+                f'<td><span class="{cls}">{esc(status)}</span></td>'
+                "</tr>"
+                "<tr><td colspan='6' class='details'>"
+                f"<b>AI 근거</b>: {esc(impact['predictionReason'])}"
+                "<br>"
+                f"<b>기준 가격</b>: {esc(impact['baselinePrice'])} "
+                f"({esc(impact['baselineAt'])})"
+                "<br>"
+                f"<b>결과 가격</b>: {esc(impact['outcomePrice'])} "
+                f"({esc(impact['outcomeAt'])})"
+                "<br>"
+                f"<b>시장 수익률</b>: {esc(_percent(impact['benchmarkReturn']))}"
+                "<br>"
+                f"<b>검증 불가 원인</b>: {esc(impact['unverifiedReason'])}"
+                "</td></tr>"
+            )
+        if not outcomes:
+            outcomes.append(
+                "<tr><td colspan='6'>예측 대상이 없습니다. 정답으로 집계하지 않습니다.</td></tr>"
+            )
+        applied = "".join(
+            f"<li>R{esc(r['id'])} v{esc(r['version'])} "
+            f"({esc(r['roleAtApplication'])}): {esc(r['rule'])}</li>"
+            for r in record["rulesApplied"]
+        ) or "<li>기록 없음</li>"
+        sections.append(
+            "<details>"
+            f"<summary>#{esc(record['seq'])} "
+            f"{esc(record['title'] or '제목을 원본 DB에서 찾을 수 없음')}"
+            f" <small>기사 ID {esc(record['articleId'])}</small></summary>"
+            "<div class='body'>"
+            f"<p><b>관측 시각:</b> {esc(record['firstObservedAt'])} · "
+            f"<b>출처:</b> {esc(record['source'])}</p>"
+            f"<p><b>원문:</b> {esc(record['articleSummary'])}</p>"
+            f"<p><b>Gemma 분석:</b> {esc(record['originalPredictionSummary'])}</p>"
+            "<table><thead><tr><th>종목·섹터</th><th>AI 예측</th>"
+            "<th>실제 방향</th><th>수익률</th><th>시장 대비</th>"
+            "<th>저장된 판정</th></tr></thead><tbody>"
+            + "".join(outcomes) + "</tbody></table>"
+            f"<p><b>실패 원인 진단:</b> {esc(record['diagnosis'])}</p>"
+            f"<p><b>다음 기사 수정 규칙:</b> {esc(record['correctiveRule'])}</p>"
+            f"<p><b>해당 분석에 적용한 규칙:</b></p><ul>{applied}</ul>"
+            "</div></details>"
+        )
+    warnings = "".join(f"<li>{esc(w)}</li>" for w in report["warnings"])
+    return (
+        "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>TrisMarketEventIntelligence 기사별 분석 감사</title>"
+        "<style>"
+        ":root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"
+        "'Segoe UI',sans-serif}body{max-width:1200px;margin:35px auto;padding:0 18px;"
+        "line-height:1.6}h1{font-size:1.7rem}.stats{display:flex;flex-wrap:wrap;"
+        "gap:14px}.stats>div{border:1px solid #8886;border-radius:10px;padding:12px 20px}"
+        ".stats strong{font-size:1.5rem;display:block}.warn{border-left:3px solid #ce9638;"
+        "padding:10px 20px;background:rgba(208,150,60,.1);margin:20px 0}"
+        "details{border:1px solid #8886;border-radius:9px;margin:12px 0}"
+        "summary{cursor:pointer;padding:14px;font-weight:650}"
+        "summary small{font-weight:400;opacity:.7;margin-left:10px}"
+        ".body{padding:8px 15px 15px;overflow-wrap:anywhere}table{border-collapse:collapse;"
+        "width:100%;font-size:.9rem}th,td{border-bottom:1px solid #8884;"
+        "text-align:left;padding:9px}.details{opacity:.85;font-size:.88rem}"
+        ".good{color:#168057;font-weight:700}.bad{color:#b73838;font-weight:700}"
+        ".unknown{color:#9a782b;font-weight:700}"
+        "input{padding:12px;width:100%;box-sizing:border-box;font:inherit;"
+        "border:1px solid #8888;border-radius:8px;background:transparent}"
+        "</style></head><body>"
+        "<h1>TrisMarketEventIntelligence · 기사별 AI 예측 감사</h1>"
+        "<p>실제 DB에 저장된 Gemma 예측과 주가 판정을 대조합니다. "
+        "<strong>기존 CORRECT/WRONG 표시는 아직 독립 검증되지 않았습니다.</strong></p>"
+        "<div class='stats'>"
+        f"<div>분석 기사<strong>{summary['articlesShown']}</strong></div>"
+        f"<div>저장된 정답<strong>{summary['predictionsCorrect']}</strong></div>"
+        f"<div>저장된 오답<strong>{summary['predictionsWrong']}</strong></div>"
+        f"<div>가격 검증 불가<strong>{summary['predictionsUnverified']}</strong></div>"
+        "</div>"
+        f"<section class='warn'><b>검증 경고</b><ul>{warnings}</ul></section>"
+        "<label for='search'>기사 번호·제목으로 검색</label>"
+        "<input id='search' placeholder='예: 20, central bank, inflation' "
+        "oninput=\"document.querySelectorAll('details').forEach"
+        "(e=>e.hidden=!e.textContent.toLowerCase().includes(this.value.toLowerCase()))\">"
+        + "".join(sections) +
+        "</body></html>\n"
+    )
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Read-only article prediction vs historical price audit",
@@ -336,13 +442,17 @@ def main() -> None:
     parser.add_argument("--journal", type=Path, required=True)
     parser.add_argument("--source-db", type=Path)
     parser.add_argument("--limit", type=int, default=1000)
-    parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument("--format", choices=("markdown", "json", "html"), default="html")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
         report = inspect(args.journal, limit=args.limit, source_db=args.source_db)
-        result = (markdown(report) if args.format == "markdown" else
-                  json.dumps(report, ensure_ascii=False, indent=2))
+        if args.format == "markdown":
+            result = markdown(report)
+        elif args.format == "html":
+            result = html_report(report)
+        else:
+            result = json.dumps(report, ensure_ascii=False, indent=2)
         if args.output:
             if args.output.is_symlink() or not args.output.parent.is_dir():
                 raise ValueError("Output parent must exist; symlinks prohibited")
