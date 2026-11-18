@@ -10,10 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.events import clean_text
+from tris_market_event_intelligence.market_evidence_pressure import MarketEvidencePacket
 from tris_market_event_intelligence.market_indicator_releases import IndicatorReleaseStore
-from tris_market_event_intelligence.market_evidence_pressure import (
-    MarketEvidencePacket,
-)
 
 
 def _date(raw: str | None) -> str:
