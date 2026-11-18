@@ -178,6 +178,9 @@ def analyze_pressure_two_stage(
             "sourceVerification": by_id[claim.sourceId].verification,
             "sourceKind": by_id[claim.sourceId].kind,
             "indicatorValue": by_id[claim.sourceId].indicatorValue,
+            "indicatorPrevious": by_id[claim.sourceId].indicatorPrevious,
+            "indicatorName": by_id[claim.sourceId].indicatorName,
+            "indicatorPeriod": by_id[claim.sourceId].indicatorPeriod,
             "indicatorExpectation": by_id[claim.sourceId].expectation,
         }
         for index, claim in enumerate(facts.claims)
@@ -250,17 +253,26 @@ def analyze_pressure_two_stage(
             )
         if item.expectationComparison in {
             "ABOVE_EXPECTATION", "BELOW_EXPECTATION", "IN_LINE",
-        } and not any(
-            by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
-            and by_id[claim.sourceId].indicatorValue
-            and by_id[claim.sourceId].expectation
-            and by_id[claim.sourceId].expectation in by_id[claim.sourceId].excerpt
-            for claim in references
-        ):
-            raise ImpactAnalysisError(
-                "INDICATOR_SURPRISE_UNSUPPORTED",
-                "Actual-versus-expectation comparison lacks sourced consensus",
-            )
+        }:
+            releases = {
+                (by_id[claim.sourceId].indicatorName,
+                 by_id[claim.sourceId].indicatorPeriod)
+                for claim in references
+                if by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
+                and by_id[claim.sourceId].indicatorValue
+            }
+            consensus = {
+                (by_id[claim.sourceId].indicatorName,
+                 by_id[claim.sourceId].indicatorPeriod)
+                for claim in references
+                if by_id[claim.sourceId].kind == "ECONOMIC_INDICATOR"
+                and by_id[claim.sourceId].expectation
+            }
+            if not releases.intersection(consensus):
+                raise ImpactAnalysisError(
+                    "INDICATOR_SURPRISE_UNSUPPORTED",
+                    "Actual-versus-expectation comparison lacks sourced consensus",
+                )
         if item.strength == "HIGH" and all(
             by_id[claim.sourceId].verification == "REPORTED_UNVERIFIED"
             for claim in references
