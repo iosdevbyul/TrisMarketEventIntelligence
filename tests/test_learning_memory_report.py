@@ -24,8 +24,8 @@ def test_report_summarizes_rules_without_mutating_journal(tmp_path):
         )
         db.execute(
             "INSERT INTO steps VALUES (?)",
-            ('{"impacts":[{"status":"CORRECT"},{"status":"WRONG"},'
-             '{"status":"UNVERIFIED"}]}',),
+            (('{"impacts":[{"status":"CORRECT"},{"status":"WRONG"},'
+              '{"status":"UNVERIFIED"}]}'),),
         )
         from tris_market_event_intelligence import learning_memory as memory
 
