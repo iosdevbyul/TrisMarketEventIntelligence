@@ -350,7 +350,9 @@ def discover_and_analyze(
                 groupingExplanation=group.connectionExplanation,
             )
         try:
-            report = analyze_pressure_two_stage(packet, counted)
+            report = analyze_pressure_two_stage(
+                packet, counted, recover_invalid_impacts=True,
+            )
         except (ValueError, TypeError) as exc:
             if trace is not None:
                 trace.validation_failure(
@@ -415,8 +417,13 @@ def discover_and_analyze(
         "schemaVersion": "market_pressure_auto_cycle_v1",
         "status": (
             "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
-            if any(item["analysis"]["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
-                   for item in results)
+            if any(
+                item["analysis"]["status"] in {
+                    "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW",
+                    "PARTIAL_MARKET_PRESSURE_REQUIRES_REVIEW",
+                }
+                for item in results
+            )
             else "CANDIDATE_EVENTS_REQUIRE_REVIEW"
         ),
         "asOfDateExclusive": as_of.isoformat(),
