@@ -59,7 +59,9 @@ unrelated or insufficient, return an empty array. A source may appear in
 multiple clusters only when it genuinely relates to multiple events."""
 
 
-def _eligible_date(raw: str | None, cutoff: date, lookback: int) -> bool:
+def _eligible_date(
+    raw: str | None, cutoff: date | datetime, lookback: int,
+) -> bool:
     """Compare absolute UTC instants, not calendar dates in publisher zones."""
     if not raw:
         return False
@@ -69,20 +71,31 @@ def _eligible_date(raw: str | None, cutoff: date, lookback: int) -> bool:
         return False
     if stamp.tzinfo is None or stamp.utcoffset() is None:
         return False
-    boundary = datetime.combine(cutoff, time.min, tzinfo=UTC)
+    boundary = (
+        cutoff.astimezone(UTC) if isinstance(cutoff, datetime)
+        else datetime.combine(cutoff, time.min, tzinfo=UTC)
+    )
     observed = stamp.astimezone(UTC)
     return boundary - timedelta(days=lookback) <= observed < boundary
 
 
 def recent_candidates(
     db_path: Path, *, as_of: date, lookback_days: int = 10,
-    per_table: int = 24,
+    per_table: int = 24, as_of_time: datetime | None = None,
 ) -> tuple[list[dict], dict]:
     """Search entire indexed source history within UTC cutoff, no id-based prefix."""
     if not 1 <= lookback_days <= 120 or not 1 <= per_table <= 48:
         raise ValueError("INVALID_DISCOVERY_BOUNDS")
     if db_path.is_symlink() or not db_path.is_file():
         raise ValueError("MARKET_SOURCE_DB_MISSING")
+    if as_of_time is not None and (
+        as_of_time.tzinfo is None or as_of_time.utcoffset() is None
+        or as_of_time.astimezone(UTC).date() != as_of
+    ):
+        raise ValueError("INVALID_EXACT_MARKET_CUTOFF")
+    effective_cutoff = as_of_time or datetime.combine(
+        as_of, time.min, tzinfo=UTC,
+    )
     selected: list[dict] = []
     skipped = 0
     matching_in_window = 0
@@ -111,7 +124,7 @@ def recent_candidates(
             )
             options: list[tuple[datetime, int]] = []
             for identifier, published in rows:
-                if not _eligible_date(published, as_of, lookback_days):
+                if not _eligible_date(published, effective_cutoff, lookback_days):
                     skipped += 1
                     continue
                 timestamp = datetime.fromisoformat(published).astimezone(UTC)
@@ -128,6 +141,7 @@ def recent_candidates(
                         event_id="discovery-candidate",
                         subject="Candidate event evidence",
                         as_of=as_of.isoformat(),
+                        as_of_time=(as_of_time.isoformat() if as_of_time else None),
                         article_ids=(identifier,) if source_kind == "article" else (),
                         economic_event_ids=(
                             (identifier,) if source_kind == "economic-event" else ()
@@ -170,21 +184,21 @@ def recent_candidates(
         "skippedInvalidOrOutOfWindow": skipped,
         "deduplicated": deduplicated,
         "lookbackDays": lookback_days,
-        "cutoffUTCExclusive": datetime.combine(
-            as_of, time.min, tzinfo=UTC,
-        ).isoformat(),
+        "cutoffUTCExclusive": effective_cutoff.astimezone(UTC).isoformat(),
     }
 
 
 def discover_and_analyze(
     db: Path, *, as_of: date, provider: LLMProvider,
     lookback_days: int = 10, max_groups: int = 2,
+    as_of_time: datetime | None = None,
 ) -> dict:
     """Run selection, source-index-bound grouping and two-stage pressure."""
     if not 1 <= max_groups <= 3:
         raise ValueError("INVALID_MAX_GROUPS")
     candidates, inventory = recent_candidates(
         db, as_of=as_of, lookback_days=lookback_days,
+        as_of_time=as_of_time,
     )
     if not candidates:
         return {
@@ -225,6 +239,7 @@ def discover_and_analyze(
             event_id="discovered-" + anchor.sourceId,
             subject=anchor.excerpt[:160],
             as_of=as_of.isoformat(),
+            as_of_time=(as_of_time.isoformat() if as_of_time else None),
             article_ids=tuple(
                 row["recordId"] for row in rows if row["kind"] == "article"
             ),
