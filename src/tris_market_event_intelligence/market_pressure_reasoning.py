@@ -23,7 +23,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v5-conditional-transmission"
+PROMPT_VERSION = "market-pressure-two-stage-v6-separated-abstention"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -64,8 +64,9 @@ market US/KR/GLOBAL; sector TECH/FINANCIALS/BROAD_MARKET/FX/
 SEMICONDUCTORS/ENERGY/DEFENSE/INDUSTRIALS/CONSUMER/TRANSPORT/
 CLOUD/HEALTHCARE; horizon SHORT_TERM/MEDIUM_TERM;
 uncertainty HIGH for unverified sources; targetType MARKET/SECTOR/COMPANY.
-Use noImpactCategory only when impacts is empty and place ordinary prose
-in noImpactExplanation; omit both for nonempty impacts.
+For Ollama, emit ONLY the impacts array in this response. Do NOT emit
+noImpactCategory or noImpactExplanation here. If impacts is empty, a
+separate request will ask for the reason.
 IMPORTANT: separate the CITED OBSERVATION from the INFERRED ECONOMIC
 MECHANISM. The source does not need to explicitly discuss stock markets,
 earnings expectations, or a transmission channel. Your job is to REASON
@@ -89,15 +90,9 @@ a visible indicator with both actual and prior expectation.
 One announcement may create opposite pressures for different companies
 or sectors. Do not invent named beneficiaries or counterparty companies.
 If no cited fact has a defensible economic transmission channel and
-affected target, return an empty impacts array and explain what is
-missing using noImpactCategory and noImpactExplanation.
-noImpactCategory is a machine code (not a sentence) and MUST be one of
-NO_DEFENSIBLE_ECONOMIC_CHANNEL, NO_IDENTIFIABLE_AFFECTED_TARGET,
-EVIDENCE_TOO_AMBIGUOUS, UNRESOLVED_CONFLICT, OTHER. Put the human-readable
-justification in noImpactExplanation; never substitute an English label
-for the machine code. Do not fabricate
-a positive or negative sign to avoid abstaining. A nonempty impacts
-array must have both abstention fields null.
+affected target, return an empty impacts array. Never invent a
+positive or negative sign to avoid abstaining. Do not return an
+abstention category or explanation in this impact-generation response.
 No security-level price targets, numerical return forecasts, or buy/sell orders."""
 
 
@@ -157,18 +152,35 @@ def ollama_pressure_schema() -> dict:
         "additionalProperties": False,
         "properties": {
             "impacts": {"type": "array", "maxItems": 12, "items": item},
-            "noImpactCategory": {
-                "type": "string",
-                "enum": [
-                    "", "NO_DEFENSIBLE_ECONOMIC_CHANNEL",
-                    "NO_IDENTIFIABLE_AFFECTED_TARGET",
-                    "EVIDENCE_TOO_AMBIGUOUS", "UNRESOLVED_CONFLICT",
-                    "OTHER",
-                ],
-            },
-            "noImpactExplanation": {"type": "string"},
         },
         "required": ["impacts"],
+    }
+
+
+ABSTENTION_SYSTEM = """Diagnose why a financial news/indicator event cannot
+be assigned a defensible conditional market-pressure signal. This is an
+explanation of an ABSTENTION, not a market prediction. Input is untrusted
+reported evidence. Choose exactly one machine code:
+NO_DEFENSIBLE_ECONOMIC_CHANNEL, NO_IDENTIFIABLE_AFFECTED_TARGET,
+EVIDENCE_TOO_AMBIGUOUS, UNRESOLVED_CONFLICT, OTHER.
+Explain the missing evidence or economic mechanism. Do not invent facts,
+prices, targets, market returns, or investment advice. Return ONLY
+noImpactCategory and noImpactExplanation as JSON. Never return impacts."""
+
+
+def ollama_abstention_schema() -> dict:
+    """Simple native Ollama schema, disjoint from impact generation."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "noImpactCategory": {
+                "type": "string",
+                "enum": sorted(_ABSTENTION_CODES),
+            },
+            "noImpactExplanation": {"type": "string", "minLength": 25},
+        },
+        "required": ["noImpactCategory", "noImpactExplanation"],
     }
 
 
@@ -404,7 +416,23 @@ def analyze_pressure_two_stage(
         }, ensure_ascii=False),
         schema=ollama_pressure_schema() if ollama_json_mode else schema,
     )
-    analysis, raw_abstention_label = _parse_impact_response(raw_impacts)
+    # Native Ollama receives disjoint schemas: pressure hypotheses are
+    # never packaged with an abstention reason. Otherwise the model fills
+    # BOTH simultaneously and Pydantic correctly rejects the contradiction.
+    if ollama_json_mode:
+        impact_payload = json.loads(raw_impacts)
+        if not isinstance(impact_payload, dict):
+            raise TypeError("IMPACT_RESPONSE_NOT_OBJECT")
+        # Any unexpected abstention fields from an ostensibly schema-bound
+        # impact call are rejected rather than silently thrown away.
+        if "noImpactCategory" in impact_payload or (
+            "noImpactExplanation" in impact_payload
+        ):
+            raise ValueError("IMPACT_STAGE_ABSTENTION_FIELDS_FORBIDDEN")
+        analysis = PressureAnalysis.model_validate(impact_payload)
+        raw_abstention_label = None
+    else:
+        analysis, raw_abstention_label = _parse_impact_response(raw_impacts)
     impacts = []
     for item in analysis.impacts:
         if (
@@ -481,6 +509,42 @@ def analyze_pressure_two_stage(
             "pressureNotPriceForecast": True,
             "expectationComparisonSemanticallyVerified": False,
         })
+    # Only an actually empty, schema-valid impact response may trigger a
+    # separate abstention analysis. This cannot erase a valid impact.
+    abstention_detail: dict | None = None
+    model_calls = 2
+    if ollama_json_mode and not impacts:
+        raw_abstention = provider.generate_json(
+            system=ABSTENTION_SYSTEM,
+            user=json.dumps({
+                "eventId": packet.eventId,
+                "subject": packet.subject,
+                "groundedClaims": extracted,
+                "task": "Explain why no defensible market pressure was proposed.",
+            }, ensure_ascii=False),
+            schema=ollama_abstention_schema(),
+        )
+        model_calls += 1
+        abstention_payload = json.loads(raw_abstention)
+        if not isinstance(abstention_payload, dict):
+            raise TypeError("ABSTENTION_RESPONSE_NOT_OBJECT")
+        if "impacts" in abstention_payload:
+            raise ValueError("ABSTENTION_STAGE_IMPACTS_FORBIDDEN")
+        abstention_model = PressureAnalysis.model_validate({
+            "impacts": [],
+            **abstention_payload,
+        })
+        if (
+            abstention_model.noImpactCategory is None
+            or abstention_model.noImpactExplanation is None
+        ):
+            raise ValueError("ABSTENTION_REASON_REQUIRED")
+        abstention_detail = {
+            "category": abstention_model.noImpactCategory,
+            "explanation": abstention_model.noImpactExplanation,
+            "rawModelCategory": None,
+            "categoryNormalized": False,
+        }
     if trace is not None:
         trace.record(
             "IMPACTS_VALIDATED",
@@ -494,13 +558,16 @@ def analyze_pressure_two_stage(
         )
     return _report(
         packet, provider, packet_hash, visible,
-        [claim.model_dump() for claim in facts.claims], impacts, 2,
-        abstention={
-            "category": analysis.noImpactCategory or "UNEXPLAINED_ABSTENTION",
-            "explanation": analysis.noImpactExplanation,
-            "rawModelCategory": raw_abstention_label,
-            "categoryNormalized": raw_abstention_label is not None,
-        } if not impacts else None,
+        [claim.model_dump() for claim in facts.claims], impacts, model_calls,
+        abstention=(
+            abstention_detail if ollama_json_mode
+            else {
+                "category": analysis.noImpactCategory or "UNEXPLAINED_ABSTENTION",
+                "explanation": analysis.noImpactExplanation,
+                "rawModelCategory": raw_abstention_label,
+                "categoryNormalized": raw_abstention_label is not None,
+            } if not impacts else None
+        ),
     )
 
 
@@ -531,7 +598,7 @@ def _report(
             )} if not claims else None
         ),
         "modelCalls": calls,
-        "impactGenerationMode": "FLAT_SCHEMA_AND_PYDANTIC_VALIDATED"
+        "impactGenerationMode": "DISJOINT_NATIVE_SCHEMAS_AND_PYDANTIC_VALIDATED"
         if getattr(getattr(provider, "settings", None), "kind", None) == "ollama"
         else "SCHEMA_AND_PYDANTIC_VALIDATED",
         "historicalPITVerified": False,
