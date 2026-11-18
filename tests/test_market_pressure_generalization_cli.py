@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from test_market_evidence_db_bridge import populated_db
+
 from tris_market_event_intelligence.market_pressure_generalization_cli import (
     evaluate_pages,
 )
