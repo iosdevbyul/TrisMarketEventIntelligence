@@ -181,6 +181,9 @@ case "$action" in
   historical-event-chain)
     module="tris_market_event_intelligence.historical_official_event_chain_cli"
     ;;
+  historical-first-sight)
+    module="tris_market_event_intelligence.historical_first_sight_pilot_cli"
+    ;;
   historical-semantic-score)
     module="tris_market_event_intelligence.historical_semantic_quality_cli"
     ;;
