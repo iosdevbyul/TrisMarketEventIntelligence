@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.llm_runtime import (
@@ -23,6 +23,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--as-of", type=date.fromisoformat, required=True)
+    parser.add_argument("--as-of-time", type=datetime.fromisoformat)
     parser.add_argument("--lookback-days", type=int, default=10)
     parser.add_argument("--max-groups", type=int, default=2)
     parser.add_argument("--model", default="gemma4:e2b")
@@ -39,6 +40,7 @@ def main() -> None:
             parser.error("--persist requires --run")
         candidates, inventory = recent_candidates(
             args.db, as_of=args.as_of, lookback_days=args.lookback_days,
+            as_of_time=args.as_of_time,
         )
         print(json.dumps({
             "status": "READ_ONLY_CANDIDATE_PREVIEW",
@@ -67,6 +69,7 @@ def main() -> None:
     result = discover_and_analyze(
         args.db, as_of=args.as_of, provider=provider,
         lookback_days=args.lookback_days, max_groups=args.max_groups,
+        as_of_time=args.as_of_time,
     )
     with args.output.open("x", encoding="utf-8") as file:
         json.dump(result, file, ensure_ascii=False, indent=2)
