@@ -151,3 +151,29 @@ editing a model sentence or inventing source references. The original
 curated claim snippets are not authenticated historical page snapshots.
 The next prospective outputs should use new filenames
 `faa-evidence-composed-v6.json` and `fda-evidence-composed-v3.json`.
+
+## Cross-event real-model review: FAA v6 / FDA v3
+
+Both prospective replays generated outputs with 18 model calls per event.
+The source-level narrative and newly visible claim coverage were preserved,
+and FAA January 25 production oversight included the January 24 production
+expansion restriction. FDA October 4 manufacturer-filing review also selected
+later FDA product authorizations as intermediate decisions. **However**, the
+original one-enum final question-state classifier repeatedly returned
+`COMPLETED` for stages that only announced audits or awaited product
+authorization, even where final audit/manufacturer records were missing.
+This is a serious semantic error and PR #250 remains Draft.
+
+The following revision explicitly separates **regulatoryDecisionStage**
+(NOT_OBSERVED, ANNOUNCED, AUTHORIZED, RESTRICTED, UNKNOWN) from
+**implementationCompletionStatus** (NOT_OBSERVED, IN_PROGRESS, COMPLETED,
+UNKNOWN), rather than reusing a single ordinal status for both. A model's
+claim of completed implementation is retained as
+`modelReportedImplementationCompletionStatus`, but never published as
+verified completion: the exposed completion state becomes UNKNOWN with a
+`completionEvidenceWarning` pending independent source verification.
+The legacy `regulatoryActionProgress` alias is now a decision-stage value;
+consumers must not interpret it as completed implementation. This is a
+conservative change, not an assertion that the new model's other labels
+are correct. Full historical PIT is still unverified. The next two real
+artifacts use FAA v7 and FDA v4 without replacing prior outputs.
