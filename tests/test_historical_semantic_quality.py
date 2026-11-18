@@ -47,6 +47,16 @@ def synthetic_runs(reference: dict) -> dict:
                 axes.append({
                     "questionId": case["questionId"],
                     "supportingEvidence": selected,
+                    "sourceId": (
+                        case["allowedPrimaryRefs"][0][0]
+                        if "allowedPrimaryRefs" in case
+                        else selected[0]["sourceId"]
+                    ),
+                    "claimId": (
+                        case["allowedPrimaryRefs"][0][1]
+                        if "allowedPrimaryRefs" in case
+                        else selected[0]["claimId"]
+                    ),
                     "regulatoryDecisionStage": case["decision"][0],
                     "requestedEvidenceStatus": case["evidence"][0],
                     "implementationCompletionStatus": case["completion"][0],
@@ -159,6 +169,7 @@ def test_v2_separate_evidence_axes_do_not_mask_model_overclaims() -> None:
     runs = synthetic_runs(reference)
     report = score_runs(reference, runs)
     assert report["schemaVersion"] == "historical_semantic_score_v2"
+    assert report["rates"]["primaryEvidenceAccuracy"] == 1
     assert report["rates"]["directRecordAccuracy"] == 1
     assert report["rates"]["indirectProgressAccuracy"] == 1
     assert report["rates"]["modelCompletionClaimRate"] == 0
@@ -204,3 +215,27 @@ def test_v2_direct_and_indirect_errors_are_independent() -> None:
                 if x["id"] == "fda-late-filings")
     assert "DIRECT_RECORD_STATUS_MISMATCH" in case["errors"]
     assert "INDIRECT_PROGRESS_STATUS_MISMATCH" not in case["errors"]
+
+
+def test_v2_rejects_wrong_primary_even_when_required_claim_is_present() -> None:
+    reference = benchmark_v2()
+    runs = synthetic_runs(reference)
+    early = next(
+        x for x in runs["FDA"]["replaySteps"]
+        if x["asOfDateExclusive"] == "2023-06-17"
+    )
+    formula = next(
+        x for x in early["assessment"]["independentQuestionAxes"][
+            "questionAssessments"
+        ] if x["questionId"] == "fda-2023-xbb15-authorized-formula"
+    )
+    # Recall remains perfect because the reference is present in the list,
+    # but the selected headline evidence is an unrelated future-filing note.
+    formula["sourceId"] = "fda-20230616-formula"
+    formula["claimId"] = "filing-still-needed"
+    report = score_runs(reference, runs)
+    case = next(x for x in report["caseResults"]
+                if x["id"] == "fda-early-formula")
+    assert "PRIMARY_EVIDENCE_MISMATCH" in case["errors"]
+    assert case["requiredClaimRecall"] == 1
+    assert report["rates"]["primaryEvidenceAccuracy"] == 0.875
