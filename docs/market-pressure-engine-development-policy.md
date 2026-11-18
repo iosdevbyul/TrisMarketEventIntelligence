@@ -239,3 +239,31 @@ Future integration priorities:
 3. Add robust event deduplication and article body evidence quality.
 4. Add audited output APIs and versioned persistence, but preserve
    existing API/DB contracts until reviewed.
+
+
+### Ollama natural-language abstention compatibility (first real v2 failure)
+
+The second observed local run returned a well-formed JSON response with
+`noImpactCategory="No Defensible Economic Transmission Channel"`. Ollama's
+portable JSON response mode does not enforce enum values; a direct Pydantic
+`Literal` validation raised an exception **before writing a report**.
+This is an output-shape error, not evidence that an economically justified
+POSITIVE or NEGATIVE pressure was identified.
+
+The pressure-stage prompt now requests the five exact category machine codes
+and separates them from the readable `noImpactExplanation`. For a nonempty,
+unrecognized string category on an **empty** impacts array, the parser
+conservatively maps to `OTHER`, preserving the exact raw string in
+`noImpactAssessment.rawModelCategory` and flagging
+`categoryNormalized=true`. Neither economic direction, evidence, strength
+nor the explanation is fabricated. Missing/short explanation,
+contradictions between an impact and abstention, non-string categories,
+or invalid impacts **still fail validation**. Only the category compatibility
+field is normalized. No change is made to previous immutable results.
+
+The next default local run writes
+`market-pressure-first-real-v3.json`; older v1/v2 filenames remain
+untouched. CI tests include the exact natural-language category form that
+caused the actual failure, unrelated unknown strings, correct enum inputs,
+conflicting impacts, and malformed explanations. Full market-impact judgment
+quality remains to be tested on the user's installed Gemma4.
