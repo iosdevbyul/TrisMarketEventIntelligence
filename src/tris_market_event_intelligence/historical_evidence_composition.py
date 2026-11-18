@@ -127,12 +127,24 @@ Do NOT generate prose or references. Analyze the specific research question
 using only screened cutoff-visible official claims.
 Select primaryEvidenceIndex from the zero-based screenedRelevantEvidence array,
 choosing the claim that most directly addresses the EXACT question and scope.
-Do not automatically prefer the newest claim or a role labeled
-INTERMEDIATE_DECISION over a RELATED_CONTEXT claim that more precisely
-answers the question. A notice about future documents is not the main
-evidence for a question about which formula was recommended; a generic
-increase in oversight is not the main evidence for a question about a
-production-line audit. Prefer the concrete object, action and target.
+First identify the precise answer target in the question: a future
+authorization, a concrete decision as of this cutoff, completion of an
+audit, or availability of original records. Next identify the visible claim
+that most directly establishes the CURRENT STATUS of that target.
+For a multi-part question about decisions AND underlying findings, cite a
+later substantive official decision as primary when one exists and directly
+updates the requested progress, even if final findings remain unavailable.
+For a question about underlying records, distinguish an original record
+from a later agency action that updates the status without disclosing it.
+Do not make an earlier notice the primary evidence for the CURRENT progress
+of a multi-stage event when a later material decision is visible. Conversely,
+a later notice of expected documents must not displace an earlier concrete
+recommendation if the question concerns that recommendation.
+A claim about another aircraft, product or procedure is background, not the
+primary answer. Dates alone never prove priority: explain relevance using
+the described action, target and question scope. Choose a role-relevant
+claim that best answers the question as of the cutoff, not simply the
+highest role, latest timestamp, or oldest document.
 The index must match an existing evidence item; never invent citations.
 
 regulatoryDecisionStage answers WHICH decision was actually documented:
