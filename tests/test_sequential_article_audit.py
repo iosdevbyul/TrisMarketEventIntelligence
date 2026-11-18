@@ -122,3 +122,63 @@ def test_no_predictions_and_unverified_not_counted_as_hits(tmp_path):
     report = audit.inspect(path)
     assert report["summary"]["articlesShown"] == 2
     assert "NO_TARGETS" in audit.markdown(report)
+
+
+def test_html_groups_targets_and_links_and_retains_unevaluated(tmp_path, monkeypatch):
+    path = tmp_path / "journal.sqlite3"
+    source = tmp_path / "news.sqlite3"
+    source.touch()
+    build(path)
+    with sqlite3.connect(path) as db:
+        prediction = {
+            "summary": "Mixed effects",
+            "impacts": [
+                {"targetType": "SECTOR", "target": "FINANCIALS",
+                 "priceProxy": "XLF", "direction": "NEUTRAL",
+                 "reason": "Sector impact"},
+                {"targetType": "STOCK", "target": "JPM",
+                 "priceProxy": "JPM", "direction": "POSITIVE",
+                 "reason": "Bank impact"},
+            ],
+        }
+        db.execute("UPDATE steps SET prediction_json=? WHERE seq=1",
+                   (json.dumps(prediction),))
+        db.commit()
+
+    monkeypatch.setattr(audit, "historical_news_cohort", lambda **kwargs: {
+        "items": [{"articleId": 7, "title": "Article <one>",
+                   "summary": "News summary", "source": "RSS",
+                   "sourceUrl": "https://example.org/article?a=1&b=2"}],
+    })
+    report = audit.inspect(path, source_db=source)
+    rows = report["articles"][0]["outcomes"]
+    assert len(rows) == 2
+    assert any(row["target"] == "JPM" and row["verdict"] == "UNVERIFIED"
+               for row in rows)
+    page = audit.html_report(report)
+    assert "연결된 섹터 (1)" in page
+    assert "연결된 종목 (1)" in page
+    assert "시장·지수 (0)" in page
+    assert "상승" in page and "중립" in page
+    assert "NO_STORED_EVALUATION" in page
+    assert "https://example.org/article?a=1&amp;b=2" in page
+    assert "Article &lt;one&gt;" in page
+
+
+def test_html_source_url_rejects_javascript_scheme():
+    report = {
+        "summary": {"articlesShown": 1, "predictionsCorrect": 0,
+                    "predictionsWrong": 0, "predictionsUnverified": 0},
+        "warnings": [],
+        "articles": [{
+            "seq": 1, "articleId": 1, "title": "Unsafe URL",
+            "firstObservedAt": "2026-11-15T00:00:00+00:00",
+            "source": "Example", "sourceUrl": "javascript:alert(1)",
+            "articleSummary": "Summary", "originalPredictionSummary": "Neutral",
+            "outcomes": [], "diagnosis": "", "correctiveRule": "",
+            "rulesApplied": [],
+        }],
+    }
+    html = audit.html_report(report)
+    assert "원문 링크 없음" in html
+    assert "href=" not in html
