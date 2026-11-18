@@ -15,6 +15,7 @@ from tris_market_event_intelligence.market_event_discovery import (
     discover_and_analyze,
     recent_candidates,
 )
+from tris_market_event_intelligence.market_pressure_results_store import MarketPressureResultStore
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 
@@ -26,12 +27,16 @@ def main() -> None:
     parser.add_argument("--max-groups", type=int, default=2)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--persist", action="store_true",
+                        help="Explicitly persist completed review-only results to existing DB")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
     args = parser.parse_args()
 
     if args.preview:
+        if args.persist:
+            parser.error("--persist requires --run")
         candidates, inventory = recent_candidates(
             args.db, as_of=args.as_of, lookback_days=args.lookback_days,
         )
@@ -66,11 +71,17 @@ def main() -> None:
     with args.output.open("x", encoding="utf-8") as file:
         json.dump(result, file, ensure_ascii=False, indent=2)
         file.write("\n")
+    stored = None
+    if args.persist and result["events"]:
+        store = MarketPressureResultStore(args.db)
+        store.initialize()
+        stored = store.save(result)
     print(json.dumps({
         "status": result["status"],
         "eventGroups": len(result["events"]),
         "modelCalls": result["modelCalls"],
         "outputCreated": True,
+        "persisted": stored,
     }))
 
 
