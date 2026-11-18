@@ -39,6 +39,7 @@ class MarketEvidence(Strict):
     verification: Literal["VERIFIED_SOURCE", "REPORTED_UNVERIFIED"]
     indicatorName: str | None = None
     indicatorValue: str | None = None
+    indicatorPrevious: str | None = None
     indicatorPeriod: str | None = None
     expectation: str | None = None
 
@@ -57,6 +58,8 @@ class MarketEvidence(Strict):
             raise ValueError("UNSUPPORTED_EXPECTATION")
         if self.indicatorValue and self.indicatorValue not in self.excerpt:
             raise ValueError("UNSUPPORTED_INDICATOR_VALUE")
+        if self.indicatorPrevious and self.indicatorPrevious not in self.excerpt:
+            raise ValueError("UNSUPPORTED_PREVIOUS_VALUE")
         return self
 
 
