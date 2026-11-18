@@ -421,3 +421,65 @@ referenced claim, and any UNCERTAIN-vs-strength contradiction. It does
 NOT execute the model, edit the DB, replace the JSON or reveal full
 article text. The user can share this much smaller diagnosis for a
 precise corrective patch instead of repeatedly running v8/v9 blind.
+
+
+### Economic semantic review of recorded market pressure — offline, human-gated
+
+The local v7 replay recovered two **schema-/provenance-accepted** hypotheses
+out of four. This is not the same as verifying real economic significance,
+market-direction correctness, investor expectation effects, or magnitude.
+In particular, `POSITIVE/MODERATE` solar-installation pressure and
+`MIXED/MODERATE` Nvidia pressure are both reviewable hypotheses; the
+model's label alone does not establish their actual strength.
+
+A new read-only `market-pressure-semantic-review` workflow reads the
+**existing private model trace** and runs the same strict replay checks,
+then builds a create-only, source-linked JSON review worksheet for **each
+original proposal**, including rejected ones. Fields include:
+- original proposal index, target, market, sector, direction, horizon,
+  qualitative strength and transmission channel;
+- complete model-authored rationale and separate strength rationale;
+- verbatim cited source observations, per-source verification/claim kind,
+  disclosed actual/previous/consensus metadata, and link to source IDs;
+- model drivers, countervailing factors, structural validator disposition
+  and safely coded rejection reason;
+- explicit warning flags for single-source support, unverified reporting,
+  qualitative strength lacking independent audit, unexplained opposing
+  forces, and unsourced surprise comparisons;
+- six *unset* human-review questions and a required free-text justification.
+
+The warnings are **review prompts, not an automated semantic correctness
+score**. A schema pass is never converted into independently validated
+causality, direction or strength. Human finalization is separately
+explicit and rejects `PENDING`, incomplete criteria, missing explanation
+or claims of full support with failed criteria. Finalized judgments
+include a checksum of the original trace and canonical review file, but
+remain human opinions, **not independent economic accuracy validation**.
+
+Offline commands (no model calls, no DB changes):
+
+```bash
+git pull --ff-only origin feature/general-market-pressure-engine
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh market-pressure-semantic-review \
+  --trace "$DATA/market-pressure-first-real-v7.json.trace.jsonl" \
+  --output "$DATA/market-pressure-v7-semantic-review-v1.json"
+```
+
+Review the private JSON's `reviewItems` carefully and edit every
+`humanReview` value. Valid `humanDecision`: `SUPPORTED_WITH_LIMITATIONS`,
+`NOT_SUPPORTED`, or `INCONCLUSIVE`. All six booleans and a reason at
+least 30 characters long are required.
+
+```bash
+bash scripts/news-learning-review.sh market-pressure-semantic-finalize \
+  --review "$DATA/market-pressure-v7-semantic-review-v1.json" \
+  --reviewer "Human researcher" \
+  --output "$DATA/market-pressure-v7-semantic-evaluation-v1.json"
+```
+
+Both outputs are local, create-only review artifacts and may contain
+private original excerpts. Do not commit the results, send them to
+external services or conflate them with the production market-pressure
+API. PR #251 stays Draft until independent evaluation and operating
+conditions are reviewed.
