@@ -40,14 +40,23 @@ mistake, the AI writes a diagnosis and a corrective instruction for subsequent
 articles. Original errors remain immutable. There are no trade actions.
 
 The research corpus is drawn from the checksum-verified existing news archive.
-Only one chronologically separated article is selected per five days; the last
-20% of dated observations are reserved as a chronological holdout. Therefore
-the requested 1,000 examples require sufficient historical coverage; a smaller
-archive reports `INSUFFICIENT_CHRONOLOGICAL_ARTICLES` rather than fabricating
-examples. Current Yahoo Finance access is best effort and daily candles do
-**not** establish minute-level causality. Missing quotes produce `UNVERIFIED`,
-never an assumed correct answer or a fabricated lesson. Research-generated
-lessons are proposed prompt adaptations, not certified improvements.
+Articles are processed **one by one**, even when several articles were captured
+on the same date. Exact duplicate content is excluded. The last 20% of dated
+observations remain outside the training loop as a chronological holdout.
+A smaller archive reports `INSUFFICIENT_CHRONOLOGICAL_ARTICLES` rather than
+fabricating the missing 1,000 samples.
+
+**Important:** this is a *retrospective adaptation experiment*, not a clean
+point-in-time backtest. Learning from a 24-hour price outcome before processing
+another article captured the same day uses information that was not available
+at the second article's historical publication time. Such results MUST NOT be
+represented as leakage-free historical prediction accuracy; a separately run
+holdout evaluation is necessary. The original predictions remain immutable.
+
+Current Yahoo Finance access is best effort and daily candles do **not**
+establish minute-level causality. Missing quotes produce `UNVERIFIED`, never
+an assumed correct answer or fabricated lesson. Research-generated lessons
+are proposed prompt adaptations, not certified improvements.
 
 ## Prior architecture
 
