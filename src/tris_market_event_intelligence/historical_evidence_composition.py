@@ -371,14 +371,23 @@ def assess_question_axes(
             provider, "last_generation_diagnostics", None,
         ))
         answer = QuestionAnswer.model_validate_json(raw_answer)
-        if (
-            not _complete(answer.explanation)
-            or not _complete(answer.remainingEvidence)
-            or is_observed_market_result(answer.explanation)
-            or is_observed_market_result(answer.remainingEvidence)
-        ):
+        invalid = (
+            "EXPLANATION_INCOMPLETE" if not _complete(answer.explanation)
+            else "REMAINING_EVIDENCE_INCOMPLETE"
+            if not _complete(answer.remainingEvidence)
+            else "EXPLANATION_MARKET_OUTCOME"
+            if is_observed_market_result(answer.explanation)
+            else "REMAINING_EVIDENCE_MARKET_OUTCOME"
+            if is_observed_market_result(answer.remainingEvidence)
+            else None
+        )
+        if invalid is not None:
+            # Never alter model prose or convert an invalid answer to success.
+            # Include the question and failed field so genuine Ollama failures
+            # are actionable without logging entire raw model responses.
             raise ComposedEvidenceError(
-                "COMPOSED_QUESTION_ANSWER_INVALID"
+                "COMPOSED_QUESTION_ANSWER_INVALID:"
+                + question["questionId"] + ":" + invalid
             )
         if (
             answer.requestedEvidenceStatus == "DIRECTLY_OBSERVED"
