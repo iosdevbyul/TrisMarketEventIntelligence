@@ -103,10 +103,37 @@ bash scripts/news-learning-review.sh market-evidence-pressure \
 The output is create-only, and the model is called exactly once.
 No model installation or implicit source downloads take place.
 
+## Existing news.sqlite3 adapter (read-only)
+
+The new `market_evidence_db_bridge` reads **actual local collected
+articles** from the `articles` table and economic/monetary events from
+`economic_events`. This is a read-only selection step, not another
+collector. RSS headlines and summaries are unverified evidence and never
+treated as full original article bodies. A source missing an explicit
+timezone-aware publication timestamp is rejected instead of silently
+substituting the detection time.
+
+Choose IDs already present in the existing local database, and preview
+before invoking Gemma4:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh market-evidence-pressure \
+  --db "$DATA/news.sqlite3" --event-id investigation-001 \
+  --subject "News and macroeconomic context" --as-of 2026-11-18 \
+  --article-id 101 --economic-event-id 25 --preview
+```
+
+The IDs above are **illustrative**, not known to exist on a user's machine.
+For a real run, use the same arguments with `--run --model gemma4:e2b
+--output "$DATA/new-qualitative-pressure.json"`. The output is create-only.
+Selecting relevant IDs is still manual and is not yet an automated event
+clustering/deduplication or reliable economic-series ingestion workflow.
+
 ## What still needs validation
 
-1. A real source connector supplying **time-verified** economic releases
-   and relevant news without manually authoring excerpts.
+1. Automatic event-cluster selection across the existing collector and a
+   time-verified dedicated economic-series source, eliminating manual ID selection.
 2. Market/sector target resolution and transparent aggregation across
    multiple articles or indicators (with potentially conflicting signals).
 3. A frozen independent benchmark of the **direction and mechanism** of
