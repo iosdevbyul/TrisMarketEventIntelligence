@@ -22,6 +22,18 @@ _GOVERNANCE = re.compile(
     r"return|reinstat(?:ed|ement)|succession|investor.calls)\b",
     re.IGNORECASE,
 )
+_OBSERVED_ADOPTION = re.compile(
+    r"\\b(solar|installation|installed|adoption|penetration|"
+    r"electricity.share|generation.share|market.share|uptake)\\b",
+    re.IGNORECASE,
+)
+_FUTURE_EXPOSURE = re.compile(
+    r"\\b(expected.revenue|forecast.sales|supplier.earnings|"
+    r"future.orders|profit.margin|contract.value|"
+    r"installation.backlog|future.cash.flow)\\b",
+    re.IGNORECASE,
+)
+
 _QUANT_ECONOMICS = re.compile(
     r"\b(?:revenue|earnings|profit|margin|cash.flow|cost.of.capital|"
     r"discount.rate|funding.cost|profitability|valuation|"
@@ -68,6 +80,17 @@ def assess_reasoning_quality(
             "REGULATORY_CHANNEL_WITHOUT_REGULATORY_EVIDENCE",
             "Leadership/governance language is present, but no regulatory "
             "fact or mechanism appears in cited observations or rationale.",
+        )
+
+    if (
+        channel in {"DEMAND", "REVENUE"}
+        and _OBSERVED_ADOPTION.search(cited_text)
+        and not _FUTURE_EXPOSURE.search(cited_text)
+    ):
+        flag(
+            "OBSERVED_ADOPTION_NOT_EVIDENCE_OF_FUTURE_REVENUE",
+            "Observed uptake or energy share is not proof of future supplier "
+            "sales, company revenue, margins or priced-in market effects.",
         )
 
     if direction == "MIXED":
