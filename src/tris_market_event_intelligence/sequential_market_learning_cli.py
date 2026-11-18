@@ -36,7 +36,6 @@ SECTOR_ETFS = {
 }
 DIRECTIONS = {"POSITIVE", "NEGATIVE", "NEUTRAL"}
 NEW_YORK = ZoneInfo("America/New_York")
-MAX_ARTICLE_DISCOVERY_LAG = timedelta(hours=48)
 PREDICTION_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -205,50 +204,39 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
                                  if assessment is not None else {})}
 
 
+def publication_time(article: dict) -> datetime:
+    """Reported original release time, never the later ingestion timestamp."""
+    published = article.get("publishedAtReported")
+    if not published:
+        raise ValueError("Publication timestamp unavailable")
+    release = timestamp(published)
+    if release > timestamp(article["firstObservedAt"]):
+        raise ValueError("Publication later than observed receipt")
+    return release
+
+
 def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], int]:
-    # Deliberately read source DB using the repository's checksum-verified, read-only exporter.
     cohort = historical_news_cohort(
         source_db=db, as_of=cutoff, after_id=0, limit=5000,
     )
     items = []
     for row in cohort["items"]:
-        # A reported publication timestamp is not independently verified.
-        # First observed receipt is a conservative, auditable information cutoff.
-        observed = timestamp(row["firstObservedAt"])
-        published = row.get("publishedAtReported")
-        if published:
-            try:
-                published_dt = timestamp(published)
-            except ValueError:
-                continue
-            if published_dt > observed:
-                continue
         if not row.get("title") or not row.get("summary"):
             continue
-        # A title repeated as summary is not enough to interpret an event.
-        if str(row["summary"]).strip().casefold() == str(row["title"]).strip().casefold():
+        try:
+            published = publication_time(row)
+        except ValueError:
             continue
-        # Exclude historical backfills accidentally measured against the
-        # market reaction to their much later ingestion date.
-        if not published:
-            continue
-        lag = observed - published_dt
-        if lag < timedelta(0) or lag > MAX_ARTICLE_DISCOVERY_LAG:
+        if published > cutoff:
             continue
         items.append(row)
-    items.sort(key=lambda a: (a["firstObservedAt"], a["articleId"]))
-    # Reserve a chronological holdout before choosing training examples.
+    # Historical releases are evaluated in original publication order, not
+    # in the order an RSS backfill happened to be ingested.
+    items.sort(key=lambda a: (publication_time(a), a["articleId"]))
     train_end = int(len(items) * 0.8)
-    train = items[:train_end]
-    # A retrospective feedback study is deliberately sequential by ARTICLE,
-    # not by calendar day. Multiple stories may be published on the same day.
-    # This mode is NOT a point-in-time-valid historical forecast benchmark:
-    # after an outcome has been revealed, its lesson can influence another
-    # article published before that outcome was publicly knowable.
-    # Chronological holdout articles remain excluded from lessons.
     selected = []
     seen = set()
-    for row in train:
+    for row in items[:train_end]:
         fingerprint = row.get("textSha256") or row.get("sourceUrl") or row["articleId"]
         if fingerprint in seen:
             continue
@@ -263,17 +251,18 @@ def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], i
 def pre_event_market_context(
     article: dict, prior_articles: list[dict], client: Any,
 ) -> dict[str, Any]:
-    """Use only previously observed articles and conservative pre-event bars."""
-    observed = timestamp(article["firstObservedAt"])
+    """Reconstruct historical context relative to the original release time."""
+    observed = publication_time(article)
     terms = set(re.findall(r"[a-zA-Z]{4,}", (
         str(article.get("title", "")) + " " + str(article.get("summary", ""))
     ).lower()))
     stop = {"with", "from", "this", "that", "will", "have", "after",
-            "about", "market", "reported", "could", "company", "shares"}
+            "about", "market", "reported", "could", "company", "shares",
+            "federal", "reserve", "board", "announces", "issues"}
     terms -= stop
     related = []
     for previous in reversed(prior_articles):
-        when = timestamp(previous["firstObservedAt"])
+        when = publication_time(previous)
         if when >= observed or observed - when > timedelta(days=14):
             continue
         prior_terms = set(re.findall(
@@ -285,7 +274,7 @@ def pre_event_market_context(
         if len(overlap) >= 2:
             related.append({
                 "articleId": previous["articleId"],
-                "firstObservedAt": previous["firstObservedAt"],
+                "publishedAtReported": previous["publishedAtReported"],
                 "title": previous["title"], "sharedTerms": overlap[:8],
             })
         if len(related) >= 5:
@@ -310,7 +299,7 @@ def pre_event_market_context(
                 strict=False,
             )
             if p is not None and float(p) > 0
-            and datetime.fromtimestamp(t, UTC).date() < observed.date()
+            and datetime.fromtimestamp(t, UTC).astimezone(NEW_YORK).date() < observed.astimezone(NEW_YORK).date()
         ]
         if len(candles) >= 2:
             window = candles[-6:]
@@ -326,6 +315,8 @@ def pre_event_market_context(
         pass
     return {
         "asOf": observed.isoformat(),
+        "timingBasis": "REPORTED_PUBLICATION_TIME",
+        "historicalBackfill": timestamp(article["firstObservedAt"]) > observed,
         "earlierRelatedArticles": related,
         "marketPreTrend": market,
         "consensus": {"status": "UNKNOWN", "reason": "No timestamped consensus feed"},
@@ -497,28 +488,37 @@ def yahoo_bars(client: httpx.Client, symbol: str, observed: datetime,
 
 def price_return(client: httpx.Client, symbol: str, observed: datetime,
                  horizon: timedelta, interval: str) -> dict:
+    """Score first post-release NYSE session close versus prior session close.
+
+    If released during the regular session, measure at that session close.
+    If after close, on a weekend, or on a market holiday, measure at the
+    following trading session close. The trading calendar is derived from
+    actual available daily bars, not weekday arithmetic.
+    """
     bars = yahoo_bars(client, symbol, observed, horizon, interval=interval)
-    # Yahoo daily timestamps normally denote the SESSION OPEN, although
-    # their quoted "close" is unavailable until that day's market CLOSE.
-    # Comparing an open timestamp to a close price leaks future information.
-    # Represent each bar by a conservative 16:00 New York market close.
     sessions = []
     for stamp, price in bars:
         session_day = stamp.astimezone(NEW_YORK).date()
         close_at = datetime.combine(session_day, time(16, 0), NEW_YORK).astimezone(UTC)
         sessions.append((close_at, price))
-    before_bars = [(t, p) for t, p in sessions if t <= observed]
-    after_bars = [(t, p) for t, p in sessions if t >= observed + horizon]
-    if not before_bars or not after_bars:
-        raise ValueError("Price bars unavailable around event")
-    before, start = before_bars[-1]
-    after, end = after_bars[0]
-    if after <= before:
-        raise ValueError("Invalid market evaluation window")
+    sessions.sort()
+    prior = [(t, p) for t, p in sessions if t < observed]
+    later = [(t, p) for t, p in sessions if t >= observed]
+    if not prior or not later:
+        raise ValueError("Price bars unavailable around release")
+    before, start = prior[-1]
+    after, end = later[0]
+    # A one-day horizon is the first reaction-session close. Longer horizons
+    # advance whole trading sessions (not arbitrary 24h wall-clock windows).
+    sessions_after = max(1, int(horizon.total_seconds() // 86400))
+    if len(later) < sessions_after:
+        raise ValueError("Insufficient forward trading sessions")
+    after, end = later[sessions_after - 1]
     return {
         "baselineAt": before.isoformat(), "outcomeAt": after.isoformat(),
         "baselinePrice": start, "outcomePrice": end,
         "actualWindowHours": (after - before).total_seconds() / 3600,
+        "evaluationBasis": "FIRST_POST_RELEASE_SESSION_CLOSE",
         "return": end / start - 1,
     }
 
@@ -590,8 +590,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     articles, heldout = load_articles(args.source_db, count, cutoff)
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
-        "eligibilityVersion": "fresh-substantive-v2",
-        "dailyBarAlignment": "ny-close-v2",
+        "eligibilityVersion": "original-publication-v3",
+        "dailyBarAlignment": "first-reaction-close-v3",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
         "count": count, "horizonHours": args.horizon_hours,
         "interval": args.interval, "model": args.model,
@@ -627,7 +627,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
             learning_memory.import_legacy(db, articles)
             db.commit()
             for index, article in enumerate(articles, start=1):
-                observed = timestamp(article["firstObservedAt"])
+                observed = publication_time(article)
                 # Retrospective adaptation deliberately evaluates one article,
                 # corrects mistakes, and only then predicts the next article.
                 # See explicit leakage caveat in the result and README.
@@ -655,6 +655,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         "article": {
                             "title": article["title"], "summary": article["summary"],
                             "firstObservedAt": article["firstObservedAt"],
+                            "publishedAtReported": article["publishedAtReported"],
+                            "evaluationAt": observed.isoformat(),
                             "source": article["source"],
                         },
                         "priorFeedbackLessons": relevant,
@@ -810,9 +812,10 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 "evaluationMode": "RETROSPECTIVE_SEQUENTIAL_FEEDBACK",
                 "pointInTimeCertified": False,
                 "warning": (
-                    "Only recently observed, substantive summaries are eligible. "
-                    "Daily candle evaluation uses conservative New York close "
-                    "times, not verified intraday attribution. Corrective lessons "
+                    "Original reported publication dates control reaction windows; "
+                    "historical ingestion dates do not. Reported publication "
+                    "timestamps and daily close bars are not independently verified. "
+                    "Corrective lessons "
                     "may include outcomes learned after other historical articles; "
                     "this remains a retrospective study, not leakage-free accuracy."
                 ),
