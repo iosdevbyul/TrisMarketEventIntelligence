@@ -9,8 +9,8 @@ from tris_market_event_intelligence.impact import ImpactAnalysisError
 from tris_market_event_intelligence.market_evidence_pressure import MarketEvidencePacket
 from tris_market_event_intelligence.market_pressure_reasoning import (
     analyze_pressure_two_stage,
-    ollama_pressure_schema,
     ollama_abstention_schema,
+    ollama_pressure_schema,
 )
 
 
