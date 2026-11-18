@@ -162,7 +162,7 @@ def test_exact_cutoff_uses_utc_instant_not_publisher_calendar_day() -> None:
     raw["asOfTimestampExclusive"] = "2024-02-14T10:00:00+09:00"
     # Cutoff is 2024-02-14 01:00 UTC. The same local-date article
     # published at 00:30 UTC is visible; a 03:00 UTC article is not.
-    raw["evidences"][0]["publishedAt"] = "2024-02-13T18:30:00-05:00"
+    raw["evidences"][0]["publishedAt"] = "2024-02-13T15:30:00-05:00"
     raw["evidences"][1]["publishedAt"] = "2024-02-14T00:30:00+00:00"
     raw["evidences"][2]["publishedAt"] = "2024-02-16T00:30:00+00:00"
     p = MarketEvidencePacket.model_validate(raw)
