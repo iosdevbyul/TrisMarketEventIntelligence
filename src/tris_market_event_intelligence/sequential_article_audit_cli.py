@@ -143,6 +143,7 @@ def inspect(journal: Path, *, limit: int = 1000,
                     "baselinePrice": result.get("baselinePrice"),
                     "outcomePrice": result.get("outcomePrice"),
                     "unverifiedReason": result.get("reasonCode"),
+                    "unverifiedDetail": result.get("reasonDetail"),
                 })
             rules = []
             if has_applied and has_rules:
