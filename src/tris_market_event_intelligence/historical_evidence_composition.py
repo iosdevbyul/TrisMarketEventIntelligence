@@ -31,6 +31,11 @@ class SourceExplanations(Strict):
     items: list[SourceExplanation] = Field(min_length=1, max_length=12)
 
 
+class QuestionEvidenceRef(Strict):
+    sourceId: str
+    claimId: str
+
+
 class QuestionAxes(Strict):
     questionId: str
     regulatoryActionProgress: Literal[
@@ -42,7 +47,8 @@ class QuestionAxes(Strict):
     ]
     sourceId: str
     claimId: str
-    explanation: str = Field(min_length=35, max_length=280)
+    supportingEvidence: list[QuestionEvidenceRef] = Field(min_length=1, max_length=12)
+    explanation: str = Field(min_length=35, max_length=450)
     remainingEvidence: str = Field(min_length=25, max_length=280)
 
 
@@ -61,30 +67,32 @@ invent results, costs, price outcomes or future data. No opaque IDs in
 prose. Identify what each claim does not establish in its limitation.
 All prose must end in full-sentence punctuation. Return strict JSON."""
 
-_QUESTIONS_SYSTEM = """Assess each research question ONLY against the
-provided date-cutoff-visible official sources, not future transitions.
-Give exactly one row per question. The axes are INDEPENDENT. Consider ALL eligible dated evidence, especially
-later claims that update earlier pending decisions. The provided prior
-MODEL-authored question assessments are provisional, not ground truth;
-compare their cited evidence with all eligible sources. Anchor a resolved
-question in the NEWEST directly relevant official claim, not the first
-claim that introduced it. A question asking whether a PROCEDURE was
-authorized can be directly answered by its official authorization
-announcement even if individual work remains incomplete.
-The axes are INDEPENDENT:
-regulatoryActionProgress is the stage explicitly supported by a relevant
-visible official claim (NOT_OBSERVED, ANNOUNCED, AUTHORIZED,
-IMPLEMENTING, COMPLETED, UNKNOWN). Approval of a PROCEDURE does not
-prove execution of individual inspections or completion of an audit.
-requestedEvidenceStatus is about the exact DOCUMENT or answer requested:
-NOT_OBSERVED (missing), PARTIAL (some but not all required direct evidence)
-or DIRECTLY_OBSERVED (the exact requested answer exists in a visible
-official source). A press release can directly answer an authorization
-question without proving underlying review records. Cite an exact visible
-sourceId and claimId; for NOT_OBSERVED, cite the visible basis of the
-question, never invent a source. Explain precisely what is and is not
-observed. Keep aircraft/product scope distinct. Do not use curator future
-outcomes, prices, financial causality or later history. Strict JSON only."""
+_QUESTIONS_SYSTEM = """Evaluate every visible official source claim and
+every supplied source-scoped explanation relevant to EACH research question.
+Later official decisions may change earlier UNKNOWN or OPEN answers. Prior
+model assessments are provisional, not ground truth. Include EVERY directly
+relevant dated claim in supportingEvidence, including new announcements and
+older pending notices, without adding unrelated or invented references.
+The primary sourceId and claimId should cite the most recent substantive
+relevant decision, rather than always citing the initial question source.
+
+Assess two independent dimensions. regulatoryActionProgress measures the
+regulator action (NOT_OBSERVED, ANNOUNCED, AUTHORIZED, IMPLEMENTING,
+COMPLETED, UNKNOWN), not completion of inspections or audits. An official
+production restriction is an observed regulatory decision but not a
+completed quality audit. requestedEvidenceStatus measures whether the
+EXACT full question has supporting documentation: NOT_OBSERVED when no
+part of the answer is visible, PARTIAL when a decision or intermediate
+evidence exists but necessary final results are missing, and
+DIRECTLY_OBSERVED when the full answer requested is directly observed.
+For questions requesting BOTH official decisions and audit findings,
+observed official restrictions plus missing audit findings mean PARTIAL,
+not NOT_OBSERVED. Explain the observed decision in explanation, then
+name only truly absent evidence in remainingEvidence. Never claim no
+decisions are visible when a relevant decision is in supportingEvidence.
+Distinguish 737-900ER from 737-9 MAX and authorization from actual
+completion. No editorial future transitions, fabricated proof, market
+prices, financial effects or causal assertions. Strict JSON only."""
 
 
 class ComposedEvidenceError(ValueError):
@@ -200,6 +208,7 @@ def generate_composed_explanation(
 
 def assess_question_axes(
     provider: LLMProvider, packet: dict, draft: dict,
+    composed: dict | None = None,
 ) -> dict:
     """Do not derive either dimension from legacy OPEN/RESOLVED labels."""
     questions = draft["visibleQuestions"]
@@ -218,6 +227,9 @@ def assess_question_axes(
                 for x in packet["eligibleSources"]
             ],
             "visibleQuestions": questions,
+            "newlyExplainedClaims": (
+                composed["sourceExplanations"] if composed is not None else []
+            ),
             "previouslyValidatedModelQuestionAssessments": (
                 draft["modelAuthoredQuestionAssessments"]
             ),
@@ -229,11 +241,24 @@ def assess_question_axes(
     parsed = AllQuestionAxes.model_validate_json(raw)
     states = [x.model_dump() for x in parsed.assessments]
     expected = {x["questionId"] for x in questions}
+    visible_refs = _refs(packet)
     if (
         len(states) != len(questions)
         or {x["questionId"] for x in states} != expected
         or any(
-            (x["sourceId"], x["claimId"]) not in _refs(packet)
+            (x["sourceId"], x["claimId"]) not in visible_refs
+            or (x["sourceId"], x["claimId"]) not in {
+                (ref["sourceId"], ref["claimId"])
+                for ref in x["supportingEvidence"]
+            }
+            or len({
+                (ref["sourceId"], ref["claimId"])
+                for ref in x["supportingEvidence"]
+            }) != len(x["supportingEvidence"])
+            or any(
+                (ref["sourceId"], ref["claimId"]) not in visible_refs
+                for ref in x["supportingEvidence"]
+            )
             or not _complete(x["explanation"])
             or not _complete(x["remainingEvidence"])
             or is_observed_market_result(x["explanation"])
