@@ -1,15 +1,58 @@
 # TrisMarketEventIntelligence
 
-An independent, local-first service for collecting financial news, verifying economic events, and publishing **news-driven direction, pressure, uncertainty and evidence** to consumers such as DonghakStockVision. **Stock prices, stock-return predictions and portfolio decisions belong exclusively to DonghakStockVision.**
+Independent, local-first news-to-market evaluation and sequential learning system.
 
-## Principles
+## Current goal
 
-- Keep financial event ingestion and news-only impact analysis independent from consumers.\n- TrisMarketEventIntelligence estimates whether a news event exerts positive, negative or mixed pressure and how strongly; it does **not** predict stock returns, targets or prices.\n- DonghakStockVision owns price collection, market forecasts, and any calibration of news pressure against realized returns.
-- Store original source provenance and separate observed facts from AI hypotheses.
-- Record publication, detection and processing times separately to avoid look-ahead bias.
-- Treat event IDs as durable, deduplicated delivery cursors.
-- Bind the local HTTP service to loopback by default.
-- Never commit API keys, paid article bodies, or local operational databases.
+Collect historical news; analyze **one article at a time** with the configured AI;
+identify exposed stocks, multiple sectors and broad-market proxies; seal each
+prediction before looking at realized returns; fetch historical market prices;
+compare predicted and realized price directions; diagnose failed predictions;
+pass the resulting corrective lesson into the **next** article. Repeat up to
+1,000 times, persist progress and resume after interruption. No dependency on
+DonghakStockVision.
+
+This is retrospective research, not investment advice or a live trading system.
+A news/price correlation does not establish that the news caused the movement.
+A model trained on later information cannot be claimed to pass a true historical
+point-in-time evaluation without additional independent safeguards.
+
+## Sequential study command
+
+Use the existing locally collected `news.sqlite3`, installed `gemma4:e2b`,
+and internet access for public Yahoo Finance chart quotes:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.sequential_market_learning_cli \
+  --source-db "$DATA/news.sqlite3" \
+  --as-of "2026-11-19T00:00:00+09:00" \
+  --count 1000 \
+  --model gemma4:e2b \
+  --interval 1d \
+  --horizon-hours 24 \
+  --journal "$DATA/sequential-learning-v1.sqlite3"
+```
+
+The journal is **create/resume**, and never changes the source news DB.
+Article predictions are committed before price evaluation. After each confirmed
+mistake, the AI writes a diagnosis and a corrective instruction for subsequent
+articles. Original errors remain immutable. There are no trade actions.
+
+The research corpus is drawn from the checksum-verified existing news archive.
+Only one chronologically separated article is selected per five days; the last
+20% of dated observations are reserved as a chronological holdout. Therefore
+the requested 1,000 examples require sufficient historical coverage; a smaller
+archive reports `INSUFFICIENT_CHRONOLOGICAL_ARTICLES` rather than fabricating
+examples. Current Yahoo Finance access is best effort and daily candles do
+**not** establish minute-level causality. Missing quotes produce `UNVERIFIED`,
+never an assumed correct answer or a fabricated lesson. Research-generated
+lessons are proposed prompt adaptations, not certified improvements.
+
+## Prior architecture
+
+The following legacy documentation records earlier stages and is superseded
+where it excludes market price evaluation from this project's scope.
 
 ## Local setup
 
