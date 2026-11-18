@@ -23,28 +23,30 @@ class ComposedProvider(StageProvider):
 
     def generate_json(self, *, system: str, user: str, schema: dict) -> str:
         properties = schema["properties"]
-        if "items" in properties:
+        if "explanation" in properties and "limitation" in properties:
             self.calls += 1
             envelope = json.loads(user)
             self.inputs.append(envelope)
             self.composed_inputs.append(envelope)
-            source = envelope["source"]
-            return json.dumps({
-                "items": [{
-                    "sourceId": (
-                        "future-invalid-source" if self.wrong_scope
-                        else source["sourceId"]
-                    ),
-                    "claimId": claim["claimId"],
-                    "explanation": (
-                        "The official regulator documented a specific decision "
-                        "for this source's named product and agency process."
-                    ),
+            claim = envelope["claim"]
+            if self.wrong_scope:
+                return json.dumps({
+                    "explanation": "Incomplete",
                     "limitation": (
-                        "The document does not establish subsequent completed "
-                        "implementation or underlying internal review records."
+                        "The original official claim does not establish "
+                        "the outcome of the following stage."
                     ),
-                } for claim in source["claims"]],
+                })
+            return json.dumps({
+                "explanation": (
+                    "The official regulator documented the concrete action "
+                    "described in this single official claim, with an "
+                    "explicitly defined product and agency scope."
+                ),
+                "limitation": (
+                    "The original official claim does not establish "
+                    "the final outcome of later implementation."
+                ),
             })
         if "assessments" in properties:
             self.calls += 1
@@ -85,7 +87,7 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
         reasoning_mode="staged-composed",
     )
     assert run["modelCalls"] == provider.calls
-    assert run["modelCalls"] == 8
+    assert run["modelCalls"] == 12
     for step in run["replaySteps"]:
         assessment = step["assessment"]
         composition = assessment["sourceScopedComposition"]
@@ -93,7 +95,7 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
         assert composition["sourceCoverage"]["requiredSourceIds"] == (
             composition["sourceCoverage"]["explainedSourceIds"]
         )
-        assert "VERBATIM_SOURCE_MODEL_SENTENCES" == composition["narrativeAssembly"]
+        assert "VERBATIM_CLAIM_MODEL_SENTENCES" == composition["narrativeAssembly"]
         assert composition["sourceCoverage"]["requiredClaimRefs"] == (
             composition["sourceCoverage"]["explainedClaimRefs"]
         )
@@ -114,7 +116,7 @@ def test_composed_mode_has_source_provenance_and_independent_question_axes() -> 
 
 def test_invalid_source_output_is_never_composed_or_filled_in() -> None:
     provider = ComposedProvider(wrong_scope=True)
-    with pytest.raises(ComposedEvidenceError, match="COMPOSED_SOURCE_CLAIM_COVERAGE_INVALID"):
+    with pytest.raises(ComposedEvidenceError, match="COMPOSED_SOURCE_EXPLANATION_INCOMPLETE"):
         chain.run_replay(
             fda(), date(2023, 6, 17), provider,
             question_tracks=tracks(), reasoning_mode="staged-composed",
@@ -137,3 +139,22 @@ def test_question_axes_new_evidence_input_is_cutoff_scoped() -> None:
     assert len(axis_inputs[0]["newlyExplainedClaims"]) == 4
     assert "fda-20230911-mrna" not in json.dumps(axis_inputs[0])
     assert len(axis_inputs[1]["newlyExplainedClaims"]) == 4
+
+
+def test_per_claim_provenance_is_bound_to_visible_input_not_model_ids() -> None:
+    provider = ComposedProvider()
+    step = chain.run_replay(
+        fda(), date(2023, 6, 17), provider,
+        question_tracks=tracks(), reasoning_mode="staged-composed",
+    )
+    composition = step["assessment"]["sourceScopedComposition"]
+    assert composition["claimProvenance"] == "ASSIGNED_FROM_INPUT_NOT_MODEL_GENERATED"
+    assert step["modelCalls"] == 6
+    assert len(provider.composed_inputs) == 4
+    assert all("claim" in value for value in provider.composed_inputs)
+    assert all(len(source["claimCalls"]) == 2 for source in
+               composition["sourceGenerationDiagnostics"])
+    assert all(
+        len(group["claims"]) == 2
+        for group in step["assessment"]["generationTerminationBySource"]
+    )
