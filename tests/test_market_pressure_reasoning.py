@@ -520,3 +520,87 @@ def test_ollama_rejects_abstention_fields_inside_impact_response() -> None:
     provider.settings = SimpleNamespace(kind="ollama")
     with pytest.raises(ValueError, match="IMPACT_STAGE_ABSTENTION_FIELDS_FORBIDDEN"):
         analyze_pressure_two_stage(example(), provider)
+
+
+def test_recovery_retains_valid_sibling_when_entity_is_not_in_quote() -> None:
+    from types import SimpleNamespace
+
+    invented = impact()
+    invented["entities"] = ["Pakistan national grid"]
+    valid = impact()
+    provider = QueueProvider(impacts={"impacts": [invented, valid]})
+    provider.settings = SimpleNamespace(kind="ollama")
+    report = analyze_pressure_two_stage(
+        example(), provider, recover_invalid_impacts=True,
+    )
+    assert report["status"] == "PARTIAL_MARKET_PRESSURE_REQUIRES_REVIEW"
+    assert report["modelCalls"] == 2
+    assert report["proposedImpactCount"] == 2
+    assert len(report["impacts"]) == 1
+    assert report["impacts"][0]["supportingSourceIds"] == ["s1"]
+    assert report["rejectedImpacts"] == [{
+        "index": 0, "code": "IMPACT_ENTITY_MISMATCH",
+        "invalidFields": [],
+    }]
+    assert report["semanticAccuracyVerified"] is False
+
+
+def test_recovery_rejects_uncertain_strength_without_dropping_valid_sibling() -> None:
+    from types import SimpleNamespace
+
+    good = impact()
+    malformed = impact()
+    malformed["direction"] = "UNCERTAIN"
+    malformed["strength"] = "MODERATE"
+    provider = QueueProvider(impacts={"impacts": [good, malformed]})
+    provider.settings = SimpleNamespace(kind="ollama")
+    report = analyze_pressure_two_stage(
+        example(), provider, recover_invalid_impacts=True,
+    )
+    assert report["status"] == "PARTIAL_MARKET_PRESSURE_REQUIRES_REVIEW"
+    assert len(report["impacts"]) == 1
+    assert report["rejectedImpacts"][0]["index"] == 1
+    assert report["rejectedImpacts"][0]["code"] == (
+        "UNCERTAIN_DIRECTION_HAS_INDETERMINATE_STRENGTH"
+    )
+    assert report["rejectedImpacts"][0]["invalidFields"] == [
+        {"path": "", "type": "value_error"}
+    ]
+
+
+def test_recovery_all_invalid_is_not_a_legitimate_abstention() -> None:
+    from types import SimpleNamespace
+
+    invented = impact()
+    invented["entities"] = ["Invented company not in cited quote"]
+    provider = QueueProvider(impacts={"impacts": [invented]})
+    provider.settings = SimpleNamespace(kind="ollama")
+    report = analyze_pressure_two_stage(
+        example(), provider, recover_invalid_impacts=True,
+    )
+    assert report["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
+    assert report["proposedImpactCount"] == 1
+    assert report["impacts"] == []
+    assert len(report["rejectedImpacts"]) == 1
+    assert report["modelCalls"] == 2
+    assert len(provider.prompts) == 2
+    assert report["noImpactAssessment"] is None
+
+
+def test_recovery_never_repairs_citation_or_unverified_strength() -> None:
+    from types import SimpleNamespace
+
+    mismatched = impact()
+    mismatched["claimIndexes"] = [1]
+    too_strong = impact()
+    too_strong["strength"] = "HIGH"
+    provider = QueueProvider(impacts={"impacts": [mismatched, too_strong]})
+    provider.settings = SimpleNamespace(kind="ollama")
+    report = analyze_pressure_two_stage(
+        example(), provider, recover_invalid_impacts=True,
+    )
+    assert report["impacts"] == []
+    assert [i["code"] for i in report["rejectedImpacts"]] == [
+        "IMPACT_EVIDENCE_MISMATCH", "IMPACT_HIGH_STRENGTH_UNVERIFIED",
+    ]
+    assert report["status"] == "MODEL_OUTPUT_REJECTED_REQUIRES_REVIEW"
