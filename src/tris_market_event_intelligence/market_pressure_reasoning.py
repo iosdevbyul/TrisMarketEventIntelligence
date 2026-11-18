@@ -23,7 +23,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v1"
+PROMPT_VERSION = "market-pressure-two-stage-v2-abstention"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -61,8 +61,11 @@ Never assert ABOVE_EXPECTATION / BELOW_EXPECTATION / IN_LINE without
 a visible indicator with both actual and prior expectation.
 One announcement may create opposite pressures for different companies
 or sectors. Do not invent named beneficiaries or counterparty companies.
-If relevant verified evidence or a plausible defensible channel is missing,
-return an empty impacts array instead of inventing a market effect.
+If no cited fact has a defensible economic transmission channel and
+affected target, return an empty impacts array and explain what is
+missing using noImpactCategory and noImpactExplanation. Do not fabricate
+a positive or negative sign to avoid abstaining. A nonempty impacts
+array must have both abstention fields null.
 No security-level price targets, numerical return forecasts, or buy/sell orders."""
 
 
@@ -108,6 +111,29 @@ class PressureImpact(Impact):
 
 class PressureAnalysis(Strict):
     impacts: list[PressureImpact] = Field(default_factory=list, max_length=12)
+    noImpactCategory: Literal[
+        "NO_DEFENSIBLE_ECONOMIC_CHANNEL",
+        "NO_IDENTIFIABLE_AFFECTED_TARGET",
+        "EVIDENCE_TOO_AMBIGUOUS",
+        "UNRESOLVED_CONFLICT",
+        "OTHER",
+    ] | None = None
+    noImpactExplanation: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def check_abstention(self) -> PressureAnalysis:
+        if self.noImpactExplanation is not None and len(
+            self.noImpactExplanation
+        ) < 25:
+            raise ValueError("ABSTENTION_EXPLANATION_TOO_SHORT")
+        if self.impacts and (
+            self.noImpactCategory is not None
+            or self.noImpactExplanation is not None
+        ):
+            raise ValueError("IMPACT_ABSTENTION_CONTRADICTION")
+        if bool(self.noImpactCategory) != bool(self.noImpactExplanation):
+            raise ValueError("PARTIAL_ABSTENTION_REPORT")
+        return self
 
 
 def _identity(value: dict) -> str:
@@ -302,12 +328,17 @@ def analyze_pressure_two_stage(
     return _report(
         packet, provider, packet_hash, visible,
         [claim.model_dump() for claim in facts.claims], impacts, 2,
+        abstention={
+            "category": analysis.noImpactCategory or "UNEXPLAINED_ABSTENTION",
+            "explanation": analysis.noImpactExplanation,
+        } if not impacts else None,
     )
 
 
 def _report(
     packet: MarketEvidencePacket, provider: LLMProvider, digest: str,
     visible: list, claims: list[dict], impacts: list[dict], calls: int,
+    abstention: dict | None = None,
 ) -> dict:
     return {
         "schemaVersion": "multi_source_market_pressure_v2",
@@ -324,6 +355,12 @@ def _report(
         ],
         "groundedClaims": claims,
         "impacts": impacts,
+        "noImpactAssessment": (
+            abstention if abstention is not None else
+            {"category": "NO_GROUNDED_CLAIMS", "explanation": (
+                "No source-bound claims were extracted at the cutoff."
+            )} if not claims else None
+        ),
         "modelCalls": calls,
         "impactGenerationMode": "JSON_PYDANTIC_VALIDATED"
         if getattr(getattr(provider, "settings", None), "kind", None) == "ollama"
