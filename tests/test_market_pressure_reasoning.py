@@ -86,7 +86,7 @@ def impact() -> dict:
         "uncertainty": "HIGH",
         "drivers": ["conditional discount rate effect"],
         "entities": [], "targetType": "MARKET", "targetName": "US equities",
-        "strength": "UNKNOWN",
+        "strength": "UNASSESSED",
         "strengthRationale": (
             "The release alone cannot determine magnitude or positioning."
         ),
@@ -116,7 +116,7 @@ def test_two_stage_market_pressure_is_grounded_and_excludes_future() -> None:
     assert result["visibleSourceIds"] == ["s1", "s2"]
     assert result["excludedFutureSourceIds"] == ["future"]
     assert result["impacts"][0]["direction"] == "NEGATIVE"
-    assert result["impacts"][0]["strength"] == "UNKNOWN"
+    assert result["impacts"][0]["strength"] == "UNASSESSED"
     assert result["impacts"][0]["supportingSourceIds"] == ["s1"]
     assert result["historicalPITVerified"] is False
     assert result["marketReturnsAnalyzed"] is False
