@@ -11,6 +11,9 @@ import hashlib
 import json
 from pathlib import Path
 
+from tris_market_event_intelligence.market_pressure_quality_gate import (
+    assess_reasoning_quality,
+)
 from tris_market_event_intelligence.market_pressure_replay_cli import replay_trace
 
 
@@ -113,6 +116,11 @@ def semantic_review(trace: Path) -> dict:
                 flags.append("MIXED_DIRECTION_NEEDS_OPPOSING_CHANNELS_EXPLAINED")
             if item.get("direction") == "UNCERTAIN":
                 flags.append("UNKNOWN_DIRECTION_NOT_A_NEGATIVE_SIGNAL")
+            reasoning_quality = assess_reasoning_quality(item, [
+                {**claim, "excerpt": claim["quotedObservation"],
+                 "sourceVerification": claim["publishedSourceVerification"]}
+                for claim in references
+            ])
             reviews.append({
                 "eventId": event_id,
                 "proposalIndex": index,
@@ -136,6 +144,7 @@ def semantic_review(trace: Path) -> dict:
                 "quotedEvidence": item.get("evidence_excerpt"),
                 "references": references,
                 "reviewFlags": flags,
+                "economicReasoningQuality": reasoning_quality,
                 "humanReview": {
                     "sourceFactSupported": None,
                     "targetExposurePlausible": None,
