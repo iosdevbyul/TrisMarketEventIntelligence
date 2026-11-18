@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh market-pressure-generalization --db PRIVATE_DB --as-of YYYY-MM-DD --lookback-days 30 --pages 4 --preview|--run [--model gemma4:e2b --output NEW_JSON]"
   echo "  bash scripts/news-learning-review.sh market-pressure-replay --trace PRIVATE_V7_JSONL [offline, zero Ollama calls]"
   echo "  bash scripts/news-learning-review.sh market-pressure-semantic-review --trace PRIVATE_V7_JSONL --output NEW_PRIVATE_REVIEW_JSON [offline, zero Ollama calls]"
   echo "  bash scripts/news-learning-review.sh market-pressure-semantic-finalize --review EDITED_PRIVATE_REVIEW_JSON --reviewer NAME --output NEW_PRIVATE_AUDIT_JSON [offline, human judgments required]"
@@ -197,6 +198,9 @@ case "$action" in
     ;;
   market-pressure-replay)
     module="tris_market_event_intelligence.market_pressure_replay_cli"
+    ;;
+  market-pressure-generalization)
+    module="tris_market_event_intelligence.market_pressure_generalization_cli"
     ;;
   market-pressure-cycle)
     module="tris_market_event_intelligence.market_pressure_cycle_cli"
