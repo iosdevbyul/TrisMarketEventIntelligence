@@ -343,6 +343,14 @@ def analyze_pressure_two_stage(
             # Preserve the grounded quotation but downgrade unsupported novelty.
             # Rejecting the whole event here suppresses valid economic analysis.
             claim.novelty = "UNKNOWN"
+    trace = getattr(provider, "trace", None)
+    if trace is not None:
+        trace.record(
+            "FACTS_VALIDATED",
+            eventId=packet.eventId,
+            claimCount=len(facts.claims),
+            claims=[claim.model_dump() for claim in facts.claims],
+        )
     if not facts.claims:
         return _report(packet, provider, packet_hash, visible, [], [], 1)
 
@@ -473,6 +481,17 @@ def analyze_pressure_two_stage(
             "pressureNotPriceForecast": True,
             "expectationComparisonSemanticallyVerified": False,
         })
+    if trace is not None:
+        trace.record(
+            "IMPACTS_VALIDATED",
+            eventId=packet.eventId,
+            acceptedImpactCount=len(impacts),
+            modelAbstention=analysis.noImpactCategory,
+            groundedSourceIds=sorted({
+                source_id for item in impacts
+                for source_id in item["supportingSourceIds"]
+            }),
+        )
     return _report(
         packet, provider, packet_hash, visible,
         [claim.model_dump() for claim in facts.claims], impacts, 2,
