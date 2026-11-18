@@ -594,6 +594,8 @@ def test_recovery_never_repairs_citation_or_unverified_strength() -> None:
     mismatched["claimIndexes"] = [1]
     too_strong = impact()
     too_strong["strength"] = "HIGH"
+    too_strong["claimIndexes"] = [1]
+    too_strong["evidence_excerpt"] = NEWS_QUOTE
     provider = QueueProvider(impacts={"impacts": [mismatched, too_strong]})
     provider.settings = SimpleNamespace(kind="ollama")
     report = analyze_pressure_two_stage(
