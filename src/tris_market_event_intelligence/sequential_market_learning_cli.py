@@ -371,9 +371,20 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
             init_journal(db)
             learning_memory.initialize(db)
             old = db.execute("SELECT settings_json FROM runs WHERE id=1").fetchone()
-            if old and json.loads(old[0]) != settings:
-                raise ValueError("Journal settings mismatch; use a new journal")
-            if not old:
+            if old:
+                prior = json.loads(old[0])
+                if any(prior.get(key) != value for key, value in settings.items()
+                       if key != "count"):
+                    raise ValueError("Journal settings mismatch; use a new journal")
+                if count < prior.get("count", 0):
+                    raise ValueError("Cannot reduce resumed journal count")
+                if count > prior["count"]:
+                    db.execute(
+                        "UPDATE runs SET settings_json=? WHERE id=1",
+                        (json.dumps(settings),),
+                    )
+                    db.commit()
+            else:
                 db.execute("INSERT INTO runs VALUES (1,?)", (json.dumps(settings),))
                 db.commit()
             # Upgrade existing completed runs in place; never rewrite predictions.
