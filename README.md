@@ -58,6 +58,45 @@ establish minute-level causality. Missing quotes produce `UNVERIFIED`, never
 an assumed correct answer or fabricated lesson. Research-generated lessons
 are proposed prompt adaptations, not certified improvements.
 
+## Persistent learning memory (PR #252)
+
+The sequential runner now persists long-term rule candidates in the same
+`--journal` SQLite database. It upgrades existing completed article feedback
+in place; it does not rewrite archived predictions or delete previous lessons.
+
+Each failed prediction is categorized by event family and affected sector.
+Repeated similar suggestions are combined instead of creating infinitely many
+duplicate prompts. A new article retrieves relevant **ACTIVE** rules and one
+exploratory CANDIDATE/VALIDATING rule rather than simply the latest 12 records.
+
+New candidate rules are tested via a paired, sealed comparison on later articles:
+the primary prediction receives the candidate; a shadow prediction omits it;
+both predictions are generated before any prices are fetched. Only identical
+resolved targets with public-information chronology eligible for that candidate
+count as evidence. After at least 5 comparable future articles with at least
+2 wins and more wins than losses, a candidate becomes ACTIVE. Clearly
+underperforming candidates are RETIRED. Overlapping same-day outcomes may still
+guide retrospective exploration, but **never** count toward promotion. The
+chronological holdout remains untouched; no independent holdout score is
+produced by this runner.
+
+Read the durable state, failure families, article-to-rule applications and
+paired trials without running Gemma or downloading any prices:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+market-event-learning-report \
+  --journal "$DATA/sequential-learning-test-v1.sqlite3"
+```
+
+Memory statuses mean CANDIDATE (hypothesis), VALIDATING (eligible paired
+comparisons accumulating), ACTIVE (measurable paired improvement on later cases),
+or RETIRED (insufficient or harmful paired evidence). ACTIVE is not a claim of
+causation, trading utility, or an independently certified forward backtest.
+A `verifiedImprovement` flag in the research report indicates ACTIVE rules
+according to the above internal paired criterion, **not** independently
+certified out-of-sample performance.
+
 ## Prior architecture
 
 The following legacy documentation records earlier stages and is superseded
