@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run both independent, prospective historical source-composition checks.
-# Never overwrite the saved FAA v1-v8 or FDA v1-v5 comparison outputs.
+# Never overwrite the saved FAA v1-v9 or FDA v1-v6 comparison outputs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,23 +52,23 @@ run_case "FAA" \
     "research/faa-7379max-january-2024-event-chain.json" \
     "research/faa-2024-question-lifecycle.json" \
     "2024-01-13" "2024-01-25" \
-    "$DATA/faa-evidence-composed-v9.json"
+    "$DATA/faa-evidence-composed-v10.json"
 
 run_case "FDA" \
     "research/fda-covid-vaccine-2023-event-chain.json" \
     "research/fda-2023-question-lifecycle.json" \
     "2023-06-17" "2023-10-04" \
-    "$DATA/fda-evidence-composed-v6.json"
+    "$DATA/fda-evidence-composed-v7.json"
 
-SCORE="$DATA/historical-semantic-score-faa-v9-fda-v6-v2.json"
+SCORE="$DATA/historical-semantic-score-faa-v10-fda-v7-v2.json"
 if [[ -e "$SCORE" || -L "$SCORE" ]]; then
     echo "OUTPUT_ALREADY_EXISTS: $SCORE" >&2
     exit 1
 fi
 bash scripts/news-learning-review.sh historical-semantic-score \
     --benchmark research/historical-semantic-benchmark-v2.json \
-    --faa "$DATA/faa-evidence-composed-v9.json" \
-    --fda "$DATA/fda-evidence-composed-v6.json" \
+    --faa "$DATA/faa-evidence-composed-v10.json" \
+    --fda "$DATA/fda-evidence-composed-v7.json" \
     --output "$SCORE" >/dev/null
 jq '{
     status, rates, trustGate,
