@@ -483,3 +483,51 @@ private original excerpts. Do not commit the results, send them to
 external services or conflate them with the production market-pressure
 API. PR #251 stays Draft until independent evaluation and operating
 conditions are reviewed.
+
+
+### Economic Reasoning Quality Gate — deterministic semantic review diagnostics
+
+The supplied real v7 rationale review revealed an *additional* failure class
+after the citation/JSON guards passed: reasoning that is plausible in broad
+terms but does not substantiate its named channel, magnitude or forward
+economic exposure.
+
+The common, provider-independent `market_pressure_quality_gate.py`
+attaches an explicit `reasoningQuality` object to every **source-validated**
+impact. This does not change the model's direction, strength, selected
+channel, cited evidence or rejection outcome. Its possible review concerns
+include:
+
+- `REGULATORY_CHANNEL_WITHOUT_REGULATORY_EVIDENCE`: reported CEO/board/
+  governance language routed through `REGULATORY_OPPORTUNITY` despite no
+  regulation or licensing mechanism in the cited observation or rationale.
+  This flags the actual v7 Nvidia second hypothesis, though its original
+  structural direction/strength rejection remains authoritative.
+- `MIXED_DIRECTION_REQUIRES_TWO_SIDED_TRANSMISSION_REVIEW`: a MIXED label
+  is not proof of both positive earnings and negative risk-premium paths.
+  Verify each distinct direction and its conditioning claims.
+- `STRENGTH_JUSTIFICATION_LACKS_ECONOMIC_MAGNITUDE_BRIDGE` and
+  `QUALITATIVE_STRENGTH_NOT_EMPIRICALLY_VERIFIED`: the size of an event,
+  deployment rate or CEO transition cannot be confused with a calibrated
+  MODERATE/HIGH economic impact on the target.
+- `OBSERVED_ADOPTION_NOT_EVIDENCE_OF_FUTURE_REVENUE`: observed adoption/
+  electricity share (e.g. Pakistan 1% to 28%) does not independently prove
+  future manufacturer orders, installation profits or equity response.
+- `SINGLE_CITED_SOURCE_LIMITS_CORROBORATION`,
+  `REPORTED_NEWS_NOT_INDEPENDENTLY_CONFIRMED`, and
+  `PRIOR_MARKET_EXPECTATIONS_UNAVAILABLE` identify missing constraints.
+
+These flags are **conservative review questions, not hard-coded economic
+truth or an accuracy classifier**. Missing keywords do not establish that
+a causal mechanism is false, and present keywords do not prove its
+correctness. The gate explicitly returns
+`HUMAN_SEMANTIC_REVIEW_REQUIRED`, `economicAccuracyVerified=false` and
+`observedMarketReactionVerified=false`; it never manufactures a score
+or repairs the model's unsupported strength/direction/channel.
+
+The existing offline `market-pressure-replay` now includes these flags
+for accepted proposals. The `market-pressure-semantic-review` worksheet
+includes them for **every original proposal, including those rejected by
+structural guards**, without a new Ollama call or DB write. This preserves
+full root-cause context, makes the next human review materially useful,
+and keeps all research in Draft PR #251 until reviewed.
