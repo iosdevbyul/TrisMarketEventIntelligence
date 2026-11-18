@@ -131,8 +131,13 @@ def learn(db: sqlite3.Connection, *, seq: int, article_id: int,
     scope = family(str(article.get("title") or "") + " " +
                    str(article.get("summary") or ""))
     sector = _sector(evaluation)
+    existing_case = db.execute(
+        "SELECT seq FROM memory_failure_cases WHERE seq=?", (seq,),
+    ).fetchone()
+    if existing_case:
+        return None
     db.execute(
-        "INSERT OR IGNORE INTO memory_failure_cases VALUES (?,?,?,?,?,?)",
+        "INSERT INTO memory_failure_cases VALUES (?,?,?,?,?,?)",
         (seq, article_id, scope, sector, wrong_count, diagnosis),
     )
     # A single originating article must not create the same rule on resume.
