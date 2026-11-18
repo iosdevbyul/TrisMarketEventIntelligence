@@ -146,9 +146,9 @@ def score_runs(benchmark: dict, runs: dict[str, dict]) -> dict:
         )
         for key, value in rates.items()
     }
-    enough_families = len(set(
+    enough_families = len({
         case["event"] for case in benchmark["cases"]
-    )) >= benchmark["minimumIndependentEventFamiliesForTrust"]
+    }) >= benchmark["minimumIndependentEventFamiliesForTrust"]
     enough_cases = (
         totals["evaluatedCases"]
         >= benchmark["minimumQuestionAssessmentsForTrust"]
