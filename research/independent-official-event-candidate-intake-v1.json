@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "historical_independent_event_intake_v1",
+  "status": "CANDIDATES_ONLY_NOT_ADJUDICATED",
+  "evaluationSplit": "UNASSIGNED",
+  "trustEligible": false,
+  "historicalPITVerified": false,
+  "referenceReviewStatus": "NOT_STARTED",
+  "description": "New official-source event families for independent evidence intake. These URLs may have been updated since original publication; publication-time snapshots, originals, reviewer judgments, timestamps, and exclusion boundaries are not authenticated. No answers or model-evaluation labels are supplied.",
+  "candidates": [
+    {
+      "eventFamilyId": "FTC-2023-2024-NONCOMPETE",
+      "agency": "FTC",
+      "topic": "Noncompete rule proposal, final-rule announcement and subsequent judicial non-enforcement",
+      "primarySourceCandidates": [
+        {
+          "url": "https://www.ftc.gov/news-events/news/press-releases/2023/01/ftc-proposes-rule-ban-noncompete-clauses-which-hurt-workers-harm-competition",
+          "sourceRole": "proposal",
+          "historicalDate": "2023-01-05"
+        },
+        {
+          "url": "https://www.ftc.gov/news-events/news/press-releases/2024/04/ftc-announces-rule-banning-noncompetes",
+          "sourceRole": "final-rule-announcement",
+          "historicalDate": "2024-04-23"
+        },
+        {
+          "url": "https://www.ftc.gov/legal-library/browse/rules/noncompete-rule",
+          "sourceRole": "current-status-only-NOT-PIT",
+          "historicalDate": null
+        }
+      ],
+      "principalRisk": "Current official pages contain later notices about August 2024 judicial action; snapshot/excerpt from original publication must be separated before use as prior cutoff evidence."
+    },
+    {
+      "eventFamilyId": "EPA-2023-2024-LEAD-COPPER",
+      "agency": "EPA",
+      "topic": "Lead and Copper Rule Improvements: proposed requirements versus later issued final rule",
+      "primarySourceCandidates": [
+        {
+          "url": "https://www.epa.gov/newsreleases/biden-harris-administration-proposes-strengthen-lead-and-copper-rule-protect-all",
+          "sourceRole": "proposal",
+          "historicalDate": "2023-11-30"
+        },
+        {
+          "url": "https://www.epa.gov/newsreleases/biden-harris-administration-issues-final-rule-requiring-replacement-lead-pipes-within",
+          "sourceRole": "final-rule-announcement",
+          "historicalDate": "2024-10-08"
+        }
+      ],
+      "principalRisk": "Final rule publication does not prove replacement of lead service lines actually occurred; historical page snapshots and exact effective dates need independent verification."
+    },
+    {
+      "eventFamilyId": "NHTSA-2023-2024-AUTOSTEER-RECALL",
+      "agency": "NHTSA",
+      "topic": "Autosteer recall acknowledgement versus subsequent recall remedy adequacy investigation",
+      "primarySourceCandidates": [
+        {
+          "url": "https://static.nhtsa.gov/odi/rcl/2023/RCAK-23V838-3395.pdf",
+          "sourceRole": "recall-acknowledgment",
+          "historicalDate": "2023-12-12"
+        },
+        {
+          "url": "https://static.nhtsa.gov/odi/inv/2024/INOA-RQ24009-12046.pdf",
+          "sourceRole": "subsequent-investigation-document",
+          "historicalDate": "2024-04-26"
+        }
+      ],
+      "principalRisk": "The PDF bytes, embedded publication time, revision history and original investigative record must be checked before any retrospective cutoff replay. Recall does not imply remedial effectiveness."
+    }
+  ],
+  "gate": {
+    "requiredIndependentUnseenEventFamilies": 5,
+    "requiredQuestionCutoffCases": 30,
+    "independentGoldReview": true,
+    "archivedPointInTimeSourceVerification": true,
+    "noBenchmarkAnswersInModelPrompts": true,
+    "noTuningOnFrozenHoldout": true
+  },
+  "implementationStatus": "SOURCE_DISCOVERY_ONLY"
+}
