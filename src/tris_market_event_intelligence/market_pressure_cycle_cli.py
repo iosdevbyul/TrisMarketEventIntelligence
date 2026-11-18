@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--as-of", type=date.fromisoformat, required=True)
     parser.add_argument("--as-of-time", type=datetime.fromisoformat)
     parser.add_argument("--lookback-days", type=int, default=10)
+    parser.add_argument("--page", type=int, default=0)
     parser.add_argument("--max-groups", type=int, default=2)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
@@ -41,7 +42,7 @@ def main() -> None:
             parser.error("--persist requires --run")
         candidates, inventory = recent_candidates(
             args.db, as_of=args.as_of, lookback_days=args.lookback_days,
-            as_of_time=args.as_of_time,
+            as_of_time=args.as_of_time, page=args.page,
         )
         print(json.dumps({
             "status": "READ_ONLY_CANDIDATE_PREVIEW",
