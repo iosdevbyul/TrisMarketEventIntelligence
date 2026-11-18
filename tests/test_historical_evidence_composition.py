@@ -68,6 +68,8 @@ class ComposedProvider(StageProvider):
                 "regulatoryDecisionStage": "ANNOUNCED",
                 "requestedEvidenceStatus": "PARTIAL",
                 "implementationCompletionStatus": "NOT_OBSERVED",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
             })
         return super().generate_json(
             system=system, user=user, schema=schema,
@@ -212,6 +214,8 @@ class DecisionScreenProvider(ComposedProvider):
                     else "ANNOUNCED"
                 ),
                 "implementationCompletionStatus": "NOT_OBSERVED",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
                 "requestedEvidenceStatus": (
                     "DIRECTLY_OBSERVED"
                     if any(x["role"] == "DIRECT_ANSWER"
@@ -261,6 +265,8 @@ class UnsupportedDirectAnswerProvider(ComposedProvider):
             return json.dumps({
                 "regulatoryDecisionStage": "AUTHORIZED",
                 "implementationCompletionStatus": "NOT_OBSERVED",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
                 "requestedEvidenceStatus": "DIRECTLY_OBSERVED",
             })
         return super().generate_json(system=system, user=user, schema=schema)
@@ -308,6 +314,8 @@ class OverconfidentCompletionProvider(ComposedProvider):
             return json.dumps({
                 "regulatoryDecisionStage": "ANNOUNCED",
                 "implementationCompletionStatus": "COMPLETED",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
                 "requestedEvidenceStatus": "PARTIAL",
             })
         return super().generate_json(system=system, user=user, schema=schema)
@@ -340,6 +348,8 @@ class InconsistentEvidenceStateProvider(DecisionScreenProvider):
             return json.dumps({
                 "regulatoryDecisionStage": "NOT_OBSERVED",
                 "implementationCompletionStatus": "NOT_OBSERVED",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
                 "requestedEvidenceStatus": "NOT_OBSERVED",
             })
         return super().generate_json(system=system, user=user, schema=schema)
@@ -365,3 +375,38 @@ def test_intermediate_decision_conflicts_are_review_flags_not_overrides() -> Non
         filings["evidenceStateConsistencyFlags"]
     )
     assert filings["evidenceStateConsistencyVerified"] is False
+
+
+class SplitEvidenceProvider(DecisionScreenProvider):
+    """A model can explicitly distinguish records from official progress."""
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if "regulatoryDecisionStage" in schema["properties"]:
+            self.calls += 1
+            self.inputs.append(json.loads(user))
+            return json.dumps({
+                "regulatoryDecisionStage": "NOT_OBSERVED",
+                "implementationCompletionStatus": "UNKNOWN",
+                "requestedEvidenceStatus": "PARTIAL",
+                "directRecordAvailability": "NOT_OBSERVED",
+                "indirectRegulatoryProgress": "OBSERVED",
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_original_documents_and_regulatory_progress_are_independent() -> None:
+    provider = SplitEvidenceProvider()
+    step = chain.run_replay(
+        fda(), date(2023, 10, 4), provider,
+        question_tracks=tracks(), reasoning_mode="staged-composed",
+    )
+    axes = step["assessment"]["independentQuestionAxes"]["questionAssessments"]
+    filings = next(
+        item for item in axes
+        if item["questionId"] == "fda-2023-manufacturer-filings-evidence"
+    )
+    assert filings["directRecordAvailability"] == "NOT_OBSERVED"
+    assert filings["indirectRegulatoryProgress"] == "OBSERVED"
+    assert filings["requestedEvidenceStatus"] == "PARTIAL"
+    assert filings["implementationCompletionStatus"] == "UNKNOWN"
+    assert step["assessment"]["semanticAccuracyVerified"] is False
