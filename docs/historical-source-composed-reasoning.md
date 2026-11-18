@@ -128,3 +128,26 @@ interpretations. Expect 18 model calls for each two-cutoff benchmark with
 two questions per cutoff and four new claims per cutoff. The next real
 cross-event outputs should be **new** `faa-evidence-composed-v5.json` and
 `fda-evidence-composed-v2.json`, preserving all old artifacts.
+
+## FAA v5 question answer failure: output contract simplification
+
+Real Gemma4 FAA v5 execution repeatedly rejected a freeform final answer for
+`faa-2024-boeing-production-oversight-outcome` because
+`EXPLANATION_INCOMPLETE` persisted after the one permitted retry. The
+question evidence screening had run, but no complete saved output exists;
+this **does not verify** whether the screening recalled the January 24
+decision. The correction keeps per-question evidence screening and model
+classification of the two regulatory/evidence-state enums, but no longer
+asks that final call to generate prose. Its explanation is a bounded,
+**verbatim** concatenation of the cutoff-visible, precurated official claim
+texts selected by the relevance screen (highest-priority selected claim
+first), with an explicitly templated generic limitation based on the
+model-classified evidence status. The status classification remains
+model-authored and unverified. A source claim may be omitted from the
+short narrative due to the 450-character field limit; the full selected
+`supportingEvidence` and the full screen ledger are retained separately.
+This replaces persistent text-level truncation failure without silently
+editing a model sentence or inventing source references. The original
+curated claim snippets are not authenticated historical page snapshots.
+The next prospective outputs should use new filenames
+`faa-evidence-composed-v6.json` and `fda-evidence-composed-v3.json`.
