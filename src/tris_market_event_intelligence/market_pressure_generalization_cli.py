@@ -20,6 +20,10 @@ from tris_market_event_intelligence.market_event_discovery import (
     discover_and_analyze,
     recent_candidates,
 )
+from tris_market_event_intelligence.market_pressure_trace import (
+    MarketPressureTrace,
+    TracedMarketProvider,
+)
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 
@@ -185,6 +189,10 @@ def main() -> None:
     parser.add_argument("--pages", type=int, default=4)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--trace", type=Path,
+        help="Private create-only JSONL trace (default OUTPUT.trace.jsonl)",
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
@@ -195,25 +203,66 @@ def main() -> None:
         args.output.exists() or args.output.is_symlink()
     ):
         parser.error("GENERALIZATION_OUTPUT_ALREADY_EXISTS")
-    provider = None
-    if args.run:
-        settings = replace(
-            LLMSettings.from_environment(explicit=True),
-            model_id=args.model,
-            capabilities=LLMCapabilities(
-                json_schema=True, thinking=False,
-                context_window=8192, max_output_tokens=4096,
-            ),
-        )
-        provider = build_runtime(settings, confirm_model=True)
-    report = evaluate_pages(
-        args.db, as_of=args.as_of, lookback_days=args.lookback_days,
-        pages=args.pages, provider=provider,
+    if args.preview and args.trace is not None:
+        parser.error("--trace requires --run")
+    trace_path = (
+        args.trace or Path(str(args.output) + ".trace.jsonl")
+        if args.run else None
     )
-    if args.output:
-        with args.output.open("x", encoding="utf-8") as out:
-            json.dump(report, out, ensure_ascii=False, indent=2)
-            out.write("\n")
+    if trace_path is not None and (
+        trace_path.exists() or trace_path.is_symlink()
+    ):
+        parser.error("GENERALIZATION_PRIVATE_TRACE_ALREADY_EXISTS")
+    provider = None
+    trace = None
+    try:
+        if args.run:
+            settings = replace(
+                LLMSettings.from_environment(explicit=True),
+                model_id=args.model,
+                capabilities=LLMCapabilities(
+                    json_schema=True, thinking=False,
+                    context_window=8192, max_output_tokens=4096,
+                ),
+            )
+            # A failed model call still leaves a private, durable and
+            # create-only trace, preventing repetitive blind reruns.
+            if trace_path is None:
+                raise ValueError("GENERALIZATION_TRACE_PATH_REQUIRED")
+            trace = MarketPressureTrace(trace_path)
+            trace.record(
+                "GENERALIZATION_STARTED", cutoff=args.as_of.isoformat(),
+                pages=args.pages, lookbackDays=args.lookback_days,
+                samplingMode="source_balanced",
+            )
+            provider = TracedMarketProvider(
+                build_runtime(settings, confirm_model=True), trace,
+            )
+        report = evaluate_pages(
+            args.db, as_of=args.as_of, lookback_days=args.lookback_days,
+            pages=args.pages, provider=provider,
+        )
+        if args.output:
+            with args.output.open("x", encoding="utf-8") as out:
+                json.dump(report, out, ensure_ascii=False, indent=2)
+                out.write("\\n")
+        if trace is not None:
+            trace.record(
+                "GENERALIZATION_FINISHED", modelCalls=report["modelCalls"],
+                sampledSourceCount=report["uniqueEligibleSources"],
+                analyzedGroupCount=report["eventGroupCount"],
+                structuralAcceptedCount=report["sourceValidatedImpactCount"],
+                structuralRejectedCount=report["rejectedImpactCount"],
+            )
+    except Exception as error:
+        if trace is not None:
+            trace.validation_failure(
+                stage="GENERALIZATION_RUN", error=error,
+            )
+        raise
+    finally:
+        if trace is not None:
+            trace.close()
     print(json.dumps({
         "status": report["status"],
         "candidatePagesExamined": report["candidatePagesExamined"],
@@ -233,6 +282,7 @@ def main() -> None:
         "modelCalls": report["modelCalls"],
         "generalizationVerified": False,
         "dbWrites": 0, "outputCreated": bool(args.output),
+        "privateTracePath": str(trace_path) if trace_path else None,
     }, ensure_ascii=False))
 
 
