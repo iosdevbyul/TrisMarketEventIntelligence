@@ -18,12 +18,12 @@ from tris_market_event_intelligence.impact import (
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
 from tris_market_event_intelligence.llm_runtime import LLMProvider
-from tris_market_event_intelligence.market_pressure_quality_gate import (
-    assess_reasoning_quality,
-)
 from tris_market_event_intelligence.market_evidence_pressure import (
     MarketEvidencePacket,
     cutoff_visible,
+)
+from tris_market_event_intelligence.market_pressure_quality_gate import (
+    assess_reasoning_quality,
 )
 
 PROMPT_VERSION = "market-pressure-two-stage-v8-economic-quality-gate"
