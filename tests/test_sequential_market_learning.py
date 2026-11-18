@@ -106,6 +106,12 @@ def test_wrong_answer_updates_next_article_and_resume(monkeypatch, tmp_path):
     resumed = ScriptedModel()
     seq.run(config, model=resumed, client=object())
     assert resumed.prompts == []
+    # Increasing a 2-case journal does not replay already evaluated articles.
+    config.count = 3
+    expanded = seq.run(config, model=resumed, client=object())
+    assert expanded["articlesCompleted"] == 2
+    assert expanded["status"] == "INSUFFICIENT_CHRONOLOGICAL_ARTICLES"
+    assert resumed.prompts == []
 
 
 def test_no_feedback_on_unavailable_price(monkeypatch, tmp_path):
