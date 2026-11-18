@@ -23,7 +23,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v4-flat-evidence-schema"
+PROMPT_VERSION = "market-pressure-two-stage-v5-conditional-transmission"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -66,10 +66,23 @@ CLOUD/HEALTHCARE; horizon SHORT_TERM/MEDIUM_TERM;
 uncertainty HIGH for unverified sources; targetType MARKET/SECTOR/COMPANY.
 Use noImpactCategory only when impacts is empty and place ordinary prose
 in noImpactExplanation; omit both for nonempty impacts.
-A cited fact must transmit to the target through an explicit conditional
+IMPORTANT: separate the CITED OBSERVATION from the INFERRED ECONOMIC
+MECHANISM. The source does not need to explicitly discuss stock markets,
+earnings expectations, or a transmission channel. Your job is to REASON
+conditionally from the cited observation to a plausible economic mechanism.
+For a reported corporate operating or financial development, ask how it
+could affect expected revenue, costs, cash flows or competitive position.
+For a leadership or governance development, consider execution, continuity
+and risk premia, while treating the reported claim as unverified.
+For a policy, supply, infrastructure or macroeconomic development,
+consider costs, supply, demand, financing, discount rates and substitution
+separately for affected targets. These are POSSIBLE transmission routes,
+not sourced outcomes. Identify opposing pressures separately if grounded.
+A cited fact must connect to the target through an explicit conditional
 change in demand, costs, revenue, cash flows, funding, discount rates,
 risk premia, supply, FX or regulatory opportunity. Explain unknowns and
-possible offsetting effects. For macroeconomic data, a surprise exists ONLY
+possible offsetting effects. When a target's geographic exposure is not
+given, use GLOBAL rather than inventing US or KR exposure. For macroeconomic data, a surprise exists ONLY
 if the sourced actual and sourced prior consensus are BOTH explicit.
 Never assert ABOVE_EXPECTATION / BELOW_EXPECTATION / IN_LINE without
 a visible indicator with both actual and prior expectation.
@@ -319,13 +332,15 @@ def analyze_pressure_two_stage(
                 "FACT_ENTITY_NOT_GROUNDED", "Claim contains unsourced entity"
             )
         if claim.novelty == "NEW_INFORMATION" and len(visible) == 1:
-            # One source cannot establish novelty versus all prior coverage.
-            raise ImpactAnalysisError(
-                "NOVELTY_NOT_ESTABLISHED", "No prior evidence for novelty comparison"
-            )
+            # A single report cannot prove novelty against historical coverage.
+            # Preserve the grounded quotation but downgrade unsupported novelty.
+            # Rejecting the whole event here suppresses valid economic analysis.
+            claim.novelty = "UNKNOWN"
     if not facts.claims:
         return _report(packet, provider, packet_hash, visible, [], [], 1)
 
+    # Novelty is a cross-source question, never established by a lone RSS
+    # excerpt. A normalized UNKNOWN is not a claim that the news was new.
     # Only source-grounded facts can reach pressure reasoning. The model's
     # factuality classifications remain its claims, not independent truth.
     extracted = [
@@ -362,6 +377,13 @@ def analyze_pressure_two_stage(
             "subject": packet.subject,
             "asOfDateExclusive": packet.asOfDateExclusive.isoformat(),
             "groundedClaims": extracted,
+            "analysisTask": (
+                "For each cited observation, determine whether it could "
+                "conditionally change economic exposure for an identifiable "
+                "market, sector or named company. The economic channel is "
+                "your inference, not a quote from the source. Cite the "
+                "observation verbatim and explain the channel separately."
+            ),
             "stockPriceDataAvailable": False,
             "outcomeLabelsAvailable": False,
         }, ensure_ascii=False),
