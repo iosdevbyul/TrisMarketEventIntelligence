@@ -19,6 +19,7 @@ from tris_market_event_intelligence.market_evidence_db_bridge import (
 )
 from tris_market_event_intelligence.market_evidence_pressure import MarketEvidence
 from tris_market_event_intelligence.market_pressure_reasoning import (
+    FactAnalysis,
     analyze_pressure_two_stage,
 )
 
@@ -208,32 +209,57 @@ class _CountingProvider:
         self.model_id = provider.model_id
         self.settings = getattr(provider, "settings", None)
         self.calls = 0
+        self.first_response: str | None = None
 
     def generate_json(
         self, *, system: str, user: str, schema: dict | None,
     ) -> str:
         self.calls += 1
-        return self.provider.generate_json(
+        raw = self.provider.generate_json(
             system=system, user=user, schema=schema,
         )
+        if self.calls == 1:
+            self.first_response = raw
+        return raw
 
 
 def _safe_model_rejection(error: ValueError | TypeError) -> dict:
     """Return only schema field paths/types, never excerpts or model text."""
+    root_codes = {
+        "IMPACT_ABSTENTION_CONTRADICTION",
+        "PARTIAL_ABSTENTION_REPORT",
+        "ABSTENTION_EXPLANATION_TOO_SHORT",
+        "UNCERTAIN_DIRECTION_HAS_INDETERMINATE_STRENGTH",
+        "IMPACT_ABSTENTION_WITH_NONEMPTY_IMPACTS",
+        "IMPACT_ABSTENTION_CATEGORY_INVALID",
+    }
     if isinstance(error, ValidationError):
+        details = error.errors(include_input=False, include_context=False)[:24]
         fields = [
             {"path": ".".join(str(bit) for bit in item["loc"]),
              "type": item["type"]}
-            for item in error.errors(include_input=False, include_context=False)[:24]
+            for item in details
         ]
+        # Only our own known validator codes are published. Never expose
+        # arbitrary model-generated content from Pydantic's error message.
+        root_code = next((
+            token for item in details for token in root_codes
+            if item["type"] == "value_error"
+            and item.get("msg") == "Value error, " + token
+        ), None)
         code = "MODEL_SCHEMA_INVALID"
     elif isinstance(error, ImpactAnalysisError):
         fields = []
+        root_code = error.code
         code = error.code
     else:
         fields = []
+        root_code = str(error) if str(error) in root_codes else None
         code = "MODEL_RESULT_INVALID"
-    return {"validationCode": code, "invalidFields": fields}
+    return {
+        "validationCode": code, "validationReasonCode": root_code,
+        "invalidFields": fields,
+    }
 
 
 def discover_and_analyze(
@@ -305,6 +331,20 @@ def discover_and_analyze(
         try:
             report = analyze_pressure_two_stage(packet, counted)
         except (ValueError, TypeError) as exc:
+            # Preserve fact observations ONLY if the first stage completed
+            # and a second model call was attempted. In that case the first
+            # stage's Pydantic/source checks have already passed.
+            grounded: list[dict] = []
+            if counted.calls >= 2 and counted.first_response is not None:
+                try:
+                    parsed = FactAnalysis.model_validate_json(
+                        counted.first_response,
+                    )
+                    grounded = [
+                        claim.model_dump() for claim in parsed.claims
+                    ]
+                except ValidationError:
+                    grounded = []
             # An invalid model proposal is NOT an economic impact, and
             # must not stop independent groups from being evaluated.
             report = {
@@ -314,6 +354,11 @@ def discover_and_analyze(
                 "asOfDateExclusive": as_of.isoformat(),
                 "visibleSourceIds": [source.sourceId for source in packet.evidences],
                 "impacts": [],
+                "groundedClaims": grounded,
+                "validationStage": (
+                    "IMPACT_GENERATION" if counted.calls >= 2
+                    else "FACT_EXTRACTION"
+                ),
                 "modelCalls": counted.calls,
                 "semanticAccuracyVerified": False,
                 "historicalPITVerified": False,
