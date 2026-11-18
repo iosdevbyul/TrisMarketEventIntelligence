@@ -14,9 +14,9 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from tris_market_event_intelligence.impact import (
+    SYSTEM_PROMPT,
     ImpactAnalysisError,
     ImpactResult,
-    SYSTEM_PROMPT,
 )
 from tris_market_event_intelligence.impact_mechanism import mechanism_quality_code
 from tris_market_event_intelligence.impact_quality import rationale_quality_code
