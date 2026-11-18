@@ -139,3 +139,40 @@ def test_learning_rejects_overlapping_price_outcomes(monkeypatch, tmp_path):
     monkeypatch.setattr(seq, "price_return", future_price)
     with pytest.raises(ValueError, match="outcome overlaps"):
         seq.run(args(tmp_path), model=ScriptedModel(), client=object())
+
+
+def test_gemma_case_normalization_and_retry():
+    class InconsistentModel:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_json(self, *, system, user, schema):
+            self.calls += 1
+            if self.calls == 1:
+                return json.dumps({"impacts": [{
+                    "targetType": "COMPANY", "target": "NVDA",
+                    "direction": "MIXED", "reason": "Conflicting signals",
+                }]})
+            return json.dumps({"impacts": [{
+                "targetType": "company", "target": "nvda",
+                "direction": "bearish", "reason": "Reduced export exposure",
+            }]})
+
+    model = InconsistentModel()
+    answer = seq.predict_with_repair(model, {"article": {"title": "Export limits"}})
+    assert model.calls == 2
+    assert answer["impacts"][0]["direction"] == "NEGATIVE"
+    assert answer["impacts"][0]["targetType"] == "STOCK"
+    assert answer["impacts"][0]["priceProxy"] == "NVDA"
+
+
+def test_invalid_model_output_does_not_become_prediction():
+    class AlwaysInvalid:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({"impacts": [{
+                "targetType": "STOCK", "target": "NVDA",
+                "direction": "MIXED", "reason": "Undetermined",
+            }]})
+
+    with pytest.raises(ValueError, match="AFTER_3_ATTEMPTS"):
+        seq.predict_with_repair(AlwaysInvalid(), {"article": {}})
