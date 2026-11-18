@@ -23,14 +23,14 @@ _GOVERNANCE = re.compile(
     re.IGNORECASE,
 )
 _OBSERVED_ADOPTION = re.compile(
-    r"\\b(solar|installation|installed|adoption|penetration|"
-    r"electricity.share|generation.share|market.share|uptake)\\b",
+    r"\b(solar|installation|installed|adoption|penetration|"
+    r"electricity.share|generation.share|market.share|uptake)\b",
     re.IGNORECASE,
 )
 _FUTURE_EXPOSURE = re.compile(
-    r"\\b(expected.revenue|forecast.sales|supplier.earnings|"
+    r"\b(expected.revenue|forecast.sales|supplier.earnings|"
     r"future.orders|profit.margin|contract.value|"
-    r"installation.backlog|future.cash.flow)\\b",
+    r"installation.backlog|future.cash.flow)\b",
     re.IGNORECASE,
 )
 
