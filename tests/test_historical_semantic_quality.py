@@ -35,7 +35,7 @@ def synthetic_runs(reference: dict) -> dict:
                 screens.append({
                     "questionId": case["questionId"],
                     "allVisibleClaimRoles": [
-                        {**{"sourceId": ref[0], "claimId": ref[1]},
+                        {"sourceId": ref[0], "claimId": ref[1],
                          "role": (
                              "INTERMEDIATE_DECISION"
                              if ref in map(tuple, case["required"])
