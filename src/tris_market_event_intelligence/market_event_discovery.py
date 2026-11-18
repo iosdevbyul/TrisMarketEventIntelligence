@@ -208,6 +208,7 @@ class _CountingProvider:
         self.provider = provider
         self.model_id = provider.model_id
         self.settings = getattr(provider, "settings", None)
+        self.trace = getattr(provider, "trace", None)
         self.calls = 0
         self.first_response: str | None = None
 
@@ -275,6 +276,14 @@ def discover_and_analyze(
         db, as_of=as_of, lookback_days=lookback_days,
         as_of_time=as_of_time, page=page,
     )
+    trace = getattr(provider, "trace", None)
+    if trace is not None:
+        trace.record(
+            "CANDIDATES_SELECTED",
+            asOfDateExclusive=as_of.isoformat(),
+            inventory=inventory,
+            candidateSourceIds=[row["evidence"].sourceId for row in candidates],
+        )
     if not candidates:
         return {
             "schemaVersion": "market_pressure_auto_cycle_v1",
@@ -302,6 +311,12 @@ def discover_and_analyze(
         schema=ProposedEventGroups.model_json_schema(),
     )
     groups = ProposedEventGroups.model_validate_json(raw)
+    if trace is not None:
+        trace.record(
+            "GROUPS_VALIDATED",
+            groups=[group.model_dump() for group in groups.groups],
+            candidateCount=len(candidates),
+        )
     results = []
     calls = 1
     for group in groups.groups[:max_groups]:
@@ -328,9 +343,22 @@ def discover_and_analyze(
             ),
         )
         counted = _CountingProvider(provider)
+        if trace is not None:
+            trace.record(
+                "EVENT_ANALYSIS_STARTED", eventId=packet.eventId,
+                sourceIds=[source.sourceId for source in packet.evidences],
+                groupingExplanation=group.connectionExplanation,
+            )
         try:
             report = analyze_pressure_two_stage(packet, counted)
         except (ValueError, TypeError) as exc:
+            if trace is not None:
+                trace.validation_failure(
+                    stage="IMPACT_GENERATION" if counted.calls >= 2
+                    else "FACT_EXTRACTION",
+                    event_id=packet.eventId,
+                    error=exc,
+                )
             # Preserve fact observations ONLY if the first stage completed
             # and a second model call was attempted. In that case the first
             # stage's Pydantic/source checks have already passed.
@@ -366,6 +394,16 @@ def discover_and_analyze(
                 "generalizationVerified": False,
                 **_safe_model_rejection(exc),
             }
+        if trace is not None:
+            trace.record(
+                "EVENT_ANALYSIS_FINISHED",
+                eventId=packet.eventId,
+                analysisStatus=report["status"],
+                verifiedImpactCount=len(report["impacts"]),
+                modelCalls=counted.calls,
+                validationCode=report.get("validationCode"),
+                validationReasonCode=report.get("validationReasonCode"),
+            )
         calls += counted.calls
         results.append({
             "proposalExplanation": group.connectionExplanation,
