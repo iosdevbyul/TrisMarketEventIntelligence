@@ -78,6 +78,22 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
             kind = kind.strip().upper()
         if isinstance(direction, str):
             direction = direction.strip().upper()
+        # The model can put the sector identifier in targetType itself,
+        # e.g. {"targetType": "FINANCIALS", "direction": "NEUTRAL"}.
+        # The sector is unambiguous; recover it without making up a stock ticker.
+        if kind in SECTOR_ETFS:
+            sector = kind
+            kind = "MARKET" if sector == "BROAD_MARKET" else "SECTOR"
+            if not isinstance(target, str) or not target.strip():
+                target = sector
+            else:
+                declared = target.strip().upper().replace(" ", "_")
+                if declared not in {sector, SECTOR_ETFS[sector]}:
+                    # When the declared sector is the only unambiguous identity,
+                    # preserve it rather than treating the freeform label as a ticker.
+                    target = sector
+                else:
+                    target = sector
         kind = {"COMPANY": "STOCK", "INDEX": "MARKET", "ETF": "STOCK"}.get(
             kind, kind,
         )
