@@ -10,7 +10,6 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 from tris_market_event_intelligence.market_pressure_replay_cli import replay_trace
 
@@ -174,10 +173,11 @@ def main() -> None:
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    _create_only(args.output, semantic_review(args.trace))
+    review = semantic_review(args.trace)
+    _create_only(args.output, review)
     print(json.dumps({
         "status": "HUMAN_REVIEW_REQUIRED",
-        "acceptedBySchemaCount": semantic_review(args.trace)["acceptedBySchemaCount"],
+        "acceptedBySchemaCount": review["acceptedBySchemaCount"],
         "outputCreated": True,
         "modelCalls": 0,
         "dbWrites": 0,
