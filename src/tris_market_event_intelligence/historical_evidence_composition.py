@@ -47,6 +47,12 @@ class QuestionAxes(Strict):
         "NOT_OBSERVED", "IN_PROGRESS", "COMPLETED", "UNKNOWN",
     ]
     completionEvidenceWarning: str | None
+    directRecordAvailability: Literal[
+        "NOT_OBSERVED", "PARTIAL", "DIRECTLY_OBSERVED", "UNKNOWN",
+    ]
+    indirectRegulatoryProgress: Literal[
+        "NOT_OBSERVED", "OBSERVED", "UNKNOWN",
+    ]
     evidenceStateConsistencyFlags: list[str]
     evidenceStateConsistencyVerified: bool
     requestedEvidenceStatus: Literal[
@@ -71,6 +77,12 @@ class QuestionAnswer(Strict):
     ]
     requestedEvidenceStatus: Literal[
         "NOT_OBSERVED", "PARTIAL", "DIRECTLY_OBSERVED",
+    ]
+    directRecordAvailability: Literal[
+        "NOT_OBSERVED", "PARTIAL", "DIRECTLY_OBSERVED", "UNKNOWN",
+    ]
+    indirectRegulatoryProgress: Literal[
+        "NOT_OBSERVED", "OBSERVED", "UNKNOWN",
     ]
 
 
@@ -105,7 +117,7 @@ product and aircraft scopes. Do not use later unseen information. Return
 exactly the required claim-index keys and allowed role values. No prose."""
 
 
-_ANSWER_SYSTEM = """Return exactly THREE structured categorical fields.
+_ANSWER_SYSTEM = """Return exactly FIVE structured categorical fields.
 Do NOT generate prose or references. Analyze the specific research question
 using only screened cutoff-visible official claims.
 
@@ -127,10 +139,25 @@ do NOT by themselves prove that review, inspection or audit completed.
 The word 'completed' is not an acceptable inference from an action's
 authorization or a future condition ('after completion').
 
-requestedEvidenceStatus concerns the EXACT research question: NOT_OBSERVED
-if its answer is absent, PARTIAL when a relevant official step or decision
-exists but the specific final records/answers required are still missing,
-DIRECTLY_OBSERVED only when the full requested answer is explicit.
+requestedEvidenceStatus tracks progress evidence for the entire question:
+NOT_OBSERVED if neither the requested answer nor relevant progress is
+visible, PARTIAL if a relevant intermediate decision is observable but
+the full requested records remain unavailable, and DIRECTLY_OBSERVED if
+the exact answer is explicitly documented.
+
+directRecordAvailability is a SEPARATE axis: does the source explicitly
+publish the exact records requested (for example filing receipts or final
+audit findings)? NOT_OBSERVED if no such records appear, PARTIAL if only
+some requested records appear, DIRECTLY_OBSERVED if all specified records
+are present, UNKNOWN if the record scope is ambiguous. A product approval
+announcement does NOT automatically reveal underlying internal filings.
+
+indirectRegulatoryProgress is independent of direct record availability:
+OBSERVED if the screened sources document a relevant subsequent agency
+step, restriction or authorization; NOT_OBSERVED if none is evidenced;
+UNKNOWN if relevance to the question remains ambiguous. A documented
+product authorization can establish indirect progress while the original
+manufacturer filing records remain NOT_OBSERVED.
 No post-cutoff facts or retrospective editorial labels. Strict JSON only."""
 
 
@@ -515,6 +542,8 @@ def assess_question_axes(
             "evidenceStateConsistencyFlags": consistency_flags,
             "evidenceStateConsistencyVerified": False,
             "requestedEvidenceStatus": answer.requestedEvidenceStatus,
+            "directRecordAvailability": answer.directRecordAvailability,
+            "indirectRegulatoryProgress": answer.indirectRegulatoryProgress,
             "explanation": " ".join(narrative_parts),
             "remainingEvidence": remaining,
         }
