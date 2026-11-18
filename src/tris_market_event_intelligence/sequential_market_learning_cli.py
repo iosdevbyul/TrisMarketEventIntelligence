@@ -16,6 +16,7 @@ import httpx
 
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence import learning_memory
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 SECTOR_ETFS = {
@@ -368,12 +369,16 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     try:
         with sqlite3.connect(args.journal) as db:
             init_journal(db)
+            learning_memory.initialize(db)
             old = db.execute("SELECT settings_json FROM runs WHERE id=1").fetchone()
             if old and json.loads(old[0]) != settings:
                 raise ValueError("Journal settings mismatch; use a new journal")
             if not old:
                 db.execute("INSERT INTO runs VALUES (1,?)", (json.dumps(settings),))
                 db.commit()
+            # Upgrade existing completed runs in place; never rewrite predictions.
+            learning_memory.import_legacy(db, articles)
+            db.commit()
             for index, article in enumerate(articles, start=1):
                 observed = timestamp(article["firstObservedAt"])
                 # Retrospective adaptation deliberately evaluates one article,
@@ -390,23 +395,45 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                                 or current[1] != article_hash):
                     raise ValueError("Changed article in resumed journal")
                 if not current:
-                    lessons = [r[0] for r in db.execute(
-                        "SELECT lesson FROM lessons WHERE seq<? ORDER BY seq DESC LIMIT 12",
-                        (index,),
-                    )]
-                    prediction = predict_with_repair(model, {
+                    rules = learning_memory.select(db, seq=index, article=article)
+                    relevant = learning_memory.rule_prompt(rules)
+                    context = {
                         "article": {
                             "title": article["title"], "summary": article["summary"],
                             "firstObservedAt": article["firstObservedAt"],
                             "source": article["source"],
                         },
-                        "priorFeedbackLessons": list(reversed(lessons)),
-                    })
+                        "priorFeedbackLessons": relevant,
+                    }
+                    prediction = predict_with_repair(model, context)
+                    # To test rule impact, compare a no-candidate shadow prediction
+                    # using the SAME article, before fetching realized prices.
+                    candidate = next(
+                        (rule for rule in rules if rule["status"] != "ACTIVE"), None,
+                    )
+                    baseline = None
+                    if candidate is not None and (
+                        observed > timestamp(candidate["eligibleAfter"])
+                    ):
+                        shadow = dict(context)
+                        shadow["priorFeedbackLessons"] = learning_memory.rule_prompt(
+                            [rule for rule in rules if rule["id"] != candidate["id"]]
+                        )
+                        try:
+                            baseline = predict_with_repair(model, shadow)
+                        except (ValueError, TypeError):
+                            baseline = None
                     db.execute(
                         "INSERT INTO steps VALUES (?,?,?,?,?,?,?,?)",
                         (index, article["articleId"], observed.isoformat(),
                          article_hash, json.dumps(prediction), None, None, "PREDICTED"),
                     )
+                    learning_memory.apply(db, index, rules)
+                    if baseline is not None and candidate is not None:
+                        db.execute(
+                            "INSERT OR IGNORE INTO memory_rule_baselines VALUES (?,?,?)",
+                            (index, candidate["id"], json.dumps(baseline)),
+                        )
                     db.commit()
                     current = (article["articleId"], article_hash,
                                json.dumps(prediction), None, None, "PREDICTED")
@@ -422,6 +449,24 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                     db.commit()
                 else:
                     assessment = json.loads(current[3])
+                shadow_row = db.execute(
+                    "SELECT rule_id, prediction_json FROM memory_rule_baselines WHERE seq=?",
+                    (index,),
+                ).fetchone()
+                if shadow_row is not None:
+                    rule = db.execute(
+                        "SELECT id, eligible_after FROM memory_rules WHERE id=?",
+                        (shadow_row[0],),
+                    ).fetchone()
+                    if rule is not None:
+                        learning_memory.compare_trial(
+                            db, seq=index, article=article,
+                            candidate={"id": rule[0], "eligibleAfter": rule[1]},
+                            primary=prediction, baseline=json.loads(shadow_row[1]),
+                            evaluation=assessment,
+                        )
+                        learning_memory.reconcile(db, seq=index)
+                        db.commit()
                 if current[4] is None:
                     feedback = next_lesson(model, article, prediction, assessment)
                     db.execute(
@@ -432,6 +477,10 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         db.execute("INSERT INTO lessons VALUES (?,?,?)", (
                             index, feedback["lesson"], feedback["diagnosis"],
                         ))
+                    learning_memory.learn(
+                        db, seq=index, article_id=article["articleId"],
+                        article=article, evaluation=assessment, feedback=feedback,
+                    )
                     db.commit()
                 print(json.dumps({
                     "seq": index, "articleId": article["articleId"],
@@ -457,6 +506,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         "SELECT evaluation_json FROM steps WHERE evaluation_json IS NOT NULL"
                     )
                 ),
+                "learningMemory": learning_memory.report(db),
                 "evaluationMode": "RETROSPECTIVE_SEQUENTIAL_FEEDBACK",
                 "pointInTimeCertified": False,
                 "warning": (
