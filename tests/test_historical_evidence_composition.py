@@ -432,6 +432,25 @@ class PrimaryEvidenceProvider(DecisionScreenProvider):
     """The model may prefer a precise contextual claim over a generic step."""
 
     def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if schema["properties"] and all(
+            name.startswith("claim_") for name in schema["properties"]
+        ):
+            raw = super().generate_json(
+                system=system, user=user, schema=schema,
+            )
+            roles = json.loads(raw)
+            envelope = json.loads(user)
+            question = envelope["question"]["questionId"]
+            distraction = (
+                "oversight-intensification"
+                if "boeing-production-oversight" in question else
+                "filing-still-needed"
+                if "authorized-formula" in question else None
+            )
+            for i, claim in enumerate(envelope["indexedVisibleOfficialClaims"]):
+                if claim["claimId"] == distraction:
+                    roles[f"claim_{i}"] = "INTERMEDIATE_DECISION"
+            return json.dumps(roles)
         if "regulatoryDecisionStage" in schema["properties"]:
             self.calls += 1
             envelope = json.loads(user)
