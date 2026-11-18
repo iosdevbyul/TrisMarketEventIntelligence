@@ -236,3 +236,75 @@ def test_broad_market_name_in_target_type_is_normalized():
     }]})
     assert prediction["impacts"][0]["targetType"] == "MARKET"
     assert prediction["impacts"][0]["priceProxy"] == "SPY"
+
+
+def test_prior_market_context_excludes_future_news_and_prices():
+    observed = datetime(2026, 11, 15, 10, tzinfo=UTC)
+    news = sample(10, observed)
+    older = sample(9, observed - timedelta(days=1))
+    older["title"] = "Chip manufacturing supply event earlier"
+    future = sample(11, observed + timedelta(hours=2))
+    class FakeClient:
+        def get(self, url, params, headers):
+            assert params["period2"] == int(observed.timestamp())
+            class Response:
+                def raise_for_status(self):
+                    return None
+                def json(self):
+                    return {"chart": {"result": [{
+                        "timestamp": [
+                            int((observed - timedelta(days=3)).timestamp()),
+                            int((observed - timedelta(days=2)).timestamp()),
+                            int((observed + timedelta(days=2)).timestamp()),
+                        ],
+                        "indicators": {"quote": [{"close": [100, 102, 999]}]},
+                    }]}}
+            return Response()
+    context = seq.pre_event_market_context(news, [older, future], FakeClient())
+    assert [x["articleId"] for x in context["earlierRelatedArticles"]] == [9]
+    assert context["marketPreTrend"]["status"] == "AVAILABLE"
+    assert context["marketPreTrend"]["return"] == pytest.approx(0.02)
+    assert context["consensus"]["status"] == "UNKNOWN"
+
+
+def test_market_context_missing_source_is_unknown():
+    article = sample(1, datetime(2025, 1, 1, tzinfo=UTC))
+    context = seq.pre_event_market_context(article, [], object())
+    assert context["marketPreTrend"]["status"] == "UNAVAILABLE"
+    assert context["consensus"]["status"] == "UNKNOWN"
+    assert context["earlierRelatedArticles"] == []
+
+
+def test_unsubstantiated_consensus_surprise_is_rejected():
+    class Unsubstantiated:
+        def generate_json(self, *, system, user, schema):
+            return json.dumps({
+                "summary": "Positive fundamentals",
+                "impacts": [],
+                "surpriseAssessment": {
+                    "economicImpact": "POSITIVE",
+                    "expectationStatus": "ABOVE",
+                    "novelty": "NEW",
+                    "pricedInStatus": "UNKNOWN",
+                    "rationale": "Invented consensus",
+                },
+            })
+    with pytest.raises(ValueError, match="AFTER_3_ATTEMPTS"):
+        seq.predict_with_repair(Unsubstantiated(), {
+            "marketContext": {
+                "consensus": {"status": "UNKNOWN"},
+                "earlierRelatedArticles": [],
+            },
+        })
+
+
+def test_legacy_prediction_without_surprise_is_explicitly_unknown():
+    model = ScriptedModel()
+    prediction = seq.predict_with_repair(model, {
+        "marketContext": {
+            "consensus": {"status": "UNKNOWN"},
+            "earlierRelatedArticles": [],
+        },
+    })
+    assert prediction["surpriseAssessment"]["expectationStatus"] == "UNKNOWN"
+    assert prediction["surpriseAssessment"]["pricedInStatus"] == "UNKNOWN"
