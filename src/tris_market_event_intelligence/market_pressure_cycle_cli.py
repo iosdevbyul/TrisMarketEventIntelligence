@@ -95,7 +95,10 @@ def main() -> None:
         json.dump(result, file, ensure_ascii=False, indent=2)
         file.write("\n")
     stored = None
-    if args.persist and result["events"]:
+    persist_blocked = (
+        args.persist and result["status"] != "CANDIDATE_EVENTS_REQUIRE_REVIEW"
+    )
+    if args.persist and result["events"] and not persist_blocked:
         store = MarketPressureResultStore(args.db)
         store.initialize()
         stored = store.save(result)
@@ -105,6 +108,7 @@ def main() -> None:
         "modelCalls": result["modelCalls"],
         "outputCreated": True,
         "persisted": stored,
+        "persistBlockedInvalidModelOutput": bool(persist_blocked),
     }))
 
 
