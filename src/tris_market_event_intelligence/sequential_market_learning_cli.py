@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,19 @@ PREDICTION_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "summary": {"type": "string"},
+        "surpriseAssessment": {
+            "type": "object",
+            "properties": {
+                "economicImpact": {"type": "string", "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL", "UNKNOWN"]},
+                "expectationStatus": {"type": "string", "enum": ["ABOVE", "IN_LINE", "BELOW", "UNKNOWN"]},
+                "novelty": {"type": "string", "enum": ["NEW", "REPEATED", "UNKNOWN"]},
+                "pricedInStatus": {"type": "string", "enum": ["POSSIBLE", "UNSUPPORTED", "UNKNOWN"]},
+                "rationale": {"type": "string"},
+            },
+            "required": ["economicImpact", "expectationStatus", "novelty",
+                         "pricedInStatus", "rationale"],
+            "additionalProperties": False,
+        },
         "impacts": {
             "type": "array", "maxItems": 8,
             "items": {
@@ -75,6 +89,16 @@ genuine publicly traded ticker; private companies cannot be STOCK targets.
 Do not invent an asset symbol. At most eight impacts. Abstain with [] if unclear.
 Supported sectors: SEMICONDUCTORS, TECH, CLOUD, FINANCIALS, ENERGY,
 DEFENSE, INDUSTRIALS, CONSUMER, TRANSPORT, HEALTHCARE, BROAD_MARKET.
+Analyze economic effect SEPARATELY from expected stock price movement. Good
+fundamentals need not mean positive returns. Market context contains only
+prior evidence. If consensus evidence is unavailable, expectationStatus
+MUST be UNKNOWN. Prior SPY price increases do not establish priced-in news.
+Never invent estimates, expectations or stock prices. Optionally return
+surpriseAssessment with economicImpact POSITIVE|NEGATIVE|NEUTRAL|UNKNOWN,
+expectationStatus ABOVE|IN_LINE|BELOW|UNKNOWN,
+novelty NEW|REPEATED|UNKNOWN, pricedInStatus POSSIBLE|UNSUPPORTED|UNKNOWN,
+and rationale. Label possible priced-in only with corroborating earlier
+coverage, otherwise UNKNOWN.
 No forward-looking factual knowledge or price results; distinguish risks from facts."""
 CRITIC = """You are a research reviewer. Given an immutable earlier prediction and its
 later realized price assessment, diagnose ONE generalizable error. Output JSON
@@ -155,7 +179,23 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
             "targetType": kind, "target": target, "priceProxy": symbol,
             "direction": direction, "reason": reason[:1000],
         })
-    return {"summary": str(raw.get("summary", ""))[:1500], "impacts": result}
+    assessment = raw.get("surpriseAssessment")
+    if assessment is not None:
+        allowed = {
+            "economicImpact": {"POSITIVE", "NEGATIVE", "NEUTRAL", "UNKNOWN"},
+            "expectationStatus": {"ABOVE", "IN_LINE", "BELOW", "UNKNOWN"},
+            "novelty": {"NEW", "REPEATED", "UNKNOWN"},
+            "pricedInStatus": {"POSSIBLE", "UNSUPPORTED", "UNKNOWN"},
+        }
+        if not isinstance(assessment, dict) or any(
+            assessment.get(k) not in values for k, values in allowed.items()
+        ) or not isinstance(assessment.get("rationale"), str):
+            raise ValueError("Invalid surprise assessment")
+        assessment = {**{k: assessment[k] for k in allowed},
+                      "rationale": assessment["rationale"][:1200]}
+    return {"summary": str(raw.get("summary", ""))[:1500],
+            "impacts": result, **({"surpriseAssessment": assessment}
+                                 if assessment is not None else {})}
 
 
 def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], int]:
@@ -200,6 +240,84 @@ def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], i
         if len(selected) >= count:
             break
     return selected, len(items) - train_end
+
+
+
+def pre_event_market_context(
+    article: dict, prior_articles: list[dict], client: Any,
+) -> dict[str, Any]:
+    """Use only previously observed articles and conservative pre-event bars."""
+    observed = timestamp(article["firstObservedAt"])
+    terms = set(re.findall(r"[a-zA-Z]{4,}", (
+        str(article.get("title", "")) + " " + str(article.get("summary", ""))
+    ).lower()))
+    stop = {"with", "from", "this", "that", "will", "have", "after",
+            "about", "market", "reported", "could", "company", "shares"}
+    terms -= stop
+    related = []
+    for previous in reversed(prior_articles):
+        when = timestamp(previous["firstObservedAt"])
+        if when >= observed or observed - when > timedelta(days=14):
+            continue
+        prior_terms = set(re.findall(
+            r"[a-zA-Z]{4,}",
+            (str(previous.get("title", "")) + " " +
+             str(previous.get("summary", ""))).lower(),
+        )) - stop
+        overlap = sorted(terms & prior_terms)
+        if len(overlap) >= 2:
+            related.append({
+                "articleId": previous["articleId"],
+                "firstObservedAt": previous["firstObservedAt"],
+                "title": previous["title"], "sharedTerms": overlap[:8],
+            })
+        if len(related) >= 5:
+            break
+    market = {"status": "UNAVAILABLE", "symbol": "SPY"}
+    try:
+        response = client.get(
+            "https://query1.finance.yahoo.com/v8/finance/chart/SPY",
+            params={
+                "period1": int((observed - timedelta(days=16)).timestamp()),
+                "period2": int(observed.timestamp()), "interval": "1d",
+            },
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        response.raise_for_status()
+        item = response.json()["chart"]["result"][0]
+        candles = [
+            (datetime.fromtimestamp(t, UTC), float(p))
+            for t, p in zip(
+                item.get("timestamp") or [],
+                item["indicators"]["quote"][0]["close"],
+                strict=False,
+            )
+            if p is not None and float(p) > 0
+            and datetime.fromtimestamp(t, UTC).date() < observed.date()
+        ]
+        if len(candles) >= 2:
+            window = candles[-6:]
+            market = {
+                "status": "AVAILABLE", "symbol": "SPY",
+                "baselineAt": window[0][0].isoformat(),
+                "lastAt": window[-1][0].isoformat(),
+                "return": window[-1][1] / window[0][1] - 1,
+                "limitation": "Prior daily close proxy; timestamps unverified",
+            }
+    except (AttributeError, ValueError, KeyError, IndexError, TypeError,
+            httpx.HTTPError):
+        pass
+    return {
+        "asOf": observed.isoformat(),
+        "earlierRelatedArticles": related,
+        "marketPreTrend": market,
+        "consensus": {"status": "UNKNOWN", "reason": "No timestamped consensus feed"},
+        "limitations": [
+            "Keyword overlap does not prove the same information was priced in",
+            "SPY trend is not the individual target's price history",
+            "No post-event prices or articles are included",
+        ],
+    }
 
 
 def init_journal(db: sqlite3.Connection) -> None:
@@ -418,7 +536,12 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         },
                         "priorFeedbackLessons": relevant,
                     }
+                    market_context = pre_event_market_context(
+                        article, articles[:index - 1], client,
+                    )
+                    context["marketContext"] = market_context
                     prediction = predict_with_repair(model, context)
+                    prediction["marketContext"] = market_context
                     # To test rule impact, compare a no-candidate shadow prediction
                     # using the SAME article, before fetching realized prices.
                     candidate = next(
