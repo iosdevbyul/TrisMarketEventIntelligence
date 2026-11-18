@@ -163,9 +163,13 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
                     all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-" for c in target)):
                 raise ValueError("Malformed ticker")
             symbol = target
-        elif kind == "SECTOR" and target in SECTOR_ETFS:
+        elif kind == "SECTOR" and target in SECTOR_ETFS and target != "BROAD_MARKET":
             symbol = SECTOR_ETFS[target]
-        elif kind == "MARKET" and target == "BROAD_MARKET":
+        elif kind == "SECTOR" and target in SECTOR_ETFS.values() and target != "SPY":
+            target = next(name for name, proxy in SECTOR_ETFS.items() if proxy == target)
+            symbol = SECTOR_ETFS[target]
+        elif kind == "MARKET" and target in {"BROAD_MARKET", "SPY"}:
+            target = "BROAD_MARKET"
             symbol = "SPY"
         else:
             raise ValueError("Unsupported non-stock target")
@@ -338,20 +342,62 @@ def init_journal(db: sqlite3.Connection) -> None:
     """)
 
 
+
+def recover_unsupported_targets(raw: dict[str, Any]) -> dict[str, Any]:
+    """On exhausted retries, preserve valid impacts; explicitly reject unsupported ones.
+
+    Only unsupported non-stock mapping may be excluded. Other validation errors
+    (invalid direction, missing reason, duplicates) still fail closed.
+    """
+    items = raw.get("impacts")
+    if not isinstance(items, list) or len(items) > 8:
+        raise ValueError("Malformed impacts cannot be recovered")
+    valid = []
+    rejected = []
+    for item in items:
+        try:
+            canonical_prediction({"summary": "", "impacts": [item]})
+        except ValueError as exc:
+            if str(exc) != "Unsupported non-stock target":
+                raise
+            rejected.append({
+                "targetType": item.get("targetType"),
+                "target": item.get("target"),
+                "reasonCode": "UNSUPPORTED_NON_STOCK_TARGET",
+            })
+        else:
+            valid.append(item)
+    if not rejected:
+        raise ValueError("No unsupported mappings to recover")
+    cleaned = dict(raw)
+    cleaned["impacts"] = valid
+    recovered = canonical_prediction(cleaned)
+    recovered["targetMappingRejections"] = rejected
+    recovered["recoveryStatus"] = "PARTIAL_TARGET_MAPPING" if valid else "NO_VALID_TARGETS"
+    return recovered
+
+
 def predict_with_repair(model: Any, payload: dict) -> dict:
-    """Retry malformed model output before writing an immutable prediction."""
+    """Retry model output; recover only unsupported mappings with audit evidence."""
     last_error = "UNKNOWN"
+    last_raw: dict[str, Any] | None = None
     for attempt in range(3):
         request = dict(payload)
         if attempt:
             request["formatCorrection"] = (
                 "The previous response was invalid: " + last_error +
-                ". Return ONLY the required JSON with targetType STOCK, "
-                "SECTOR or MARKET; direction POSITIVE, NEGATIVE or NEUTRAL. "
-                "Use an empty impacts array when unable to identify a target."
+                ". Each impact must have targetType STOCK, SECTOR, or MARKET; "
+                "for SECTOR, target MUST be one of " +
+                ", ".join(k for k in SECTOR_ETFS if k != "BROAD_MARKET") +
+                "; for MARKET, target MUST be BROAD_MARKET; "
+                "for STOCK, target MUST be a real ticker, not an industry name. "
+                "The valid direction values are POSITIVE, NEGATIVE, NEUTRAL. "
+                "Do not invent proxies or unsupported sector names. "
+                "Omit unclear targets rather than guessing."
             )
         try:
-            prediction = canonical_prediction(model_json(model, SYSTEM, request))
+            last_raw = model_json(model, SYSTEM, request)
+            prediction = canonical_prediction(last_raw)
             market_context = payload.get("marketContext")
             if market_context:
                 assessment = prediction.get("surpriseAssessment")
@@ -373,6 +419,24 @@ def predict_with_repair(model: Any, payload: dict) -> dict:
             return prediction
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             last_error = str(exc)[:180]
+    if last_error == "Unsupported non-stock target" and last_raw is not None:
+        prediction = recover_unsupported_targets(last_raw)
+        # Guard surprise claims just as strictly on this recovery path.
+        context = payload.get("marketContext", {})
+        assessment = prediction.get("surpriseAssessment")
+        if context:
+            if assessment is None:
+                prediction["surpriseAssessment"] = {
+                    "economicImpact": "UNKNOWN", "expectationStatus": "UNKNOWN",
+                    "novelty": "UNKNOWN", "pricedInStatus": "UNKNOWN",
+                    "rationale": "No validated surprise assessment",
+                }
+            elif ((context.get("consensus", {}).get("status") == "UNKNOWN"
+                   and assessment["expectationStatus"] != "UNKNOWN")
+                  or (assessment["pricedInStatus"] == "POSSIBLE"
+                      and not context.get("earlierRelatedArticles"))):
+                raise ValueError("MODEL_PREDICTION_INVALID_AFTER_3_ATTEMPTS: unsupported surprise claim")
+        return prediction
     raise ValueError("MODEL_PREDICTION_INVALID_AFTER_3_ATTEMPTS: " + last_error)
 
 
