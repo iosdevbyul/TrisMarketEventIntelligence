@@ -417,3 +417,34 @@ def test_single_source_novelty_guard_still_rejects_fabricated_evidence() -> None
             MarketEvidencePacket.model_validate(raw), provider,
         )
     assert len(provider.prompts) == 1
+
+
+def test_ollama_empty_optional_abstention_fields_are_not_contradictions() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [impact()],
+        "noImpactCategory": "",
+        "noImpactExplanation": "",
+    })
+    output = analyze_pressure_two_stage(example(), provider)
+    assert len(output["impacts"]) == 1
+    assert output["noImpactAssessment"] is None
+
+
+def test_empty_abstention_placeholders_produce_unexplained_not_market_signal() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [], "noImpactCategory": "", "noImpactExplanation": "",
+    })
+    output = analyze_pressure_two_stage(example(), provider)
+    assert output["impacts"] == []
+    assert output["noImpactAssessment"]["category"] == "UNEXPLAINED_ABSTENTION"
+    assert output["semanticAccuracyVerified"] is False
+
+
+def test_incomplete_abstention_stays_invalid() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [],
+        "noImpactCategory": "EVIDENCE_TOO_AMBIGUOUS",
+        "noImpactExplanation": "",
+    })
+    with pytest.raises(ValueError, match="PARTIAL_ABSTENTION_REPORT"):
+        analyze_pressure_two_stage(example(), provider)
