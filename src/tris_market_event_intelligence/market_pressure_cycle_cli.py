@@ -9,6 +9,7 @@ from pathlib import Path
 
 from tris_market_event_intelligence.llm_runtime import (
     LLMCapabilities,
+    LLMExecutionError,
     LLMSettings,
 )
 from tris_market_event_intelligence.market_event_discovery import (
@@ -66,11 +67,29 @@ def main() -> None:
         ),
     )
     provider = build_runtime(settings, confirm_model=True)
-    result = discover_and_analyze(
-        args.db, as_of=args.as_of, provider=provider,
-        lookback_days=args.lookback_days, max_groups=args.max_groups,
-        as_of_time=args.as_of_time,
-    )
+    try:
+        result = discover_and_analyze(
+            args.db, as_of=args.as_of, provider=provider,
+            lookback_days=args.lookback_days, max_groups=args.max_groups,
+            as_of_time=args.as_of_time,
+        )
+    except LLMExecutionError as exc:
+        # Preserve safe status codes without logging raw financial news,
+        # credentials, server response bodies or full model prompts.
+        response = getattr(exc.__cause__, "response", None)
+        status = getattr(response, "status_code", None)
+        print(json.dumps({
+            "status": "MODEL_EXECUTION_FAILED",
+            "code": exc.code,
+            "httpStatus": status if isinstance(status, int) else None,
+            "outputCreated": False,
+            "databaseModified": False,
+            "nextAction": (
+                "Check Ollama readiness and JSON compatibility; no "
+                "successful market-pressure analysis was saved."
+            ),
+        }))
+        raise SystemExit(2) from exc
     with args.output.open("x", encoding="utf-8") as file:
         json.dump(result, file, ensure_ascii=False, indent=2)
         file.write("\n")
