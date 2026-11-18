@@ -531,3 +531,85 @@ includes them for **every original proposal, including those rejected by
 structural guards**, without a new Ollama call or DB write. This preserves
 full root-cause context, makes the next human review materially useful,
 and keeps all research in Draft PR #251 until reviewed.
+
+
+## Architecture reset: arbitrary changing news, no article-specific rules
+
+**The project objective is generality across continuously changing news and
+economic releases, NOT passing tests for any one article.** The legacy
+`market_pressure_quality_gate.py` keyword checks are retained as historical
+diagnostics for old replay only. They are **not used to decide the current
+general causal path engine output**.
+
+The production `market-pressure-cycle` CLI now defaults to
+`--reasoning-mode causal` and calls
+`market_pressure_causal_engine.analyze_general_causal` for each discovered
+event group, after the existing provenance-controlled news/indicator discovery.
+The old `--reasoning-mode legacy` is available only for explicit comparisons;
+none of its event-shaped text checks or mutable strength labels are the new
+engine's contract.
+
+The new **General Causal Paths V1** contract is data-driven, not keyed by
+issuer, location, specific event category, or article text:
+
+1. **Source-bounded observations:** extract exact citations only from sources
+   visible before the cutoff; reported claims remain unverified claims.
+2. **Conditional causal paths:** model proposes bounded ordered steps with
+   cause, economic channel, effect and explicit assumption. Different paths
+   can explain positive or negative effects for an affected market, sector,
+   or literally-cited company.
+3. **Independent strict guards:** validate every path's cited claim indexes,
+   verbatim observations, company grounding, schema and bounds. Reject only
+   invalid proposals; retain the original indexes of both rejected and accepted
+   items. Do not silently rewrite model answers or force named companies.
+4. **Derived direction:** Python computes POSITIVE/NEGATIVE/MIXED from the
+   submitted independently cited causal-path signs, not from an ungrounded
+   model label; a single counterargument does not magically count as an
+   opposing economic path.
+5. **No invented calibrated strength:** all outputs remain UNASSESSED and HIGH
+   uncertainty until independent evidence supports a measured magnitude;
+   no returns, stock-price predictions or trades are generated.
+6. **No false verification:** conditional causal paths remain unverified
+   economic hypotheses. Success under schema guards is not economic truth,
+   generalization or factual verification.
+
+Actual new mode is separately labeled `GENERAL_CAUSAL_PATHS_V1`. For
+security, persistence of causal research via `--persist` is **disabled
+even for fully schema-valid results** until the user explicitly approves a
+semantically reviewed production boundary. New outputs remain private and
+create-only. Prior v7 trace data is left untouched.
+
+### Cross-event evaluation on the real rolling source DB
+
+Use the new `market-pressure-generalization` command to inspect several
+distinct bounded chronological source pages rather than the same article.
+It reads stored news/indicators across the requested cutoff and lookback
+period and reports source type/publisher coverage, model-call count,
+event group count, number of proposed, grounded and rejected causal paths
+and distributions of inferred directions. It explicitly does **not** report
+economic accuracy or a verified holdout score because no independent
+human economic labels were supplied. Source overlap across pages is
+treated as invalid; future-dated sources are excluded.
+
+First inspect a real DB without launching the model:
+
+```bash
+git pull --ff-only origin feature/general-market-pressure-engine
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+bash scripts/news-learning-review.sh market-pressure-generalization \
+  --db "$DATA/news.sqlite3" --as-of 2026-11-19 \
+  --lookback-days 30 --pages 4 --preview
+```
+
+The independent next stage (ONLY after confirming candidate coverage and
+resource budget) is one bounded `--run` with a create-only new JSON output.
+It uses collected sources, not hard-coded example stories. Synthetic tests
+cover different macroeconomic, company, sector, transport and regulatory
+topics and adversarial cite/strength/target failures, but are **contract
+tests, not claims of independently validated real-model generalization**.
+
+**Review gate:** any future attempt to declare the new engine complete must
+sample independent unseen events and use external/human evidence-based
+assessment of economic coherence, factuality and directional conditions.
+Failure on fresh events is a system-level issue, not grounds to add
+article-specific exceptions or loop over only the old two articles.
