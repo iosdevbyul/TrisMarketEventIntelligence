@@ -47,6 +47,8 @@ class QuestionAxes(Strict):
         "NOT_OBSERVED", "IN_PROGRESS", "COMPLETED", "UNKNOWN",
     ]
     completionEvidenceWarning: str | None
+    primaryEvidenceSelectionMethod: str
+    baselinePrimaryEvidence: QuestionEvidenceRef
     directRecordAvailability: Literal[
         "NOT_OBSERVED", "PARTIAL", "DIRECTLY_OBSERVED", "UNKNOWN",
     ]
@@ -66,6 +68,9 @@ class QuestionAxes(Strict):
 
 
 class QuestionAnswer(Strict):
+    # Input-bound index of the strongest direct claim for this exact question.
+    # This is an evidence choice, not a model-created identifier.
+    primaryEvidenceIndex: int = Field(ge=0)
     # These are separate questions: was an agency decision taken, and was
     # the work specified by that decision actually completed? Neither is
     # inferred from the other.
@@ -117,9 +122,18 @@ product and aircraft scopes. Do not use later unseen information. Return
 exactly the required claim-index keys and allowed role values. No prose."""
 
 
-_ANSWER_SYSTEM = """Return exactly FIVE structured categorical fields.
+_ANSWER_SYSTEM = """Return exactly SIX structured fields.
 Do NOT generate prose or references. Analyze the specific research question
 using only screened cutoff-visible official claims.
+Select primaryEvidenceIndex from the zero-based screenedRelevantEvidence array,
+choosing the claim that most directly addresses the EXACT question and scope.
+Do not automatically prefer the newest claim or a role labeled
+INTERMEDIATE_DECISION over a RELATED_CONTEXT claim that more precisely
+answers the question. A notice about future documents is not the main
+evidence for a question about which formula was recommended; a generic
+increase in oversight is not the main evidence for a question about a
+production-line audit. Prefer the concrete object, action and target.
+The index must match an existing evidence item; never invent citations.
 
 regulatoryDecisionStage answers WHICH decision was actually documented:
 NOT_OBSERVED when no relevant agency decision has been announced,
@@ -379,14 +393,13 @@ def assess_question_axes(
             raise ComposedEvidenceError(
                 "COMPOSED_QUESTION_NO_RELEVANT_EVIDENCE"
             )
-        # Most recent strongest applicable action is chosen deterministically
-        # from model-screened roles. This is a provenance tie-breaker, not
-        # independent evidence that the relevance classification is correct.
+        # A deterministic baseline is retained for comparative audits only.
+        # The selected primary claim is model-authored and range-validated.
         priority = {
             "DIRECT_ANSWER": 3, "INTERMEDIATE_DECISION": 2,
             "RELATED_CONTEXT": 1,
         }
-        primary = max(
+        baseline_primary = max(
             relevant,
             key=lambda item: (
                 priority[item["role"]], item["sourceDate"],
@@ -406,20 +419,33 @@ def assess_question_axes(
             for claim, decision in zip(visible, decisions)
             if decision["role"] != "NOT_RELEVANT"
         ]
+        answer_schema = QuestionAnswer.model_json_schema()
+        answer_schema["properties"]["primaryEvidenceIndex"]["maximum"] = (
+            len(candidate_input) - 1
+        )
         raw_answer = provider.generate_json(
             system=_ANSWER_SYSTEM,
             user=json.dumps({
                 "asOfDateExclusive": packet["asOfDateExclusive"],
                 "question": question,
-                "screenedRelevantEvidence": candidate_input,
+                "screenedRelevantEvidence": [
+                    {"index": i, **item}
+                    for i, item in enumerate(candidate_input)
+                ],
                 "historicalPITVerified": False,
             }, ensure_ascii=False),
-            schema=QuestionAnswer.model_json_schema(),
+            schema=answer_schema,
         )
         answer_diagnostics.append(getattr(
             provider, "last_generation_diagnostics", None,
         ))
         answer = QuestionAnswer.model_validate_json(raw_answer)
+        if answer.primaryEvidenceIndex >= len(candidate_input):
+            raise ComposedEvidenceError(
+                "COMPOSED_PRIMARY_EVIDENCE_INDEX_INVALID:"
+                + question["questionId"]
+            )
+        primary = candidate_input[answer.primaryEvidenceIndex]
         if (
             answer.implementationCompletionStatus == "COMPLETED"
             and answer.requestedEvidenceStatus != "DIRECTLY_OBSERVED"
@@ -533,6 +559,11 @@ def assess_question_axes(
             "questionId": question["questionId"],
             "sourceId": primary["sourceId"],
             "claimId": primary["claimId"],
+            "primaryEvidenceSelectionMethod": "MODEL_INDEX_BOUND_TO_VISIBLE_CLAIM",
+            "baselinePrimaryEvidence": {
+                "sourceId": baseline_primary["sourceId"],
+                "claimId": baseline_primary["claimId"],
+            },
             "supportingEvidence": [
                 {"sourceId": x["sourceId"], "claimId": x["claimId"]}
                 for x in relevant
@@ -564,6 +595,11 @@ def assess_question_axes(
                 "sourceId": primary["sourceId"],
                 "claimId": primary["claimId"],
                 "role": primary["role"],
+            },
+            "baselinePrimaryClaimSelection": {
+                "sourceId": baseline_primary["sourceId"],
+                "claimId": baseline_primary["claimId"],
+                "role": baseline_primary["role"],
             },
             "roleAccuracyVerified": False,
             "omissionsSemanticallyVerified": False,
