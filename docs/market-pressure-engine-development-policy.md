@@ -387,3 +387,37 @@ uses `market-pressure-first-real-v7.json`.
 
 This is a structural contract and CI fix; successful economic reasoning
 by the real on-device Gemma4 model is **not yet established**.
+
+
+### Real v7: known validator codes, unknown offending model values
+
+The user ran real Gemma4 v7 on the private SQLite news DB. Two groups
+successfully extracted 2 Pakistan solar and 3 Nvidia source-grounded
+claims, respectively. Pakistan was rejected by
+`IMPACT_ENTITY_MISMATCH` (an `entities` name does not literally occur
+in the cited claim excerpts). Nvidia was rejected at `impacts.1` by
+`UNCERTAIN_DIRECTION_HAS_INDETERMINATE_STRENGTH` (the model's
+`direction=UNCERTAIN` must be paired with
+`strength=UNASSESSED`). Both are *real* downstream evidence/semantic
+guard failures, not a failure of Ollama schema transport or fact extraction.
+
+The ordinary result intentionally omits model-authored unverified entity
+names and full generated response. Do not guess WHICH entity failed, nor
+silently assign strength to an uncertain direction. **Before changing
+validation or asking the user to rerun the model**, inspect the ALREADY
+CREATED v7 private trace with this local-only, no-model-call command:
+
+```bash
+git pull --ff-only origin feature/general-market-pressure-engine
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python3 scripts/diagnose-market-pressure-trace.py \
+  "$DATA/market-pressure-first-real-v7.json.trace.jsonl"
+```
+
+It reports, per impact index and model call, exactly which model `entities`
+are absent from its own cited claim excerpts, source index integrity,
+whether its verbatim evidence excerpt is actually contained in the
+referenced claim, and any UNCERTAIN-vs-strength contradiction. It does
+NOT execute the model, edit the DB, replace the JSON or reveal full
+article text. The user can share this much smaller diagnosis for a
+precise corrective patch instead of repeatedly running v8/v9 blind.
