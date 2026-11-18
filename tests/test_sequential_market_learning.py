@@ -519,3 +519,35 @@ def test_publication_time_cannot_be_after_first_observed():
     row["publishedAtReported"] = "2026-11-14T00:00:00+00:00"
     with pytest.raises(ValueError, match="Publication later"):
         seq.publication_time(row)
+
+
+def test_title_only_news_does_not_generate_causal_lessons():
+    class NeverCallCritic:
+        def generate_json(self, **kwargs):
+            raise AssertionError("Headline-only cases must not generate lessons")
+    article = sample(44, datetime(2026, 11, 10, tzinfo=UTC))
+    article["summary"] = article["title"]
+    result = seq.next_lesson(
+        NeverCallCritic(), article,
+        {"impacts": [{"direction": "NEUTRAL", "priceProxy": "SPY"}]},
+        {"impacts": [{"status": "WRONG", "actualDirection": "NEGATIVE"}]},
+    )
+    assert result["lesson"] == ""
+    assert result["diagnosis"].startswith("INSUFFICIENT_ARTICLE_CONTENT")
+
+
+def test_at_exact_market_close_release_is_next_day(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ny = ZoneInfo("America/New_York")
+    def nytime(day, hour):
+        return datetime(2026, 11, day, hour, tzinfo=ny).astimezone(UTC)
+    monkeypatch.setattr(seq, "yahoo_bars", lambda *a, **kw: [
+        (nytime(12, 9), 100.0),
+        (nytime(13, 9), 105.0),
+        (nytime(16, 9), 110.0),
+    ])
+    output = seq.price_return(
+        object(), "SPY", nytime(13, 16), timedelta(hours=24), "1d",
+    )
+    assert output["baselinePrice"] == 105.0
+    assert output["outcomePrice"] == 110.0
