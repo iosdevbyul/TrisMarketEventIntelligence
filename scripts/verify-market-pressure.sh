@@ -7,7 +7,7 @@ AS_OF="${1:-$(date +%F)}"
 MODE="${2:---preview}"
 PERSIST="${3:-}"
 DB="${MARKET_EVENT_DB:-$DATA/news.sqlite3}"
-OUTPUT="${MARKET_PRESSURE_OUTPUT:-$DATA/market-pressure-first-real-v5.json}"
+OUTPUT="${MARKET_PRESSURE_OUTPUT:-$DATA/market-pressure-first-real-v6.json}"
 
 if [[ "$MODE" != "--preview" && "$MODE" != "--run" ]] || \
    [[ -n "$PERSIST" && "$PERSIST" != "--persist" ]] || \
@@ -41,8 +41,11 @@ if [[ "$MODE" == "--run" ]]; then
       groupReason: .proposalExplanation,
       factsCount: (.analysis.groundedClaims | length),
       analysisStatus: .analysis.status,
+      validationStage: .analysis.validationStage,
       validationCode: .analysis.validationCode,
+      validationReasonCode: .analysis.validationReasonCode,
       invalidFields: .analysis.invalidFields,
+      groundedClaims: .analysis.groundedClaims,
       noImpactAssessment: .analysis.noImpactAssessment,
       impacts: [.analysis.impacts[] | {
         market, sector, targetType, targetName, direction, strength,
