@@ -45,6 +45,7 @@ def evaluate_pages(
     for page in range(pages):
         candidates, inventory = recent_candidates(
             db, as_of=as_of, lookback_days=lookback_days, page=page,
+            sampling_mode="source_balanced",
         )
         source_ids = {row["evidence"].sourceId for row in candidates}
         overlap = seen.intersection(source_ids)
@@ -63,7 +64,7 @@ def evaluate_pages(
             result = discover_and_analyze(
                 db, as_of=as_of, lookback_days=lookback_days,
                 page=page, max_groups=2, reasoning_mode="causal",
-                provider=provider,
+                sampling_mode="source_balanced", provider=provider,
             )
             total_calls += result["modelCalls"]
             for event in result["events"]:
@@ -139,6 +140,7 @@ def evaluate_pages(
         "candidatePagesExamined": len(summaries),
         "uniqueEligibleSources": len(seen),
         "sourceKindCounts": source_kinds,
+        "samplingMode": "source_balanced",
         "distinctPublishers": len(source_publishers),
         "publisherCounts": dict(sorted(publisher_counts.items())),
         "candidateSourcesActuallyGrouped": len(observed_group_sources),
