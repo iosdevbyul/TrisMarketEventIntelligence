@@ -9,6 +9,9 @@ import argparse
 import html
 import json
 import sqlite3
+import os
+import tempfile
+from urllib.parse import urlsplit
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -119,6 +122,22 @@ def inspect(journal: Path, *, limit: int = 1000,
                 (x.get("targetType"), x.get("target")): x for x in predicted
             }
             outcomes = []
+            assessed_keys = {(x.get("targetType"), x.get("target")) for x in assessed}
+            for item in predicted:
+                if (item.get("targetType"), item.get("target")) not in assessed_keys:
+                    outcomes.append({
+                        "targetType": item.get("targetType"),
+                        "target": item.get("target"),
+                        "priceProxy": item.get("priceProxy"),
+                        "predictedDirection": item.get("direction"),
+                        "predictionReason": item.get("reason"),
+                        "observedDirection": None, "verdict": "UNVERIFIED",
+                        "absoluteReturn": None, "excessReturn": None,
+                        "benchmarkReturn": None, "baselineAt": None,
+                        "outcomeAt": None, "baselinePrice": None,
+                        "outcomePrice": None,
+                        "unverifiedReason": "NO_STORED_EVALUATION",
+                    })
             for result in assessed:
                 status = result.get("status", "UNVERIFIED")
                 count[status] += 1
@@ -335,19 +354,34 @@ def html_report(report: dict[str, Any]) -> str:
     """Generate a standalone, searchable report for opening in any browser."""
     esc = lambda value: html.escape(str(value if value is not None else "—"), quote=True)
     summary = report["summary"]
+    def article_link(url: Any) -> str:
+        if not isinstance(url, str):
+            return "원문 링크 없음"
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            return "원문 링크 없음"
+        return (f'<a href="{esc(url)}" rel="noopener noreferrer" '
+                f'target="_blank">원문 기사 열기</a>')
+
+    labels = {"SECTOR": "연결된 섹터", "STOCK": "연결된 종목",
+              "MARKET": "시장·지수"}
+    directions = {"POSITIVE": "상승", "NEGATIVE": "하락", "NEUTRAL": "중립"}
     sections = []
     for record in report["articles"]:
-        outcomes = []
+        grouped: dict[str, list[str]] = {kind: [] for kind in labels}
         for impact in record["outcomes"]:
             status = impact["verdict"]
             cls = "good" if status == "CORRECT" else (
                 "bad" if status == "WRONG" else "unknown"
             )
-            outcomes.append(
+            category = impact.get("targetType")
+            if category not in grouped:
+                category = "MARKET"
+            grouped[category].append(
                 "<tr>"
                 f"<td>{esc(impact['target'])} ({esc(impact['priceProxy'])})</td>"
-                f"<td>{esc(impact['predictedDirection'])}</td>"
-                f"<td>{esc(impact['observedDirection'])}</td>"
+                f"<td>{esc(directions.get(impact['predictedDirection'], '미분석'))}</td>"
+                f"<td>{esc(directions.get(impact['observedDirection'], '검증 불가'))}</td>"
                 f"<td>{esc(_percent(impact['absoluteReturn']))}</td>"
                 f"<td>{esc(_percent(impact['excessReturn']))}</td>"
                 f'<td><span class="{cls}">{esc(status)}</span></td>'
@@ -366,9 +400,17 @@ def html_report(report: dict[str, Any]) -> str:
                 f"<b>검증 불가 원인</b>: {esc(impact['unverifiedReason'])}"
                 "</td></tr>"
             )
-        if not outcomes:
-            outcomes.append(
-                "<tr><td colspan='6'>예측 대상이 없습니다. 정답으로 집계하지 않습니다.</td></tr>"
+        tables = []
+        for kind, label in labels.items():
+            rows = "".join(grouped[kind]) or (
+                "<tr><td colspan='6'>연결된 대상 없음</td></tr>"
+            )
+            tables.append(
+                f"<h3>{esc(label)} ({len(grouped[kind])})</h3>"
+                "<table><thead><tr><th>대상 (가격 프록시)</th><th>AI 예측</th>"
+                "<th>실제 방향</th><th>수익률</th><th>시장 대비</th>"
+                "<th>저장된 판정</th></tr></thead><tbody>"
+                + rows + "</tbody></table>"
             )
         applied = "".join(
             f"<li>R{esc(r['id'])} v{esc(r['version'])} "
@@ -383,12 +425,10 @@ def html_report(report: dict[str, Any]) -> str:
             "<div class='body'>"
             f"<p><b>관측 시각:</b> {esc(record['firstObservedAt'])} · "
             f"<b>출처:</b> {esc(record['source'])}</p>"
-            f"<p><b>원문:</b> {esc(record['articleSummary'])}</p>"
+            f"<p><b>기사 원문 링크:</b> {article_link(record['sourceUrl'])}</p>"
+            f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
             f"<p><b>Gemma 분석:</b> {esc(record['originalPredictionSummary'])}</p>"
-            "<table><thead><tr><th>종목·섹터</th><th>AI 예측</th>"
-            "<th>실제 방향</th><th>수익률</th><th>시장 대비</th>"
-            "<th>저장된 판정</th></tr></thead><tbody>"
-            + "".join(outcomes) + "</tbody></table>"
+            + "".join(tables)
             f"<p><b>실패 원인 진단:</b> {esc(record['diagnosis'])}</p>"
             f"<p><b>다음 기사 수정 규칙:</b> {esc(record['correctiveRule'])}</p>"
             f"<p><b>해당 분석에 적용한 규칙:</b></p><ul>{applied}</ul>"
@@ -456,10 +496,24 @@ def main() -> None:
         if args.output:
             if args.output.is_symlink() or not args.output.parent.is_dir():
                 raise ValueError("Output parent must exist; symlinks prohibited")
-            with args.output.open("x", encoding="utf-8") as f:
-                f.write(result)
-                if not result.endswith("\n"):
-                    f.write("\n")
+            temp_name = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", dir=args.output.parent,
+                    prefix=".sequential-audit-", suffix=".tmp", delete=False,
+                ) as f:
+                    temp_name = f.name
+                    f.write(result)
+                    if not result.endswith("\n"):
+                        f.write("\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                if args.output.is_symlink():
+                    raise ValueError("Symlink output prohibited")
+                os.replace(temp_name, args.output)
+            finally:
+                if temp_name is not None and os.path.exists(temp_name):
+                    os.unlink(temp_name)
         else:
             print(result)
     except (ValueError, OSError, sqlite3.Error, KeyError, TypeError) as exc:
