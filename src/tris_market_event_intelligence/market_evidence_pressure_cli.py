@@ -26,6 +26,7 @@ def main() -> None:
     source.add_argument("--db", type=Path)
     parser.add_argument("--article-id", action="append", type=int, default=[])
     parser.add_argument("--economic-event-id", action="append", type=int, default=[])
+    parser.add_argument("--indicator-release-id", action="append", type=int, default=[])
     parser.add_argument("--event-id", type=str)
     parser.add_argument("--subject", type=str)
     parser.add_argument("--as-of", type=str)
@@ -45,9 +46,10 @@ def main() -> None:
             as_of=args.as_of,
             article_ids=tuple(args.article_id),
             economic_event_ids=tuple(args.economic_event_id),
+            indicator_release_ids=tuple(args.indicator_release_id),
         )
     else:
-        if args.article_id or args.economic_event_id or any(
+        if args.article_id or args.economic_event_id or args.indicator_release_id or any(
             (args.event_id, args.subject, args.as_of)
         ):
             parser.error("--packet cannot be combined with DB selection flags")
