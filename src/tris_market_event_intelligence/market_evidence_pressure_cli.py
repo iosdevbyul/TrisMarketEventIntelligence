@@ -15,6 +15,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     MarketEvidencePacket,
     analyze_market_evidence,
 )
+from tris_market_event_intelligence.market_pressure_reasoning import analyze_pressure_two_stage
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 
@@ -30,6 +31,8 @@ def main() -> None:
     parser.add_argument("--as-of", type=str)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--single-stage-compat", action="store_true",
+                        help="Use prior one-call impact schema without strength")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--run", action="store_true")
@@ -83,7 +86,10 @@ def main() -> None:
         ),
     )
     runtime = build_runtime(cfg, confirm_model=True)
-    result = analyze_market_evidence(packet, runtime)
+    result = (
+        analyze_market_evidence(packet, runtime)
+        if args.single_stage_compat else analyze_pressure_two_stage(packet, runtime)
+    )
     with args.output.open("x", encoding="utf-8") as file:
         json.dump(result, file, ensure_ascii=False, indent=2)
         file.write("\n")
@@ -91,6 +97,7 @@ def main() -> None:
         "status": result["status"],
         "visibleSources": len(result["visibleSourceIds"]),
         "impactHypotheses": len(result["impacts"]),
+        "strengths": [item.get("strength", "NOT_SCORED") for item in result["impacts"]],
         "modelCalls": result["modelCalls"],
         "historicalPITVerified": False,
         "outputCreated": True,
