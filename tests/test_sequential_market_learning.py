@@ -60,6 +60,7 @@ def sample(article_id, date):
         "title": "Chip manufacturing supply event",
         "summary": "A reported production shift could influence supplier revenue",
         "firstObservedAt": date.isoformat(),
+        "publishedAtReported": date.isoformat(),
     }
 
 
@@ -449,3 +450,72 @@ def test_malformed_ticker_recovery_rejects_other_invalid_fields():
                 "earlierRelatedArticles": [],
             },
         })
+
+
+def test_historical_article_uses_publication_time_not_ingestion(monkeypatch, tmp_path):
+    published = datetime(2026, 5, 26, 18, tzinfo=UTC)
+    ingested = datetime(2026, 11, 13, 20, tzinfo=UTC)
+    rows = [sample(i, published + timedelta(days=i)) for i in range(1, 11)]
+    for row in rows:
+        row["firstObservedAt"] = ingested.isoformat()
+    monkeypatch.setattr(seq, "historical_news_cohort",
+                        lambda **kwargs: {"items": list(reversed(rows))})
+    articles, reserved = seq.load_articles(
+        tmp_path / "news.sqlite3", 8, ingested + timedelta(days=1),
+    )
+    assert len(articles) == 8
+    assert reserved == 2
+    assert [r["articleId"] for r in articles] == list(range(1, 9))
+    assert seq.publication_time(articles[0]) < ingested
+
+
+def test_reaction_price_uses_first_release_day_close_and_prior_close(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ny = ZoneInfo("America/New_York")
+    def local(day, hour):
+        return datetime(2026, 11, day, hour, tzinfo=ny).astimezone(UTC)
+    bars = [
+        (local(12, 9), 100.0),
+        (local(13, 9), 103.0),
+        (local(16, 9), 101.0),
+        (local(17, 9), 105.0),
+    ]
+    monkeypatch.setattr(seq, "yahoo_bars",
+                        lambda *args, **kwargs: bars)
+    intraday = seq.price_return(
+        object(), "SPY", local(13, 11), timedelta(hours=24), "1d",
+    )
+    assert intraday["baselinePrice"] == 100.0
+    assert intraday["outcomePrice"] == 103.0
+    after_close = seq.price_return(
+        object(), "SPY", local(13, 17), timedelta(hours=24), "1d",
+    )
+    assert after_close["baselinePrice"] == 103.0
+    assert after_close["outcomePrice"] == 101.0
+    weekend = seq.price_return(
+        object(), "SPY", local(14, 11), timedelta(hours=24), "1d",
+    )
+    assert weekend["baselinePrice"] == 103.0
+    assert weekend["outcomePrice"] == 101.0
+
+
+def test_older_original_publication_is_eligible_even_if_backfilled(monkeypatch, tmp_path):
+    early = datetime(2026, 1, 5, tzinfo=UTC)
+    rows = [sample(i, early + timedelta(days=i)) for i in range(1, 12)]
+    for row in rows:
+        row["firstObservedAt"] = datetime(2026, 11, 13, tzinfo=UTC).isoformat()
+        row["summary"] = row["title"]
+    monkeypatch.setattr(seq, "historical_news_cohort",
+                        lambda **kwargs: {"items": rows})
+    selected, _ = seq.load_articles(
+        tmp_path / "news.sqlite3", 8,
+        datetime(2026, 11, 19, tzinfo=UTC),
+    )
+    assert len(selected) == 8
+
+
+def test_publication_time_cannot_be_after_first_observed():
+    row = sample(1, datetime(2026, 11, 13, tzinfo=UTC))
+    row["publishedAtReported"] = "2026-11-14T00:00:00+00:00"
+    with pytest.raises(ValueError, match="Publication later"):
+        seq.publication_time(row)
