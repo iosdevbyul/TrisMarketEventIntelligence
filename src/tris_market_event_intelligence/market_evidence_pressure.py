@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import UTC, date, datetime, time
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -33,6 +33,7 @@ class MarketEvidence(Strict):
     sourceId: str = Field(min_length=1)
     kind: Literal["NEWS", "ECONOMIC_INDICATOR"]
     publishedDate: date
+    publishedAt: datetime | None = None
     sourceName: str = Field(min_length=1)
     sourceUrl: str
     excerpt: str = Field(min_length=20, max_length=1400)
@@ -45,6 +46,12 @@ class MarketEvidence(Strict):
 
     @model_validator(mode="after")
     def validate_source(self) -> MarketEvidence:
+        if self.publishedAt is not None:
+            if (self.publishedAt.tzinfo is None
+                    or self.publishedAt.utcoffset() is None):
+                raise ValueError("MARKET_SOURCE_TIMEZONE_REQUIRED")
+            if self.publishedAt.astimezone(UTC).date() != self.publishedDate:
+                raise ValueError("MARKET_SOURCE_UTC_DATE_MISMATCH")
         url = urlsplit(self.sourceUrl)
         if (
             url.scheme != "https" or not url.hostname
@@ -67,10 +74,19 @@ class MarketEvidencePacket(Strict):
     eventId: str = Field(min_length=1)
     subject: str = Field(min_length=1)
     asOfDateExclusive: date
+    asOfTimestampExclusive: datetime | None = None
     evidences: list[MarketEvidence] = Field(min_length=1, max_length=24)
 
     @model_validator(mode="after")
     def check_ids(self) -> MarketEvidencePacket:
+        if self.asOfTimestampExclusive is not None:
+            cutoff = self.asOfTimestampExclusive
+            if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+                raise ValueError("MARKET_CUTOFF_TIMEZONE_REQUIRED")
+            if cutoff.astimezone(UTC).date() != self.asOfDateExclusive:
+                raise ValueError("MARKET_CUTOFF_UTC_DATE_MISMATCH")
+            if any(source.publishedAt is None for source in self.evidences):
+                raise ValueError("PRECISE_REPLAY_REQUIRES_SOURCE_TIMESTAMPS")
         ids = [source.sourceId for source in self.evidences]
         if len(ids) != len(set(ids)):
             raise ValueError("MARKET_EVIDENCE_SOURCE_IDS_DUPLICATED")
@@ -83,14 +99,31 @@ def _digest(obj: dict) -> str:
     ).hexdigest()
 
 
+def cutoff_visible(packet: MarketEvidencePacket, source: MarketEvidence) -> bool:
+    """Timestamp-level cutoff with explicit UTC date-only legacy semantics."""
+    cutoff = packet.asOfTimestampExclusive or datetime.combine(
+        packet.asOfDateExclusive, time.min, tzinfo=UTC,
+    )
+    if source.publishedAt is not None:
+        return source.publishedAt.astimezone(UTC) < cutoff.astimezone(UTC)
+    # Date-only sources cannot enter a precise cutoff.
+    if packet.asOfTimestampExclusive is not None:
+        return False
+    return source.publishedDate < packet.asOfDateExclusive
+
+
 def _source_packet(packet: MarketEvidencePacket) -> dict:
     return {
         "eventId": packet.eventId,
         "asOfDateExclusive": packet.asOfDateExclusive.isoformat(),
+        "asOfTimestampExclusive": (
+            packet.asOfTimestampExclusive.isoformat()
+            if packet.asOfTimestampExclusive is not None else None
+        ),
         "evidences": [
             item.model_dump(mode="json")
             for item in packet.evidences
-            if item.publishedDate < packet.asOfDateExclusive
+            if cutoff_visible(packet, item)
         ],
     }
 
