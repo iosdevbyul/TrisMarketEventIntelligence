@@ -528,15 +528,18 @@ def run_replay(
             ]
             assessment["generationTerminationAnalysis"] = diagnose_termination(
                 stage_two_generation,
-                narrative=" ".join(
-                    row["explanation"] for row in
-                    assessment["independentQuestionAxes"]["questionAssessments"]
-                ),
+                narrative="",
                 schema_character_limit=None,
             )
             assessment["generationTerminationAnalysis"]["callRole"] = (
-                "QUESTION_AXES_GENERATION"
+                "QUESTION_STATUS_CLASSIFICATION_ONLY"
             )
+            assessment["generationTerminationAnalysis"][
+                "narrativeIsModelAuthored"
+            ] = False
+            assessment["generationTerminationAnalysis"][
+                "narrativeAssembly"
+            ] = "VERBATIM_VISIBLE_SOURCE_CLAIMS"
         else:
             assessment["generationTerminationAnalysis"] = diagnose_termination(
                 stage_two_generation,
