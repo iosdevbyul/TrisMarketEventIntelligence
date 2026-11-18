@@ -124,11 +124,15 @@ def test_no_feedback_on_unavailable_price(monkeypatch, tmp_path):
     assert len(fake.prompts) == 1
 
 
-def test_learning_rejects_overlapping_price_outcomes(monkeypatch, tmp_path):
+def test_retrospective_learning_continues_across_overlapping_articles(
+    monkeypatch, tmp_path,
+):
     first = datetime(2025, 1, 1, tzinfo=UTC)
-    articles = [sample(10, first), sample(11, first + timedelta(days=6))]
-    monkeypatch.setattr(seq, "load_articles",
-                        lambda db, count, cutoff: (articles, 0))
+    articles = [sample(10, first), sample(11, first + timedelta(hours=1))]
+    monkeypatch.setattr(
+        seq, "load_articles", lambda db, count, cutoff: (articles, 0),
+    )
+
     def future_price(client, symbol, observed, horizon, interval):
         return {
             "return": 0.05,
@@ -137,8 +141,31 @@ def test_learning_rejects_overlapping_price_outcomes(monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr(seq, "price_return", future_price)
-    with pytest.raises(ValueError, match="outcome overlaps"):
-        seq.run(args(tmp_path), model=ScriptedModel(), client=object())
+    fake = ScriptedModel()
+    result = seq.run(args(tmp_path), model=fake, client=object())
+    assert result["articlesCompleted"] == 2
+    assert result["pointInTimeCertified"] is False
+    assert result["evaluationMode"] == "RETROSPECTIVE_SEQUENTIAL_FEEDBACK"
+    assert "pricing power" in fake.prompts[2]["priorFeedbackLessons"][0]
+
+
+def test_same_day_articles_are_not_dropped_by_selection(monkeypatch, tmp_path):
+    first = datetime(2026, 11, 1, tzinfo=UTC)
+    entries = [sample(i + 1, first + timedelta(minutes=i)) for i in range(20)]
+    for row in entries:
+        row["textSha256"] = str(row["articleId"])
+        row["publishedAtReported"] = row["firstObservedAt"]
+    monkeypatch.setattr(
+        seq, "historical_news_cohort",
+        lambda **kwargs: {"items": entries},
+    )
+    selected, holdout = seq.load_articles(
+        tmp_path / "source.sqlite3", 10, first + timedelta(days=1),
+    )
+    assert len(selected) == 10
+    assert len({a["articleId"] for a in selected}) == 10
+    assert holdout == 4
+    assert [a["articleId"] for a in selected] == list(range(1, 11))
 
 
 def test_gemma_case_normalization_and_retry():
