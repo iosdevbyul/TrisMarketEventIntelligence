@@ -230,6 +230,13 @@ def _parse_impact_response(raw: str) -> tuple[PressureAnalysis, str | None]:
         raise TypeError("IMPACT_RESPONSE_NOT_OBJECT")
     original = payload.get("noImpactCategory")
     raw_label: str | None = None
+    # Ollama's flat schema represents optional fields as empty strings.
+    # Empty placeholders are absence, not conflicting abstention claims.
+    # An incomplete NON-empty abstention remains an error.
+    for key in ("noImpactCategory", "noImpactExplanation"):
+        if payload.get(key) == "":
+            payload[key] = None
+    original = payload.get("noImpactCategory")
     if isinstance(original, str) and original not in _ABSTENTION_CODES:
         # This is ONLY a category normalization. No direction, intensity,
         # evidence, target, or economic mechanism is repaired or inferred.
