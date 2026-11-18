@@ -50,6 +50,16 @@ def synthetic_runs(reference: dict) -> dict:
                     "regulatoryDecisionStage": case["decision"][0],
                     "requestedEvidenceStatus": case["evidence"][0],
                     "implementationCompletionStatus": case["completion"][0],
+                    **({
+                        "directRecordAvailability": case[
+                            "directRecordAvailability"
+                        ][0],
+                        "indirectRegulatoryProgress": case[
+                            "indirectRegulatoryProgress"
+                        ][0],
+                        "modelReportedImplementationCompletionStatus":
+                            "NOT_OBSERVED",
+                    } if "directRecordAvailability" in case else {}),
                 })
             steps.append({
                 "asOfDateExclusive": date,
@@ -136,3 +146,61 @@ def test_scoring_fails_on_future_leakage_and_missing_case() -> None:
     missing_report = score_runs(reference, missing_runs)
     assert missing_report["counts"]["missingCases"] == 1
     assert missing_report["status"] == "NOT_YET_TRUSTWORTHY"
+
+
+def benchmark_v2() -> dict:
+    return json.loads(Path(
+        "research/historical-semantic-benchmark-v2.json"
+    ).read_text(encoding="utf-8"))
+
+
+def test_v2_separate_evidence_axes_do_not_mask_model_overclaims() -> None:
+    reference = benchmark_v2()
+    runs = synthetic_runs(reference)
+    report = score_runs(reference, runs)
+    assert report["schemaVersion"] == "historical_semantic_score_v2"
+    assert report["rates"]["directRecordAccuracy"] == 1
+    assert report["rates"]["indirectProgressAccuracy"] == 1
+    assert report["rates"]["modelCompletionClaimRate"] == 0
+    assert report["status"] == "NOT_YET_TRUSTWORTHY"
+
+    late = next(
+        x for x in runs["FDA"]["replaySteps"]
+        if x["asOfDateExclusive"] == "2023-10-04"
+    )
+    formula = next(
+        x for x in late["assessment"]["independentQuestionAxes"][
+            "questionAssessments"
+        ] if x["questionId"] == "fda-2023-xbb15-authorized-formula"
+    )
+    formula["modelReportedImplementationCompletionStatus"] = "COMPLETED"
+    formula["implementationCompletionStatus"] = "UNKNOWN"
+    after = score_runs(reference, runs)
+    case = next(x for x in after["caseResults"]
+                if x["id"] == "fda-late-formula")
+    assert "MODEL_UNVERIFIED_COMPLETION_CLAIM" in case["errors"]
+    assert "COMPLETION_SAFETY_FAILURE" not in case["errors"]
+    assert after["rates"]["modelCompletionClaimRate"] == 0.125
+    assert after["rates"]["completionSafety"] == 1
+    assert not after["thresholdChecks"]["modelCompletionClaimRate"]
+
+
+def test_v2_direct_and_indirect_errors_are_independent() -> None:
+    reference = benchmark_v2()
+    runs = synthetic_runs(reference)
+    late = next(
+        x for x in runs["FDA"]["replaySteps"]
+        if x["asOfDateExclusive"] == "2023-10-04"
+    )
+    filings = next(
+        x for x in late["assessment"]["independentQuestionAxes"][
+            "questionAssessments"
+        ] if x["questionId"] == "fda-2023-manufacturer-filings-evidence"
+    )
+    filings["directRecordAvailability"] = "DIRECTLY_OBSERVED"
+    filings["indirectRegulatoryProgress"] = "OBSERVED"
+    report = score_runs(reference, runs)
+    case = next(x for x in report["caseResults"]
+                if x["id"] == "fda-late-filings")
+    assert "DIRECT_RECORD_STATUS_MISMATCH" in case["errors"]
+    assert "INDIRECT_PROGRESS_STATUS_MISMATCH" not in case["errors"]
