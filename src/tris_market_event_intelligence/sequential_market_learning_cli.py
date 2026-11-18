@@ -72,8 +72,24 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
         kind, target, direction = (
             item.get("targetType"), item.get("target"), item.get("direction")
         )
+        # Models sometimes return lowercase values or a familiar synonym.
+        # Normalize only unambiguous labels, never invent a direction.
+        if isinstance(kind, str):
+            kind = kind.strip().upper()
+        if isinstance(direction, str):
+            direction = direction.strip().upper()
+        kind = {"COMPANY": "STOCK", "INDEX": "MARKET", "ETF": "STOCK"}.get(
+            kind, kind,
+        )
+        direction = {
+            "BULLISH": "POSITIVE", "BEARISH": "NEGATIVE",
+            "UP": "POSITIVE", "DOWN": "NEGATIVE",
+            "NEUTRAL": "NEUTRAL", "NO_IMPACT": "NEUTRAL",
+        }.get(direction, direction)
         if kind not in {"STOCK", "SECTOR", "MARKET"} or direction not in DIRECTIONS:
-            raise ValueError("Invalid target type or direction")
+            raise ValueError(
+                f"Invalid target type/direction: {kind!r}/{direction!r}"
+            )
         if not isinstance(target, str):
             raise TypeError("Missing target")
         target = target.upper().strip()
@@ -157,6 +173,25 @@ def init_journal(db: sqlite3.Connection) -> None:
       seq INTEGER PRIMARY KEY, lesson TEXT NOT NULL, diagnosis TEXT NOT NULL
     );
     """)
+
+
+def predict_with_repair(model: Any, payload: dict) -> dict:
+    """Retry malformed model output before writing an immutable prediction."""
+    last_error = "UNKNOWN"
+    for attempt in range(3):
+        request = dict(payload)
+        if attempt:
+            request["formatCorrection"] = (
+                "The previous response was invalid: " + last_error +
+                ". Return ONLY the required JSON with targetType STOCK, "
+                "SECTOR or MARKET; direction POSITIVE, NEGATIVE or NEUTRAL. "
+                "Use an empty impacts array when unable to identify a target."
+            )
+        try:
+            return canonical_prediction(model_json(model, SYSTEM, request))
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            last_error = str(exc)[:180]
+    raise ValueError("MODEL_PREDICTION_INVALID_AFTER_3_ATTEMPTS: " + last_error)
 
 
 def model_json(model: Any, system: str, payload: Any) -> dict:
@@ -330,7 +365,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         "SELECT lesson FROM lessons WHERE seq<? ORDER BY seq DESC LIMIT 12",
                         (index,),
                     )]
-                    proposed = model_json(model, SYSTEM, {
+                    prediction = predict_with_repair(model, {
                         "article": {
                             "title": article["title"], "summary": article["summary"],
                             "firstObservedAt": article["firstObservedAt"],
@@ -338,7 +373,6 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         },
                         "priorFeedbackLessons": list(reversed(lessons)),
                     })
-                    prediction = canonical_prediction(proposed)
                     db.execute(
                         "INSERT INTO steps VALUES (?,?,?,?,?,?,?,?)",
                         (index, article["articleId"], observed.isoformat(),
