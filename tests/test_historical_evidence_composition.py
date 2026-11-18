@@ -289,3 +289,43 @@ def test_invalid_question_answer_identifies_question_and_field() -> None:
             fda(), date(2023, 6, 17), provider,
             question_tracks=tracks(), reasoning_mode="staged-composed",
         )
+
+
+class OnceIncompleteQuestionProvider(ComposedProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed_question_once = False
+
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if ("regulatoryActionProgress" in schema["properties"]
+                and not self.failed_question_once):
+            self.failed_question_once = True
+            self.calls += 1
+            self.inputs.append(json.loads(user))
+            return json.dumps({
+                "regulatoryActionProgress": "ANNOUNCED",
+                "requestedEvidenceStatus": "PARTIAL",
+                "explanation": (
+                    "The source describes a specific regulator action "
+                    "without final completion information"
+                ),
+                "remainingEvidence": (
+                    "The final decision records were not present in "
+                    "the dated official release."
+                ),
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_one_invalid_question_answer_is_regenerated_and_counted() -> None:
+    provider = OnceIncompleteQuestionProvider()
+    step = chain.run_replay(
+        fda(), date(2023, 6, 17), provider,
+        question_tracks=tracks(), reasoning_mode="staged-composed",
+    )
+    assert provider.failed_question_once
+    assert step["modelCalls"] == provider.calls == 10
+    diagnostics = step["assessment"]["independentQuestionAxes"]["generationDiagnostics"]
+    assert len(diagnostics["relevanceScreenCalls"]) == 2
+    assert len(diagnostics["questionAnswerCalls"]) == 3
+    assert step["assessment"]["semanticAccuracyVerified"] is False
