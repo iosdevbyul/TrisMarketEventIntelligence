@@ -17,6 +17,10 @@ from tris_market_event_intelligence.market_event_discovery import (
     recent_candidates,
 )
 from tris_market_event_intelligence.market_pressure_results_store import MarketPressureResultStore
+from tris_market_event_intelligence.market_pressure_trace import (
+    MarketPressureTrace,
+    TracedMarketProvider,
+)
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
 
@@ -30,6 +34,8 @@ def main() -> None:
     parser.add_argument("--max-groups", type=int, default=2)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--trace", type=Path,
+                        help="Create-only sensitive private JSONL model and validation trace")
     parser.add_argument("--persist", action="store_true",
                         help="Explicitly persist completed review-only results to existing DB")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -58,6 +64,10 @@ def main() -> None:
         parser.error("OUTPUT_ALREADY_EXISTS")
     if not 1 <= args.max_groups <= 3:
         parser.error("--max-groups must be 1..3")
+    if args.trace is not None and (
+        args.trace.exists() or args.trace.is_symlink()
+    ):
+        parser.error("TRACE_ALREADY_EXISTS")
 
     settings = replace(
         LLMSettings.from_environment(explicit=True),
@@ -67,49 +77,77 @@ def main() -> None:
             max_output_tokens=4096,
         ),
     )
-    provider = build_runtime(settings, confirm_model=True)
+    trace = MarketPressureTrace(args.trace) if args.trace else None
     try:
-        result = discover_and_analyze(
-            args.db, as_of=args.as_of, provider=provider,
-            lookback_days=args.lookback_days, max_groups=args.max_groups,
-            as_of_time=args.as_of_time,
+        if trace is not None:
+            trace.record(
+                "RUN_STARTED", model=args.model,
+                db=str(args.db), cutoff=args.as_of.isoformat(),
+                outputPath=str(args.output),
+                writesEnabled=args.persist,
+            )
+        provider = build_runtime(settings, confirm_model=True)
+        observed = TracedMarketProvider(provider, trace) if trace else provider
+        try:
+            result = discover_and_analyze(
+                args.db, as_of=args.as_of, provider=observed,
+                lookback_days=args.lookback_days, max_groups=args.max_groups,
+                as_of_time=args.as_of_time, page=args.page,
+            )
+        except LLMExecutionError as exc:
+            response = getattr(exc.__cause__, "response", None)
+            status = getattr(response, "status_code", None)
+            if trace is not None:
+                trace.validation_failure(
+                    stage="MODEL_TRANSPORT", error=exc,
+                )
+            print(json.dumps({
+                "status": "MODEL_EXECUTION_FAILED",
+                "code": exc.code,
+                "httpStatus": status if isinstance(status, int) else None,
+                "outputCreated": False,
+                "databaseModified": False,
+                "tracePath": str(args.trace) if trace else None,
+            }))
+            raise SystemExit(2) from exc
+        with args.output.open("x", encoding="utf-8") as file:
+            json.dump(result, file, ensure_ascii=False, indent=2)
+            file.write("\n")
+        stored = None
+        persist_blocked = (
+            args.persist and result["status"] != "CANDIDATE_EVENTS_REQUIRE_REVIEW"
         )
-    except LLMExecutionError as exc:
-        # Preserve safe status codes without logging raw financial news,
-        # credentials, server response bodies or full model prompts.
-        response = getattr(exc.__cause__, "response", None)
-        status = getattr(response, "status_code", None)
+        if args.persist and result["events"] and not persist_blocked:
+            store = MarketPressureResultStore(args.db)
+            store.initialize()
+            stored = store.save(result)
+        if trace is not None:
+            trace.record(
+                "RUN_FINISHED", status=result["status"],
+                modelCalls=result["modelCalls"],
+                eventCount=len(result["events"]),
+                acceptedImpactCount=sum(
+                    len(event["analysis"]["impacts"])
+                    for event in result["events"]
+                ),
+                persisted=stored,
+            )
         print(json.dumps({
-            "status": "MODEL_EXECUTION_FAILED",
-            "code": exc.code,
-            "httpStatus": status if isinstance(status, int) else None,
-            "outputCreated": False,
-            "databaseModified": False,
-            "nextAction": (
-                "Check Ollama readiness and JSON compatibility; no "
-                "successful market-pressure analysis was saved."
-            ),
+            "status": result["status"],
+            "eventGroups": len(result["events"]),
+            "modelCalls": result["modelCalls"],
+            "outputCreated": True,
+            "persisted": stored,
+            "persistBlockedInvalidModelOutput": bool(persist_blocked),
+            "tracePath": str(args.trace) if trace else None,
         }))
-        raise SystemExit(2) from exc
-    with args.output.open("x", encoding="utf-8") as file:
-        json.dump(result, file, ensure_ascii=False, indent=2)
-        file.write("\n")
-    stored = None
-    persist_blocked = (
-        args.persist and result["status"] != "CANDIDATE_EVENTS_REQUIRE_REVIEW"
-    )
-    if args.persist and result["events"] and not persist_blocked:
-        store = MarketPressureResultStore(args.db)
-        store.initialize()
-        stored = store.save(result)
-    print(json.dumps({
-        "status": result["status"],
-        "eventGroups": len(result["events"]),
-        "modelCalls": result["modelCalls"],
-        "outputCreated": True,
-        "persisted": stored,
-        "persistBlockedInvalidModelOutput": bool(persist_blocked),
-    }))
+    except Exception as exc:
+        if trace is not None:
+            trace.validation_failure(stage="RUN_FAILURE", error=exc)
+        raise
+    finally:
+        if trace is not None:
+            trace.close()
 
 
 if __name__ == "__main__":
