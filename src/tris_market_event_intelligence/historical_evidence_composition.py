@@ -371,20 +371,44 @@ def assess_question_axes(
             provider, "last_generation_diagnostics", None,
         ))
         answer = QuestionAnswer.model_validate_json(raw_answer)
-        invalid = (
-            "EXPLANATION_INCOMPLETE" if not _complete(answer.explanation)
-            else "REMAINING_EVIDENCE_INCOMPLETE"
-            if not _complete(answer.remainingEvidence)
-            else "EXPLANATION_MARKET_OUTCOME"
-            if is_observed_market_result(answer.explanation)
-            else "REMAINING_EVIDENCE_MARKET_OUTCOME"
-            if is_observed_market_result(answer.remainingEvidence)
-            else None
-        )
+
+        def invalid_field(value: QuestionAnswer) -> str | None:
+            if not _complete(value.explanation):
+                return "EXPLANATION_INCOMPLETE"
+            if not _complete(value.remainingEvidence):
+                return "REMAINING_EVIDENCE_INCOMPLETE"
+            if is_observed_market_result(value.explanation):
+                return "EXPLANATION_MARKET_OUTCOME"
+            if is_observed_market_result(value.remainingEvidence):
+                return "REMAINING_EVIDENCE_MARKET_OUTCOME"
+            return None
+
+        invalid = invalid_field(answer)
         if invalid is not None:
-            # Never alter model prose or convert an invalid answer to success.
-            # Include the question and failed field so genuine Ollama failures
-            # are actionable without logging entire raw model responses.
+            # Exactly one evidence-bounded retry. Never patch model text,
+            # silently accept invalid prose, or replace source references.
+            retry_raw = provider.generate_json(
+                system=_ANSWER_SYSTEM + (
+                    "\nThe prior draft failed field validation: "
+                    + invalid
+                    + ". Generate a fresh, complete, fully punctuated "
+                    "answer within schema limits using ONLY the same "
+                    "screened evidence. Do not mention market outcomes."
+                ),
+                user=json.dumps({
+                    "asOfDateExclusive": packet["asOfDateExclusive"],
+                    "question": question,
+                    "screenedRelevantEvidence": candidate_input,
+                    "historicalPITVerified": False,
+                }, ensure_ascii=False),
+                schema=QuestionAnswer.model_json_schema(),
+            )
+            answer_diagnostics.append(getattr(
+                provider, "last_generation_diagnostics", None,
+            ))
+            answer = QuestionAnswer.model_validate_json(retry_raw)
+            invalid = invalid_field(answer)
+        if invalid is not None:
             raise ComposedEvidenceError(
                 "COMPOSED_QUESTION_ANSWER_INVALID:"
                 + question["questionId"] + ":" + invalid
