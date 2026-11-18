@@ -60,6 +60,38 @@ establish minute-level causality. Missing quotes produce `UNVERIFIED`, never
 an assumed correct answer or fabricated lesson. Research-generated lessons
 are proposed prompt adaptations, not certified improvements.
 
+## Article-by-article prediction audit (read-only)
+
+Do not judge performance from `{"correct":0,"wrong":4}` alone. The
+article audit shows what Gemma4 *actually predicted*, the source headline,
+affected ticker or sector, original rationale, price proxy, observed direction,
+absolute and benchmark-relative returns, baseline and outcome timestamps,
+the stored verdict, diagnosis and next corrective rule. It also records which
+memory rules influenced each prediction when that data was saved.
+
+Run this against the **existing journal without re-running the LLM**:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.sequential_article_audit_cli \
+  --journal "$DATA/sequential-learning-test-v1.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --limit 1000 \
+  --format markdown \
+  --output "$DATA/sequential-article-audit-v1.md"
+```
+
+For JSON consumers use `--format json --output "$DATA/sequential-article-audit-v1.json"`.
+Output files are created exclusively; use a fresh filename for subsequent
+exports. No source news or learning journal data are modified.
+
+**Critical:** this reports historical *stored verdicts*, not certified
+ground truth. Daily bars and the current +/-0.1% directional threshold must
+be reviewed. Identical outcome timestamps across many articles, neutral
+predictions marked WRONG, and absent asset prices are surfaced rather than
+silently labeled learning success. A zero-target article is not a correct
+prediction. Existing sealed predictions are never modified by the audit.
+
 ## Persistent learning memory (PR #252)
 
 The sequential runner now persists long-term rule candidates in the same
