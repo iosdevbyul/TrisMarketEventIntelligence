@@ -411,13 +411,19 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                     candidate = next(
                         (rule for rule in rules if rule["status"] != "ACTIVE"), None,
                     )
+                    active = next(
+                        (rule for rule in rules if rule["status"] == "ACTIVE"), None,
+                    )
+                    # Once rules are active, periodically run their ablation too.
+                    # This catches rules that later stop improving predictions.
+                    focus = active if index % 5 == 0 and active else candidate or active
                     baseline = None
-                    if candidate is not None and (
-                        observed > timestamp(candidate["eligibleAfter"])
+                    if focus is not None and (
+                        observed > timestamp(focus["eligibleAfter"])
                     ):
                         shadow = dict(context)
                         shadow["priorFeedbackLessons"] = learning_memory.rule_prompt(
-                            [rule for rule in rules if rule["id"] != candidate["id"]]
+                            [rule for rule in rules if rule["id"] != focus["id"]]
                         )
                         try:
                             baseline = predict_with_repair(model, shadow)
@@ -429,10 +435,10 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                          article_hash, json.dumps(prediction), None, None, "PREDICTED"),
                     )
                     learning_memory.apply(db, index, rules)
-                    if baseline is not None and candidate is not None:
+                    if baseline is not None and focus is not None:
                         db.execute(
                             "INSERT OR IGNORE INTO memory_rule_baselines VALUES (?,?,?)",
-                            (index, candidate["id"], json.dumps(baseline)),
+                            (index, focus["id"], json.dumps(baseline)),
                         )
                     db.commit()
                     current = (article["articleId"], article_hash,
