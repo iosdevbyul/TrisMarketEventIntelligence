@@ -74,6 +74,12 @@ def test_audit_shows_prediction_outcome_and_feedback(tmp_path):
     assert "FINANCIALS" in md
     assert "-2.000%" in md
     assert "Check rate expectations" in md
+    page = audit.html_report(result)
+    assert "FINANCIALS" in page
+    assert "NEUTRAL" in page
+    assert "NEGATIVE" in page
+    assert "100" in page and "98" in page
+    assert "Bank margin pressure" in page
 
 
 def test_source_metadata_loaded_and_report_is_read_only(monkeypatch, tmp_path):
