@@ -40,6 +40,8 @@ def evaluate_pages(
     rejected = 0
     source_kinds: dict[str, int] = {}
     source_publishers: set[str] = set()
+    publisher_counts: dict[str, int] = {}
+    observed_group_sources: set[str] = set()
     for page in range(pages):
         candidates, inventory = recent_candidates(
             db, as_of=as_of, lookback_days=lookback_days, page=page,
@@ -53,6 +55,9 @@ def evaluate_pages(
             source = row["evidence"]
             source_kinds[source.kind] = source_kinds.get(source.kind, 0) + 1
             source_publishers.add(source.sourceName)
+            publisher_counts[source.sourceName] = (
+                publisher_counts.get(source.sourceName, 0) + 1
+            )
         group_summaries = []
         if provider is not None and candidates:
             result = discover_and_analyze(
@@ -63,6 +68,7 @@ def evaluate_pages(
             total_calls += result["modelCalls"]
             for event in result["events"]:
                 a = event["analysis"]
+                observed_group_sources.update(event["groupSourceIds"])
                 group_count += 1
                 proposed += a.get("proposedImpactCount", 0)
                 accepted += len(a["impacts"])
@@ -89,6 +95,29 @@ def evaluate_pages(
                         for item in a["impacts"]
                     ),
                     "errors": a.get("rejectedImpacts", []),
+                    # Preserve model-authored conditional paths for actual
+                    # human semantic comparison across previously unseen
+                    # events. These are local-only private research outputs.
+                    "causalResearchItems": [
+                        {
+                            "proposalIndex": item.get("proposalIndex"),
+                            "targetType": item["targetType"],
+                            "targetName": item["targetName"],
+                            "direction": item["direction"],
+                            "strength": item["strength"],
+                            "causalPaths": item["causalPaths"],
+                            "missingEvidence": item["missingEvidence"],
+                            "uncertaintyExplanation": (
+                                item["uncertaintyExplanation"]
+                            ),
+                            "supportingSourceIds": (
+                                item["supportingSourceIds"]
+                            ),
+                            "economicCausalityVerified": False,
+                        }
+                        for item in a["impacts"]
+                    ],
+                    "groundedClaims": a.get("groundedClaims", []),
                 })
         summaries.append({
             "page": page,
@@ -111,6 +140,27 @@ def evaluate_pages(
         "uniqueEligibleSources": len(seen),
         "sourceKindCounts": source_kinds,
         "distinctPublishers": len(source_publishers),
+        "publisherCounts": dict(sorted(publisher_counts.items())),
+        "candidateSourcesActuallyGrouped": len(observed_group_sources),
+        "groupingCoverageFraction": (
+            round(len(observed_group_sources) / len(seen), 4)
+            if seen else None
+        ),
+        "samplingWarnings": [
+            *(
+                ["SOURCE_KIND_DIVERSITY_NOT_ESTABLISHED"]
+                if len(source_kinds) < 2 else []
+            ),
+            *(
+                ["PUBLISHER_DIVERSITY_NOT_ESTABLISHED"]
+                if len(source_publishers) < 3 else []
+            ),
+            *(
+                ["MODEL_ANALYZED_ONLY_A_SUBSET_OF_CANDIDATES"]
+                if provider is not None and len(observed_group_sources) < len(seen)
+                else []
+            ),
+        ],
         "modelCalls": total_calls,
         "eventGroupCount": group_count,
         "proposedImpactCount": proposed,
