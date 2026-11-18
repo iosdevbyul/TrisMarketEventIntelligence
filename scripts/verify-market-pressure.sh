@@ -5,11 +5,14 @@ cd "$(dirname "$0")/.."
 DATA="${HOME}/Library/Application Support/TrisMarketEventIntelligence"
 AS_OF="${1:-$(date +%F)}"
 MODE="${2:---preview}"
+PERSIST="${3:-}"
 DB="${MARKET_EVENT_DB:-$DATA/news.sqlite3}"
 OUTPUT="${MARKET_PRESSURE_OUTPUT:-$DATA/market-pressure-first-real-v1.json}"
 
-if [[ "$MODE" != "--preview" && "$MODE" != "--run" ]]; then
-  echo "Usage: bash scripts/verify-market-pressure.sh [YYYY-MM-DD] [--preview|--run]" >&2
+if [[ "$MODE" != "--preview" && "$MODE" != "--run" ]] || \
+   [[ -n "$PERSIST" && "$PERSIST" != "--persist" ]] || \
+   [[ "$MODE" != "--run" && -n "$PERSIST" ]]; then
+  echo "Usage: bash scripts/verify-market-pressure.sh [YYYY-MM-DD] [--preview|--run] [--persist]" >&2
   exit 2
 fi
 if [[ ! -f "$DB" ]]; then
@@ -25,6 +28,9 @@ if [[ "$MODE" == "--run" ]]; then
     exit 2
   fi
   args+=(--model gemma4:e2b --output "$OUTPUT")
+  if [[ "$PERSIST" == "--persist" ]]; then
+    args+=(--persist)
+  fi
 fi
 bash scripts/news-learning-review.sh "${args[@]}"
 if [[ "$MODE" == "--run" ]]; then
