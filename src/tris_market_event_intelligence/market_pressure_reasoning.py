@@ -9,7 +9,7 @@ import hashlib
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from tris_market_event_intelligence.impact import (
     Impact,
@@ -23,7 +23,7 @@ from tris_market_event_intelligence.market_evidence_pressure import (
     cutoff_visible,
 )
 
-PROMPT_VERSION = "market-pressure-two-stage-v3-abstention-normalized"
+PROMPT_VERSION = "market-pressure-two-stage-v4-flat-evidence-schema"
 FactKind = Literal["REPORTED_FACT", "FORECAST", "OPINION", "UNKNOWN"]
 PressureStrength = Literal["LOW", "MODERATE", "HIGH", "UNASSESSED"]
 
@@ -56,6 +56,16 @@ A direction may be POSITIVE, NEGATIVE, MIXED or UNCERTAIN.
 Strength LOW / MODERATE / HIGH / UNASSESSED is qualitative and is NOT a probability.
 When evidence does not substantiate relative magnitude, select UNASSESSED;
 do not infer HIGH from a sensational headline.
+EACH impact MUST reference at least one groundedClaims.index in
+claimIndexes. Cite a verbatim evidence_excerpt from one of those exact
+claims. Never submit claimIndexes=[] or cite a source not provided.
+Use only machine-readable code values for categorical fields:
+market US/KR/GLOBAL; sector TECH/FINANCIALS/BROAD_MARKET/FX/
+SEMICONDUCTORS/ENERGY/DEFENSE/INDUSTRIALS/CONSUMER/TRANSPORT/
+CLOUD/HEALTHCARE; horizon SHORT_TERM/MEDIUM_TERM;
+uncertainty HIGH for unverified sources; targetType MARKET/SECTOR/COMPANY.
+Use noImpactCategory only when impacts is empty and place ordinary prose
+in noImpactExplanation; omit both for nonempty impacts.
 A cited fact must transmit to the target through an explicit conditional
 change in demand, costs, revenue, cash flows, funding, discount rates,
 risk premia, supply, FX or regulatory opportunity. Explain unknowns and
@@ -76,6 +86,77 @@ for the machine code. Do not fabricate
 a positive or negative sign to avoid abstaining. A nonempty impacts
 array must have both abstention fields null.
 No security-level price targets, numerical return forecasts, or buy/sell orders."""
+
+
+def ollama_pressure_schema() -> dict:
+    """Reference-free JSON Schema for local Ollama structured outputs.
+
+    Pydantic's inherited Impact $defs/$refs were rejected by the server;
+    unconstrained JSON later produced invented categories and zero citations.
+    Keep a small, flat schema and still validate with PressureAnalysis.
+    """
+    enums = {
+        "market": ["US", "KR", "GLOBAL"],
+        "sector": [
+            "TECH", "FINANCIALS", "BROAD_MARKET", "FX", "SEMICONDUCTORS",
+            "ENERGY", "DEFENSE", "INDUSTRIALS", "CONSUMER", "TRANSPORT",
+            "CLOUD", "HEALTHCARE",
+        ],
+        "direction": ["POSITIVE", "NEGATIVE", "MIXED", "UNCERTAIN"],
+        "horizon": ["SHORT_TERM", "MEDIUM_TERM"],
+        "uncertainty": ["HIGH"],
+        "targetType": ["MARKET", "SECTOR", "COMPANY"],
+        "strength": ["LOW", "MODERATE", "HIGH", "UNASSESSED"],
+        "transmissionChannel": [
+            "FUNDING_COST", "DISCOUNT_RATE", "DEMAND", "REVENUE",
+            "COST", "MARGINS", "CASH_FLOW", "SUPPLY", "RISK_PREMIUM",
+            "FX", "REGULATORY_OPPORTUNITY", "OTHER",
+        ],
+        "expectationComparison": [
+            "NOT_AVAILABLE", "ABOVE_EXPECTATION", "BELOW_EXPECTATION",
+            "IN_LINE", "AMBIGUOUS",
+        ],
+    }
+    properties: dict[str, dict] = {
+        name: {"type": "string", "enum": values}
+        for name, values in enums.items()
+    }
+    for name in (
+        "targetName", "rationale", "evidence_excerpt", "strengthRationale",
+    ):
+        properties[name] = {"type": "string"}
+    for name in ("drivers", "entities", "countervailingFactors"):
+        properties[name] = {
+            "type": "array", "items": {"type": "string"},
+        }
+    properties["claimIndexes"] = {
+        "type": "array", "minItems": 1, "maxItems": 8,
+        "items": {"type": "integer", "minimum": 0},
+    }
+    item = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": list(properties),
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "impacts": {"type": "array", "maxItems": 12, "items": item},
+            "noImpactCategory": {
+                "type": "string",
+                "enum": [
+                    "", "NO_DEFENSIBLE_ECONOMIC_CHANNEL",
+                    "NO_IDENTIFIABLE_AFFECTED_TARGET",
+                    "EVIDENCE_TOO_AMBIGUOUS", "UNRESOLVED_CONFLICT",
+                    "OTHER",
+                ],
+            },
+            "noImpactExplanation": {"type": "string"},
+        },
+        "required": ["impacts"],
+    }
 
 
 class Strict(BaseModel):
@@ -266,10 +347,9 @@ def analyze_pressure_two_stage(
         schema["$defs"]["PressureImpact"]["properties"]["uncertainty"]["enum"] = [
             "HIGH"
         ]
-    # Ollama's JSON-Schema mode may reject Pydantic inheritance/allOf
-    # schemas with HTTP 400. Its plain JSON mode still returns JSON, and
-    # the complete original Pydantic schema is validated immediately below.
-    # Do not silently retry an arbitrary HTTP failure or lose provenance.
+    # The provider supports native structured JSON; do not send inherited
+    # Pydantic schema references to Ollama. Use a flat, evidence-index-bound
+    # schema, followed by the same Pydantic and source-side validators.
     provider_settings = getattr(provider, "settings", None)
     ollama_json_mode = (
         provider_settings is not None
@@ -285,7 +365,7 @@ def analyze_pressure_two_stage(
             "stockPriceDataAvailable": False,
             "outcomeLabelsAvailable": False,
         }, ensure_ascii=False),
-        schema=None if ollama_json_mode else schema,
+        schema=ollama_pressure_schema() if ollama_json_mode else schema,
     )
     analysis, raw_abstention_label = _parse_impact_response(raw_impacts)
     impacts = []
@@ -403,7 +483,7 @@ def _report(
             )} if not claims else None
         ),
         "modelCalls": calls,
-        "impactGenerationMode": "JSON_PYDANTIC_VALIDATED"
+        "impactGenerationMode": "FLAT_SCHEMA_AND_PYDANTIC_VALIDATED"
         if getattr(getattr(provider, "settings", None), "kind", None) == "ollama"
         else "SCHEMA_AND_PYDANTIC_VALIDATED",
         "historicalPITVerified": False,
