@@ -290,7 +290,10 @@ def reconcile(db: sqlite3.Connection, *, seq: int) -> None:
         ).fetchone()
         new_status = old_status
         reason = ""
-        if events >= 5 and wins >= 2 and wins > losses:
+        if old_status == "ACTIVE":
+            if events >= 10 and losses >= wins + 3:
+                new_status, reason = "RETIRED", "ACTIVE_RULE_REGRESSION"
+        elif events >= 5 and wins >= 2 and wins > losses:
             new_status, reason = "ACTIVE", "PAIRED_PIT_ELIGIBLE_IMPROVEMENT"
         elif events >= 8 and losses >= 3 and losses > wins:
             new_status, reason = "RETIRED", "PAIRED_PIT_ELIGIBLE_REGRESSION"
@@ -298,7 +301,7 @@ def reconcile(db: sqlite3.Connection, *, seq: int) -> None:
             new_status, reason = "VALIDATING", "PAIRED_PIT_ELIGIBLE_TRIAL_STARTED"
         if new_status != old_status:
             db.execute(
-                "UPDATE memory_rules SET status=? WHERE id=?",
+                "UPDATE memory_rules SET status=?, version=version+1 WHERE id=?",
                 (new_status, rule_id),
             )
             db.execute(
