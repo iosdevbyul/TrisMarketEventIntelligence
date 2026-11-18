@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage:"
+  echo "  bash scripts/news-learning-review.sh market-indicator-import --db PRIVATE_DB --input REVIEWED_RELEASES_JSON --preview|--import"
   echo "  bash scripts/news-learning-review.sh market-pressure-cycle --db PRIVATE_NEWS_SQLITE --as-of YYYY-MM-DD --preview|--run [--lookback-days 10 --max-groups 2 --model gemma4:e2b --output NEW_JSON]"
   echo "  bash scripts/news-learning-review.sh market-evidence-pressure --db PRIVATE_NEWS_SQLITE --article-id ID --economic-event-id ID --event-id EVENT --subject SUBJECT --as-of YYYY-MM-DD --preview|--run [--model gemma4:e2b --output NEW_JSON]"
   echo "  bash scripts/news-learning-review.sh historical-staged-transfer --reference-chain FDA_JSON --reference-run SAVED_FDA_STAGED_JSON --reference-tracks FDA_QUESTIONS --challenge-chain FAA_JSON --challenge-run SAVED_FAA_STAGED_JSON --challenge-tracks FAA_QUESTIONS --output NEW_PRIVATE_COMPARISON_JSON [zero model calls]"
@@ -181,6 +182,9 @@ case "$action" in
     ;;
   historical-event-chain)
     module="tris_market_event_intelligence.historical_official_event_chain_cli"
+    ;;
+  market-indicator-import)
+    module="tris_market_event_intelligence.market_indicator_releases_cli"
     ;;
   market-pressure-cycle)
     module="tris_market_event_intelligence.market_pressure_cycle_cli"
