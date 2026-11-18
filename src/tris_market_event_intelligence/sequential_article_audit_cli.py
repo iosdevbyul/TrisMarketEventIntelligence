@@ -206,6 +206,8 @@ def inspect(journal: Path, *, limit: int = 1000,
                 "publishedAtReported": info.get("publishedAtReported"),
                 "firstObservedAt": observed_at,
                 "originalPredictionSummary": prediction.get("summary"),
+                "surpriseAssessment": prediction.get("surpriseAssessment"),
+                "marketContext": prediction.get("marketContext"),
                 "predictedImpacts": predicted,
                 "outcomes": outcomes,
                 "diagnosis": feedback.get("diagnosis"),
@@ -307,6 +309,8 @@ def markdown(report: dict[str, Any]) -> str:
             f"- 기사 출처: {_text(record['source'])}",
             f"- 기사 URL: {_text(record['sourceUrl'])}",
             f"- AI 분석 요약: {_text(record['originalPredictionSummary'])}",
+            f"- 발표 전 시장 근거: {_text(record.get('marketContext'))}",
+            f"- 기대 대비 분석: {_text(record.get('surpriseAssessment'))}",
             f"- 기사 내용: {_text(record['articleSummary'])}",
             "",
         ])
@@ -412,6 +416,25 @@ def html_report(report: dict[str, Any]) -> str:
                 "<th>저장된 판정</th></tr></thead><tbody>"
                 + rows + "</tbody></table>"
             )
+        context = record.get("marketContext") or {}
+        surprise = record.get("surpriseAssessment") or {}
+        earlier = "".join(
+            f"<li>#{esc(item.get('articleId'))}: {esc(item.get('title'))} "
+            f"({esc(item.get('firstObservedAt'))})</li>"
+            for item in context.get("earlierRelatedArticles", [])
+        ) or "<li>관련 과거 기사 없음</li>"
+        market = context.get("marketPreTrend") or {}
+        assessment_text = (
+            f"<p><b>경제적 영향:</b> {esc(surprise.get('economicImpact'))} · "
+            f"<b>시장 예상 대비:</b> {esc(surprise.get('expectationStatus'))} · "
+            f"<b>정보 신규성:</b> {esc(surprise.get('novelty'))} · "
+            f"<b>선반영 가능성:</b> {esc(surprise.get('pricedInStatus'))}</p>"
+            f"<p><b>판단 근거:</b> {esc(surprise.get('rationale'))}</p>"
+            f"<p><b>발표 전 SPY 흐름:</b> {esc(_percent(market.get('return')))} "
+            f"({esc(market.get('status'))}) · "
+            f"<b>컨센서스:</b> {esc((context.get('consensus') or {}).get('status'))}</p>"
+            f"<p><b>발표 전 관련 기사:</b></p><ul>{earlier}</ul>"
+        )
         applied = "".join(
             f"<li>R{esc(r['id'])} v{esc(r['version'])} "
             f"({esc(r['roleAtApplication'])}): {esc(r['rule'])}</li>"
@@ -428,6 +451,8 @@ def html_report(report: dict[str, Any]) -> str:
             f"<p><b>기사 원문 링크:</b> {article_link(record['sourceUrl'])}</p>"
             f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
             f"<p><b>Gemma 분석:</b> {esc(record['originalPredictionSummary'])}</p>"
+            + "<h3>발표 전 시장 기대·새로운 정보 분석</h3>"
+            + assessment_text
             + "".join(tables)
             + f"<p><b>실패 원인 진단:</b> {esc(record['diagnosis'])}</p>"
             f"<p><b>다음 기사 수정 규칙:</b> {esc(record['correctiveRule'])}</p>"
