@@ -92,12 +92,14 @@ def _eligible_date(
 def recent_candidates(
     db_path: Path, *, as_of: date, lookback_days: int = 10,
     per_table: int = 24, as_of_time: datetime | None = None,
-    page: int = 0,
+    page: int = 0, sampling_mode: str = "chronological",
 ) -> tuple[list[dict], dict]:
     """Search entire indexed source history within UTC cutoff, no id-based prefix."""
     if (not 1 <= lookback_days <= 120 or not 1 <= per_table <= 48
             or type(page) is not int or not 0 <= page <= 20):
         raise ValueError("INVALID_DISCOVERY_BOUNDS")
+    if sampling_mode not in {"chronological", "source_balanced"}:
+        raise ValueError("INVALID_DISCOVERY_SAMPLING_MODE")
     if db_path.is_symlink() or not db_path.is_file():
         raise ValueError("MARKET_SOURCE_DB_MISSING")
     if as_of_time is not None and (
@@ -144,6 +146,22 @@ def recent_candidates(
 
     ordered.sort(reverse=True)
     matching_in_window = len(ordered)
+    if sampling_mode == "source_balanced":
+        # Deterministic round-robin across observed source TYPES, not names,
+        # words, article IDs or economic-event categories. Retains the same
+        # order for every requested page and prioritizes scarce releases.
+        by_kind: dict[str, list[tuple[datetime, str, int]]] = {}
+        for item in ordered:
+            by_kind.setdefault(item[1], []).append(item)
+        kinds = sorted(by_kind)
+        diversified: list[tuple[datetime, str, int]] = []
+        position = 0
+        while len(diversified) < len(ordered):
+            for kind in kinds:
+                if position < len(by_kind[kind]):
+                    diversified.append(by_kind[kind][position])
+            position += 1
+        ordered = diversified
     selected_all: list[dict] = []
     dedup_keys: set[str] = set()
     # We only hydrate the first K+1 distinct valid source records. The same
@@ -191,6 +209,7 @@ def recent_candidates(
     return selected, {
         "candidateCount": len(selected),
         "candidatePage": page,
+        "samplingMode": sampling_mode,
         "hasMoreCandidatePages": has_more,
         "examinedEligibleBeforePage": len(selected_all),
         "matchedWithinWindow": matching_in_window,
@@ -269,6 +288,7 @@ def discover_and_analyze(
     as_of_time: datetime | None = None,
     page: int = 0,
     reasoning_mode: str = "legacy",
+    sampling_mode: str = "chronological",
 ) -> dict:
     """Run selection, source-index-bound grouping and two-stage pressure."""
     if not 1 <= max_groups <= 3:
@@ -278,6 +298,7 @@ def discover_and_analyze(
     candidates, inventory = recent_candidates(
         db, as_of=as_of, lookback_days=lookback_days,
         as_of_time=as_of_time, page=page,
+        sampling_mode=sampling_mode,
     )
     trace = getattr(provider, "trace", None)
     if trace is not None:
