@@ -256,3 +256,36 @@ def test_later_official_decisions_are_reconciled_separately_from_final_records()
             for x in item["supportingEvidence"]
         }
         assert assessment["axesSemanticallyVerified"] is False
+
+
+class InvalidQuestionAnswerProvider(ComposedProvider):
+    def generate_json(self, *, system: str, user: str, schema: dict) -> str:
+        if "regulatoryActionProgress" in schema["properties"]:
+            self.calls += 1
+            envelope = json.loads(user)
+            self.inputs.append(envelope)
+            return json.dumps({
+                "regulatoryActionProgress": "ANNOUNCED",
+                "requestedEvidenceStatus": "PARTIAL",
+                "explanation": (
+                    "The available source documents a regulator action "
+                    "but does not establish the completed review process"
+                ),
+                "remainingEvidence": (
+                    "Final underlying review records were not available "
+                    "in the quoted regulatory source."
+                ),
+            })
+        return super().generate_json(system=system, user=user, schema=schema)
+
+
+def test_invalid_question_answer_identifies_question_and_field() -> None:
+    provider = InvalidQuestionAnswerProvider()
+    with pytest.raises(
+        ComposedEvidenceError,
+        match=r"COMPOSED_QUESTION_ANSWER_INVALID:.*:EXPLANATION_INCOMPLETE",
+    ):
+        chain.run_replay(
+            fda(), date(2023, 6, 17), provider,
+            question_tracks=tracks(), reasoning_mode="staged-composed",
+        )
