@@ -26,6 +26,12 @@ def test_multi_page_generalization_preview_is_source_only(tmp_path: Path) -> Non
     assert report["holdoutIndependenceCertified"] is False
     assert report["semanticAccuracyVerified"] is False
     assert report["databaseModified"] is False
+    assert report["candidateSourcesActuallyGrouped"] == 0
+    assert report["groupingCoverageFraction"] == 0.0
+    assert report["samplingWarnings"] == [
+        "PUBLISHER_DIVERSITY_NOT_ESTABLISHED"
+    ]
+    assert len(report["publisherCounts"]) == 2
     assert len(report["pages"][0]["sourceIds"]) == 2
 
 
