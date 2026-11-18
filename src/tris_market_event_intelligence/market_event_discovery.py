@@ -135,7 +135,7 @@ def recent_candidates(
             matching_in_window += len(options)
             table_selected = 0
             for _, identifier in options:
-                if table_selected >= per_table * (page + 1):
+                if table_selected >= per_table * (page + 1) + 1:
                     break
                 try:
                     packet = make_packet_from_db(
