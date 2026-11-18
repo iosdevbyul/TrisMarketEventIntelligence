@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 
 import pytest
 from test_historical_cross_event_validation import fda
@@ -231,13 +232,12 @@ class DecisionScreenProvider(ComposedProvider):
 def test_later_official_decisions_are_reconciled_separately_from_final_records() -> None:
     from test_historical_official_event_chain import load as faa
     from test_historical_temporal_question_lifecycle import tracks as fda_tracks
-    from test_historical_temporal_question_lifecycle_faa import tracks as faa_tracks
 
     for chain_doc, question_tracks, cutoff, question, expected in (
         (fda(), fda_tracks(), date(2023, 10, 4),
          "fda-2023-manufacturer-filings-evidence",
          ("fda-20230911-mrna", "mrna-authorization")),
-        (faa(), faa_tracks(), date(2024, 1, 25),
+        (faa(), json.loads(Path("research/faa-2024-question-lifecycle.json").read_text(encoding="utf-8")), date(2024, 1, 25),
          "faa-2024-boeing-production-oversight-outcome",
          ("faa-20240124-production", "no-production-expansion")),
     ):
