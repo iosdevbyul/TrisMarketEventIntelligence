@@ -84,16 +84,9 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
         if kind in SECTOR_ETFS:
             sector = kind
             kind = "MARKET" if sector == "BROAD_MARKET" else "SECTOR"
-            if not isinstance(target, str) or not target.strip():
-                target = sector
-            else:
-                declared = target.strip().upper().replace(" ", "_")
-                if declared not in {sector, SECTOR_ETFS[sector]}:
-                    # When the declared sector is the only unambiguous identity,
-                    # preserve it rather than treating the freeform label as a ticker.
-                    target = sector
-                else:
-                    target = sector
+            # The explicit sector name in targetType is authoritative.
+            # The free-form target field may contain a descriptive label or ETF.
+            target = sector
         kind = {"COMPANY": "STOCK", "INDEX": "MARKET", "ETF": "STOCK"}.get(
             kind, kind,
         )
