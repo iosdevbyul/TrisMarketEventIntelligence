@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Read private Gemma trace offline to explain impact-stage guard rejections.
 
 No Ollama, HTTP, SQLite writes, credentials or new model calls. Do not
