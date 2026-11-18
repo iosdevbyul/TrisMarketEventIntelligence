@@ -77,10 +77,13 @@ python -m tris_market_event_intelligence.sequential_article_audit_cli \
   --journal "$DATA/sequential-learning-test-v1.sqlite3" \
   --source-db "$DATA/news.sqlite3" \
   --limit 1000 \
-  --format markdown \
-  --output "$DATA/sequential-article-audit-v1.md"
+  --format html \
+  --output "$DATA/sequential-article-audit-v1.html"
+open "$DATA/sequential-article-audit-v1.html"
 ```
 
+The standalone HTML report provides a searchable, expandable record for each
+article. For Markdown use `--format markdown --output "$DATA/sequential-article-audit-v1.md"`.
 For JSON consumers use `--format json --output "$DATA/sequential-article-audit-v1.json"`.
 Output files are created exclusively; use a fresh filename for subsequent
 exports. No source news or learning journal data are modified.
