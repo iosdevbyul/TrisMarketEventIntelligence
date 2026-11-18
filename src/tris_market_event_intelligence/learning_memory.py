@@ -6,7 +6,6 @@ but never count toward rule promotion.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import sqlite3
@@ -67,6 +66,10 @@ def initialize(db: sqlite3.Connection) -> None:
             rule_version INTEGER NOT NULL, role TEXT NOT NULL,
             PRIMARY KEY(seq, rule_id),
             FOREIGN KEY(rule_id) REFERENCES memory_rules(id)
+        );
+        CREATE TABLE IF NOT EXISTS memory_rule_baselines (
+            seq INTEGER PRIMARY KEY, rule_id INTEGER NOT NULL,
+            prediction_json TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS memory_rule_trials (
             seq INTEGER NOT NULL, rule_id INTEGER NOT NULL,
