@@ -56,12 +56,14 @@
         {
           "url": "https://static.nhtsa.gov/odi/rcl/2023/RCAK-23V838-3395.pdf",
           "sourceRole": "recall-acknowledgment",
-          "historicalDate": "2023-12-12"
+          "historicalDate": null,
+          "dateVerification": "NOT_VERIFIED_FROM_ORIGINAL_PDF_DOCUMENT"
         },
         {
           "url": "https://static.nhtsa.gov/odi/inv/2024/INOA-RQ24009-12046.pdf",
           "sourceRole": "subsequent-investigation-document",
-          "historicalDate": "2024-04-26"
+          "historicalDate": null,
+          "dateVerification": "NOT_VERIFIED_FROM_ORIGINAL_PDF_DOCUMENT"
         }
       ],
       "principalRisk": "The PDF bytes, embedded publication time, revision history and original investigative record must be checked before any retrospective cutoff replay. Recall does not imply remedial effectiveness."
