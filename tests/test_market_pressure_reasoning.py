@@ -273,3 +273,82 @@ def test_empty_explanation_with_nonempty_impact_rejected() -> None:
     })
     with pytest.raises(ValueError, match="IMPACT_ABSTENTION_CONTRADICTION"):
         analyze_pressure_two_stage(example(), provider)
+
+
+def test_real_ollama_natural_language_abstention_is_preserved_not_crash() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [],
+        "noImpactCategory": "No Defensible Economic Transmission Channel",
+        "noImpactExplanation": (
+            "The current extracts do not establish an economically "
+            "defensible path from this incident to a named market target."
+        ),
+    })
+    result = analyze_pressure_two_stage(example(), provider)
+    assert result["modelCalls"] == 2
+    assert result["impacts"] == []
+    abstention = result["noImpactAssessment"]
+    assert abstention["category"] == "OTHER"
+    assert abstention["categoryNormalized"] is True
+    assert abstention["rawModelCategory"] == (
+        "No Defensible Economic Transmission Channel"
+    )
+    assert abstention["explanation"].startswith("The current extracts")
+    assert result["semanticAccuracyVerified"] is False
+
+
+def test_unknown_abstention_category_does_not_turn_into_a_market_signal() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [],
+        "noImpactCategory": "Some Unrecognized Economic Narrative Label",
+        "noImpactExplanation": (
+            "The observed claims do not establish the target or the "
+            "economic transmission mechanism with sufficient grounding."
+        ),
+    })
+    output = analyze_pressure_two_stage(example(), provider)
+    assert output["impacts"] == []
+    assert output["noImpactAssessment"]["category"] == "OTHER"
+    assert output["noImpactAssessment"]["rawModelCategory"] == (
+        "Some Unrecognized Economic Narrative Label"
+    )
+
+
+def test_valid_enum_abstention_is_unchanged() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [],
+        "noImpactCategory": "EVIDENCE_TOO_AMBIGUOUS",
+        "noImpactExplanation": (
+            "The available quoted reporting does not adequately "
+            "identify the magnitude or direction of any economic exposure."
+        ),
+    })
+    output = analyze_pressure_two_stage(example(), provider)
+    assert output["noImpactAssessment"]["category"] == "EVIDENCE_TOO_AMBIGUOUS"
+    assert output["noImpactAssessment"]["categoryNormalized"] is False
+    assert output["noImpactAssessment"]["rawModelCategory"] is None
+
+
+def test_abstention_normalization_never_repairs_invalid_impact() -> None:
+    invalid = impact()
+    invalid["direction"] = "GUARANTEED_RISE"
+    provider = QueueProvider(impacts={
+        "impacts": [invalid],
+        "noImpactCategory": "No Defensible Economic Transmission Channel",
+        "noImpactExplanation": (
+            "The model incorrectly claimed there was no channel despite "
+            "also providing a fabricated positive or negative prediction."
+        ),
+    })
+    with pytest.raises(ValueError, match="IMPACT_ABSTENTION_WITH_NONEMPTY_IMPACTS"):
+        analyze_pressure_two_stage(example(), provider)
+
+
+def test_abstention_normalization_rejects_invalid_explanations() -> None:
+    provider = QueueProvider(impacts={
+        "impacts": [],
+        "noImpactCategory": "No Defensible Economic Transmission Channel",
+        "noImpactExplanation": "Unknown.",
+    })
+    with pytest.raises(ValueError, match="ABSTENTION_EXPLANATION_TOO_SHORT"):
+        analyze_pressure_two_stage(example(), provider)
