@@ -14,7 +14,8 @@
     "criticalErrors": 0,
     "directRecordAccuracy": 0.95,
     "indirectProgressAccuracy": 0.95,
-    "modelCompletionClaimRate": 0
+    "modelCompletionClaimRate": 0,
+    "primaryEvidenceAccuracy": 0.95
   },
   "cases": [
     {
@@ -52,6 +53,12 @@
       ],
       "indirectRegulatoryProgress": [
         "OBSERVED"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "faa-20240112-inspection-process",
+          "additional-data"
+        ]
       ]
     },
     {
@@ -88,6 +95,12 @@
       ],
       "indirectRegulatoryProgress": [
         "OBSERVED"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "faa-20240112-oversight",
+          "production-audit"
+        ]
       ]
     },
     {
@@ -119,6 +132,12 @@
       ],
       "indirectRegulatoryProgress": [
         "OBSERVED"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "faa-20240124-production",
+          "return-to-service"
+        ]
       ]
     },
     {
@@ -154,6 +173,12 @@
       ],
       "indirectRegulatoryProgress": [
         "OBSERVED"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "faa-20240124-production",
+          "no-production-expansion"
+        ]
       ]
     },
     {
@@ -192,6 +217,12 @@
       "indirectRegulatoryProgress": [
         "OBSERVED",
         "UNKNOWN"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "fda-20230616-formula",
+          "xbb-recommendation"
+        ]
       ]
     },
     {
@@ -229,6 +260,12 @@
         "OBSERVED",
         "NOT_OBSERVED",
         "UNKNOWN"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "fda-20230616-formula",
+          "filing-still-needed"
+        ]
       ]
     },
     {
@@ -260,6 +297,12 @@
       "indirectRegulatoryProgress": [
         "OBSERVED",
         "NOT_OBSERVED"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "fda-20230911-mrna",
+          "mrna-authorization"
+        ]
       ]
     },
     {
@@ -290,6 +333,16 @@
       ],
       "indirectRegulatoryProgress": [
         "OBSERVED"
+      ],
+      "allowedPrimaryRefs": [
+        [
+          "fda-20230911-mrna",
+          "mrna-authorization"
+        ],
+        [
+          "fda-20231003-novavax",
+          "novavax-authorization"
+        ]
       ]
     }
   ],
@@ -297,6 +350,7 @@
   "referenceNotes": {
     "directRecords": "These provisional status alternatives are explicitly scoped to the question, and may include ambiguity where a press release itself establishes authorization but not underlying source files.",
     "rawCompletion": "Any model assertion of completed implementation, even when quarantined by the presentation layer, is scored separately as a model reliability concern.",
-    "developmentLeakage": "FAA/FDA were used to tune the architecture. This reference cannot pass the frozen holdout gate."
+    "developmentLeakage": "FAA/FDA were used to tune the architecture. This reference cannot pass the frozen holdout gate.",
+    "primaryEvidence": "Required claim recall is not sufficient: question-specific primary source must directly ground the precise question, not a peripheral related notice. Reviewer list is provisional."
   }
 }
