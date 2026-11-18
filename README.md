@@ -11,6 +11,21 @@ An independent, local-first service for collecting financial news, verifying eco
 - Bind the local HTTP service to loopback by default.
 - Never commit API keys, paid article bodies, or local operational databases.
 
+## Market Pressure Engine (under development)
+
+The product objective is news and economic-indicator **market pressure**:
+detect related dated events, distinguish reported facts from speculation,
+explain the economic transmission mechanism, identify the affected
+market/sector/company, and report directional pressure, qualitative
+strength, uncertainty and traceable source evidence. It is not a stock
+return predictor.
+
+The opt-in research workflow uses existing SQLite news/economic-event
+records. See [the market pressure engine contract](docs/market-pressure-engine-development-policy.md)
+and [source packet specification](docs/general-news-economic-pressure-pipeline.md).
+Unverified event clusters and generated economic explanations remain review-only;
+no automatic trading, no production API cutover or model confidence claims.
+
 ## Local setup
 
 Requires Python 3.11 or later.
