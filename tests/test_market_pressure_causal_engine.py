@@ -15,7 +15,6 @@ from tris_market_event_intelligence.market_pressure_causal_engine import (
     causal_output_schema,
 )
 
-
 SCENARIOS = [
     (
         "inflation-release",
