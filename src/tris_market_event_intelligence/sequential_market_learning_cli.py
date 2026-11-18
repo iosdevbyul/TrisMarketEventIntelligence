@@ -123,9 +123,22 @@ def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], i
             continue
         items.append(row)
     items.sort(key=lambda a: (a["firstObservedAt"], a["articleId"]))
-    # Reserve the last 20% as a never-trained chronological holdout.
+    # Reserve a chronological holdout before choosing training examples.
     train_end = int(len(items) * 0.8)
-    return items[:min(count, train_end)], len(items) - train_end
+    train = items[:train_end]
+    selected = []
+    last = None
+    # Daily candles can settle after weekends. Spacing observations by at
+    # least five days prevents obvious outcome-to-next-article leakage.
+    for row in train:
+        observed = timestamp(row["firstObservedAt"])
+        if last is not None and observed < last + timedelta(days=5):
+            continue
+        selected.append(row)
+        last = observed
+        if len(selected) >= count:
+            break
+    return selected, len(items) - train_end
 
 
 def init_journal(db: sqlite3.Connection) -> None:
@@ -254,6 +267,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     count = args.count
     if not 1 <= count <= 1000:
         raise ValueError("Count must be 1..1000")
+    if args.interval != "1d":
+        raise ValueError("Only daily candles are currently supported for safe sequential learning")
     if args.journal.is_symlink() or args.source_db.is_symlink():
         raise ValueError("Symlink paths prohibited")
     cutoff = timestamp(args.as_of)
@@ -290,6 +305,16 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                     ).fetchone()
                     if previous and observed < timestamp(previous[0]) + horizon:
                         raise ValueError("Overlapping evaluation windows: cannot avoid leakage")
+                    past = db.execute(
+                        "SELECT evaluation_json FROM steps WHERE seq=?", (index - 1,),
+                    ).fetchone()
+                    if past and past[0]:
+                        report = json.loads(past[0])
+                        for assessed in report["impacts"]:
+                            if assessed["status"] != "UNVERIFIED" and (
+                                timestamp(assessed["outcomeAt"]) >= observed
+                            ):
+                                raise ValueError("Previous observed price outcome overlaps next article")
                 article_hash = hashlib.sha256(
                     json.dumps(article, sort_keys=True).encode()
                 ).hexdigest()
@@ -311,7 +336,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             "firstObservedAt": article["firstObservedAt"],
                             "source": article["source"],
                         },
-                        "priorValidatedLessons": list(reversed(lessons)),
+                        "priorFeedbackLessons": list(reversed(lessons)),
                     })
                     prediction = canonical_prediction(proposed)
                     db.execute(
@@ -359,11 +384,16 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
             """).fetchone()
             lessons_count = db.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
             return {
-                "status": "COMPLETE" if totals[1] == count else "PARTIAL",
+                "status": "COMPLETE" if totals[1] == count else "INSUFFICIENT_CHRONOLOGICAL_ARTICLES",
                 "articlesRequested": count, "articlesAvailable": len(articles),
                 "articlesCompleted": totals[1], "lessons": lessons_count,
                 "holdoutReserved": heldout, "journal": str(args.journal),
-                "marketReturnsAnalyzed": True,
+                "marketReturnsAnalyzed": any(
+                    any(r["status"] != "UNVERIFIED" for r in json.loads(row[0])["impacts"])
+                    for row in db.execute(
+                        "SELECT evaluation_json FROM steps WHERE evaluation_json IS NOT NULL"
+                    )
+                ),
                 "warning": "Retrospective study; model pretrained knowledge is not PIT-certified",
             }
     finally:
