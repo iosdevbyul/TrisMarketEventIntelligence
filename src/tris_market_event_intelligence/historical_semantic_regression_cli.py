@@ -98,11 +98,11 @@ def compare_scores(baseline: dict, candidate: dict) -> dict:
         "changedErrors": changed_errors,
         "trustVerified": False,
         "limitations": [
-            "Comparisons are restricted to equal schema, reference status, "
-            "evaluation split and case identities.",
+            ("Comparisons are restricted to equal schema, reference status, "
+             "evaluation split and case identities."),
             "Development references were repeatedly used for model tuning.",
-            "A stable or improved result does not establish independent "
-            "reasoning quality, historical PIT or generalization.",
+            ("A stable or improved result does not establish independent "
+             "reasoning quality, historical PIT or generalization."),
         ],
     }
 
