@@ -73,6 +73,10 @@ def test_offline_replay_retains_valid_and_diagnoses_invalid(tmp_path: Path) -> N
     group = result["events"][0]
     assert group["status"] == "PARTIAL_MARKET_PRESSURE_REQUIRES_REVIEW"
     assert group["acceptedImpacts"][0]["proposalIndex"] == 1
+    quality = group["acceptedImpacts"][0]["reasoningQuality"]
+    assert quality["gateStatus"] == "HUMAN_SEMANTIC_REVIEW_REQUIRED"
+    assert quality["economicAccuracyVerified"] is False
+    assert quality["modelDirectionPreserved"] == "NEGATIVE"
     assert group["rejectedImpacts"][0]["code"] == "IMPACT_ENTITY_MISMATCH"
     assert group["semanticAccuracyVerified"] is False
 
