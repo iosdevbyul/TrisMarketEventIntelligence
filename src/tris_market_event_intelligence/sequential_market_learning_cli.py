@@ -53,7 +53,7 @@ No trading instructions. Do not invent new facts. Avoid overly specific rules.""
 
 
 def timestamp(s: str) -> datetime:
-    value = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    value = datetime.fromisoformat(s)
     if value.tzinfo is None:
         raise ValueError("Timezone-aware timestamp required")
     return value.astimezone(UTC)
@@ -61,21 +61,21 @@ def timestamp(s: str) -> datetime:
 
 def canonical_prediction(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict) or not isinstance(raw.get("impacts"), list):
-        raise ValueError("Model output missing impacts")
+        raise TypeError("Model output missing impacts")
     if len(raw["impacts"]) > 8:
         raise ValueError("Model exceeded maximum impact targets")
     result = []
     seen = set()
     for item in raw["impacts"]:
         if not isinstance(item, dict):
-            raise ValueError("Invalid impact")
+            raise TypeError("Invalid impact")
         kind, target, direction = (
             item.get("targetType"), item.get("target"), item.get("direction")
         )
         if kind not in {"STOCK", "SECTOR", "MARKET"} or direction not in DIRECTIONS:
             raise ValueError("Invalid target type or direction")
         if not isinstance(target, str):
-            raise ValueError("Missing target")
+            raise TypeError("Missing target")
         target = target.upper().strip()
         if kind == "STOCK":
             if not (1 <= len(target) <= 12 and
@@ -165,7 +165,7 @@ def model_json(model: Any, system: str, payload: Any) -> dict:
     )
     value = json.loads(raw)
     if not isinstance(value, dict):
-        raise ValueError("Model response must be an object")
+        raise TypeError("Model response must be an object")
     return value
 
 
@@ -256,7 +256,7 @@ def next_lesson(model: Any, article: dict, prediction: dict,
     })
     diagnosis, lesson = result.get("diagnosis"), result.get("lesson")
     if not isinstance(diagnosis, str) or not isinstance(lesson, str):
-        raise ValueError("Invalid critic feedback")
+        raise TypeError("Invalid critic feedback")
     if not (10 <= len(lesson.strip()) <= 600):
         raise ValueError("Empty or oversized corrective rule")
     return {"diagnosis": diagnosis[:1200], "lesson": lesson.strip()}
@@ -416,7 +416,7 @@ def main() -> None:
         parser.error("horizon-hours must be (0,720]")
     try:
         print(json.dumps(run(args)), flush=True)
-    except (ValueError, OSError, sqlite3.Error, httpx.HTTPError) as error:
+    except (ValueError, TypeError, OSError, sqlite3.Error, httpx.HTTPError) as error:
         parser.exit(2, f"sequential-market-learning: {type(error).__name__}: {error}\n")
 
 
