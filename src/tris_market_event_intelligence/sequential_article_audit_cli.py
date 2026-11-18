@@ -139,6 +139,8 @@ def inspect(journal: Path, *, limit: int = 1000,
                     "excessReturn": result.get("excessReturn"),
                     "baselineAt": result.get("baselineAt"),
                     "outcomeAt": result.get("outcomeAt"),
+                    "baselinePrice": result.get("baselinePrice"),
+                    "outcomePrice": result.get("outcomePrice"),
                     "unverifiedReason": result.get("reasonCode"),
                 })
             rules = []
@@ -201,6 +203,7 @@ def inspect(journal: Path, *, limit: int = 1000,
         warnings = [
             "CORRECT/WRONG are original stored labels, NOT independently verified accuracy.",
             "Daily candle timestamps may not equal the exchange's actual closing time.",
+            "Earlier stored results may lack actual baseline/outcome price levels; missing levels are shown as unavailable.",
             "Retrospective rule feedback can include outcomes learned after a later article's historical timestamp.",
             "No causal effect or price timestamp validity is established by this report.",
         ]
@@ -299,6 +302,8 @@ def markdown(report: dict[str, Any]) -> str:
                  f"절대 수익률 {_percent(x['absoluteReturn'])}; "
                  f"벤치마크 수익률 {_percent(x['benchmarkReturn'])}; "
                  f"초과 수익률 {_percent(x['excessReturn'])}"),
+                (f"- 기준 가격: {_text(x['baselinePrice'])}; "
+                 f"결과 가격: {_text(x['outcomePrice'])}"),
                 (f"- 기준 가격 시각: {_text(x['baselineAt'])}; "
                  f"결과 가격 시각: {_text(x['outcomeAt'])}"),
                 f"- 미검증 사유: {_text(x['unverifiedReason'])}",
