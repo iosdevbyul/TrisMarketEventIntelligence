@@ -35,7 +35,7 @@ or previously merged impact calculations.
 ### Direction, strength and confidence are different
 
 - Direction: `POSITIVE`, `NEGATIVE`, `MIXED`, `UNCERTAIN`.
-- Qualitative strength: `LOW`, `MEDIUM`, `HIGH`, `UNKNOWN`.
+- Qualitative strength: `LOW`, `MODERATE`, `HIGH`, `UNASSESSED`.
   This describes *potential economic pressure*, not the probability
   or size of an actual stock move.
 - Uncertainty: `LOW`, `MEDIUM`, `HIGH` for the *hypothesis*, not
