@@ -245,7 +245,7 @@ def main() -> None:
         if args.output:
             with args.output.open("x", encoding="utf-8") as out:
                 json.dump(report, out, ensure_ascii=False, indent=2)
-                out.write("\\n")
+                out.write("\n")
         if trace is not None:
             trace.record(
                 "GENERALIZATION_FINISHED", modelCalls=report["modelCalls"],
