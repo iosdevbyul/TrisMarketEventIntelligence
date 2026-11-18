@@ -504,6 +504,14 @@ def assess_question_axes(
             consistency_flags.append(
                 "ANNOUNCED_STAGE_MAY_UNDERSTATE_LATER_ACTION"
             )
+        if (
+            answer.indirectRegulatoryProgress == "OBSERVED"
+            and answer.directRecordAvailability == "NOT_OBSERVED"
+            and answer.requestedEvidenceStatus == "NOT_OBSERVED"
+        ):
+            consistency_flags.append(
+                "INDIRECT_PROGRESS_PRESENT_BUT_QUESTION_PROGRESS_UNOBSERVED"
+            )
         if completion_warning is not None:
             consistency_flags.append(completion_warning)
         remaining = {
