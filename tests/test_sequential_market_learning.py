@@ -92,7 +92,8 @@ def test_wrong_answer_updates_next_article_and_resume(monkeypatch, tmp_path):
     result = seq.run(config, model=fake, client=object())
     assert result["articlesCompleted"] == 2
     assert result["lessons"] == 1
-    assert fake.predictions == 2
+    # Two primary predictions plus one pre-outcome baseline comparison.
+    assert fake.predictions == 3
     assert fake.prompts[0]["priorFeedbackLessons"] == []
     assert "pricing power" in fake.prompts[2]["priorFeedbackLessons"][0]
     with sqlite3.connect(config.journal) as db:
