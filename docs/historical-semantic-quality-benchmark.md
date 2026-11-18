@@ -130,3 +130,51 @@ existing `scripts/verify-composed-evidence.sh`; even if this development
 comparison improves, **it is not evidence of untouched-holdout
 performance**. Source integrity and publication-time availability remain
 unverified and must be established before any research-trust declaration.
+
+## FAA v8 / FDA v5 evaluation and raw-model safety audit
+
+Both prospective local Gemma4 replays completed (18 calls each; full
+newly-visible claim coverage), but **historicalPITVerified=false**. FAA
+2024-01-25 production oversight selected `no-production-expansion` as
+primary evidence yet still reported decision stage ANNOUNCED, not RESTRICTED.
+FDA 2023-10-04 manufacturer submissions question now distinguished missing
+original filing/review records (directRecordAvailability NOT_OBSERVED),
+observed subsequent regulatory authorizations (indirectRegulatoryProgress
+OBSERVED) and overall PARTIAL evidence; this is progress compared with v4.
+
+There are further concerns that the former 100% completion-safety metric
+alone does not reveal: FDA late formula authorization had **model-reported**
+implementation COMPLETED, which was sanitized to UNKNOWN for publication.
+The sanitizer did its job, but the model's underlying mistake must count
+against research trust. Its indirect-progress field was NOT_OBSERVED even
+though the source described a product authorization, although that can be
+read as a *direct answer* rather than indirect evidence for this particular
+question. More generally, the output includes tangential question references;
+FDA early formula selected `filing-still-needed` as primary instead of the
+more direct `xbb-recommendation`, and FAA early production oversight chose
+`oversight-intensification` rather than `production-audit`.
+
+The **v1 score artifact is immutable** and remains comparable with its old
+reference. A separate versioned v2 development reference now adds review
+labels for direct-record availability, indirect progress, primary evidence
+selection, and the model's raw completion overclaim rate. The v2 scorer
+reports both model-completion errors and the published-output safety
+separately. Unlike the earlier measure, a quarantined model claim of
+COMPLETED raises an error and prevents benchmark acceptance. Primary evidence
+accuracy is also distinct from recall of a required reference anywhere in
+the supporting evidence list. These are provisional development annotations,
+not historical PIT verification and not an unseen holdout.
+
+To evaluate the **saved** FAA v8 / FDA v5 results without additional Ollama
+calls:
+
+```bash
+git pull --ff-only origin feature/evidence-first-composed-reasoning
+bash scripts/score-composed-evidence-v2.sh
+```
+
+Continue prioritizing semantic quality: a perfect reference-ID recall cannot
+justify claiming that the model understood the question, selected the most
+relevant evidence, or distinguished regulatory authorization from completed
+implementation. Subsequent evaluation must use a distinct frozen independent
+event sample with authenticated cutoff-available source versions.
