@@ -219,6 +219,13 @@ def main() -> None:
         "candidatePagesExamined": report["candidatePagesExamined"],
         "uniqueEligibleSources": report["uniqueEligibleSources"],
         "sourceKindCounts": report["sourceKindCounts"],
+        "samplingMode": report["samplingMode"],
+        "distinctPublishers": report["distinctPublishers"],
+        "samplingWarnings": report["samplingWarnings"],
+        "candidateSourcesActuallyGrouped": (
+            report["candidateSourcesActuallyGrouped"]
+        ),
+        "groupingCoverageFraction": report["groupingCoverageFraction"],
         "eventGroupCount": report["eventGroupCount"],
         "proposedImpactCount": report["proposedImpactCount"],
         "sourceValidatedImpactCount": report["sourceValidatedImpactCount"],
