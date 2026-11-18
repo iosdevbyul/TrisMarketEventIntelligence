@@ -572,6 +572,7 @@ def analyze_pressure_two_stage(
                         invalidFields=fields,
                     )
             else:
+                accepted["proposalIndex"] = index
                 impacts.append(accepted)
                 if trace is not None:
                     trace.record(
