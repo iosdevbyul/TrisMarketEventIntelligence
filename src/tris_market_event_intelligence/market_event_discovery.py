@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -60,46 +60,61 @@ multiple clusters only when it genuinely relates to multiple events."""
 
 
 def _eligible_date(raw: str | None, cutoff: date, lookback: int) -> bool:
+    """Compare absolute UTC instants, not calendar dates in publisher zones."""
     if not raw:
         return False
     try:
         stamp = datetime.fromisoformat(raw)
-    except ValueError:
+    except (TypeError, ValueError):
         return False
     if stamp.tzinfo is None or stamp.utcoffset() is None:
         return False
-    return cutoff - timedelta(days=lookback) <= stamp.date() < cutoff
+    boundary = datetime.combine(cutoff, time.min, tzinfo=UTC)
+    observed = stamp.astimezone(UTC)
+    return boundary - timedelta(days=lookback) <= observed < boundary
 
 
 def recent_candidates(
     db_path: Path, *, as_of: date, lookback_days: int = 10,
     per_table: int = 24,
 ) -> tuple[list[dict], dict]:
-    """Read without mutating existing production SQLite databases."""
+    """Search entire indexed source history within UTC cutoff, no id-based prefix."""
     if not 1 <= lookback_days <= 120 or not 1 <= per_table <= 48:
         raise ValueError("INVALID_DISCOVERY_BOUNDS")
-    if not db_path.is_file():
+    if db_path.is_symlink() or not db_path.is_file():
         raise ValueError("MARKET_SOURCE_DB_MISSING")
     selected: list[dict] = []
     skipped = 0
+    matching_in_window = 0
+    deduplicated = 0
+    dedup_keys: set[str] = set()
     with sqlite3.connect(
-        "file:" + str(db_path.resolve()) + "?mode=ro", uri=True,
+        db_path.resolve().as_uri() + "?mode=ro", uri=True,
     ) as conn:
         for table, source_kind in (
             ("articles", "article"),
             ("economic_events", "economic-event"),
         ):
+            # An article with a low DB ID may have a later publication
+            # timestamp than thousands of newly inserted feed articles.
+            # Do not truncate by ID before checking chronological eligibility.
             rows = conn.execute(
                 f"SELECT id, published_at FROM {table} "
-                "WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT ?",
-                (per_table * 4,),
-            ).fetchall()
+                "WHERE published_at IS NOT NULL",
+            )
+            options: list[tuple[datetime, int]] = []
             for identifier, published in rows:
-                if len([x for x in selected if x["kind"] == source_kind]) >= per_table:
-                    break
                 if not _eligible_date(published, as_of, lookback_days):
                     skipped += 1
                     continue
+                timestamp = datetime.fromisoformat(published).astimezone(UTC)
+                options.append((timestamp, identifier))
+            options.sort(reverse=True)
+            matching_in_window += len(options)
+            table_selected = 0
+            for _, identifier in options:
+                if table_selected >= per_table:
+                    break
                 try:
                     packet = make_packet_from_db(
                         db_path,
@@ -115,20 +130,39 @@ def recent_candidates(
                     skipped += 1
                     continue
                 source: MarketEvidence = packet.evidences[0]
+                # Repeated publisher feeds can duplicate the same press
+                # release with new article IDs or alternate tracking URLs.
+                key = (
+                    source.sourceName.casefold() + ":"
+                    + source.excerpt.casefold().strip()
+                )
+                if key in dedup_keys:
+                    deduplicated += 1
+                    continue
+                dedup_keys.add(key)
                 selected.append({
                     "kind": source_kind,
                     "recordId": identifier,
                     "evidence": source,
+                    "publishedAtUTC": _.isoformat(),
                 })
+                table_selected += 1
     selected.sort(
-        key=lambda row: (row["evidence"].publishedDate, row["kind"], row["recordId"]),
+        key=lambda row: (row["publishedAtUTC"], row["kind"], row["recordId"]),
         reverse=True,
     )
-    # Input budget remains bounded even if both tables contain many records.
+    # Maintain a bounded model context while accounting for all in-window
+    # records and retaining time-eligible older database IDs.
     selected = selected[:24]
     return selected, {
-        "candidateCount": len(selected), "skippedInvalidOrOutOfWindow": skipped,
+        "candidateCount": len(selected),
+        "matchedWithinWindow": matching_in_window,
+        "skippedInvalidOrOutOfWindow": skipped,
+        "deduplicated": deduplicated,
         "lookbackDays": lookback_days,
+        "cutoffUTCExclusive": datetime.combine(
+            as_of, time.min, tzinfo=UTC,
+        ).isoformat(),
     }
 
 
@@ -154,6 +188,7 @@ def discover_and_analyze(
         {
             "index": i, "sourceId": row["evidence"].sourceId,
             "publishedDate": row["evidence"].publishedDate.isoformat(),
+            "publishedAtUTC": row["publishedAtUTC"],
             "kind": row["evidence"].kind, "excerpt": row["evidence"].excerpt,
         }
         for i, row in enumerate(candidates)
