@@ -103,6 +103,7 @@ def replay_trace(path: Path) -> dict:
                     "direction": item["direction"],
                     "strength": item["strength"],
                     "supportingSourceIds": item["supportingSourceIds"],
+                    "reasoningQuality": item["reasoningQuality"],
                 }
                 for item in report["impacts"]
             ],
