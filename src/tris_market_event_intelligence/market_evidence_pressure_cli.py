@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--event-id", type=str)
     parser.add_argument("--subject", type=str)
     parser.add_argument("--as-of", type=str)
+    parser.add_argument("--as-of-time", type=str)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--single-stage-compat", action="store_true",
@@ -44,13 +45,14 @@ def main() -> None:
         packet = make_packet_from_db(
             args.db, event_id=args.event_id, subject=args.subject,
             as_of=args.as_of,
+            as_of_time=args.as_of_time,
             article_ids=tuple(args.article_id),
             economic_event_ids=tuple(args.economic_event_id),
             indicator_release_ids=tuple(args.indicator_release_id),
         )
     else:
         if args.article_id or args.economic_event_id or args.indicator_release_id or any(
-            (args.event_id, args.subject, args.as_of)
+            (args.event_id, args.subject, args.as_of, args.as_of_time)
         ):
             parser.error("--packet cannot be combined with DB selection flags")
         packet = MarketEvidencePacket.model_validate_json(
