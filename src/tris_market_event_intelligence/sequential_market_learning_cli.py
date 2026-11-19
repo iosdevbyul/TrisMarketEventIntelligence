@@ -11,6 +11,7 @@ import sqlite3
 import re
 from datetime import UTC, datetime, timedelta, time
 from zoneinfo import ZoneInfo
+from urllib.parse import quote
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,21 @@ SECTOR_ETFS = {
 }
 DIRECTIONS = {"POSITIVE", "NEGATIVE", "NEUTRAL"}
 NEW_YORK = ZoneInfo("America/New_York")
+# Explicit entity aliases prevent e.g. an NVDA article from being scored
+# using an unrelated Korean company's ticker. No fuzzy ticker guessing.
+KNOWN_COMPANY_SYMBOLS = {
+    "nvidia": "NVDA",
+    "엔비디아": "NVDA",
+    "advanced micro devices": "AMD",
+    "amd": "AMD",
+    "sk hynix": "000660.KS",
+    "sk하이닉스": "000660.KS",
+    "삼성전자": "005930.KS",
+    "samsung electronics": "005930.KS",
+}
+US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS"}
+KR_EXCHANGES = {"KSC", "KOE", "KOSPI", "KOSDAQ"}
+
 PREDICTION_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -202,6 +218,80 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
     return {"summary": str(raw.get("summary", ""))[:1500],
             "impacts": result, **({"surpriseAssessment": assessment}
                                  if assessment is not None else {})}
+
+
+
+def asset_market(symbol: str) -> str:
+    """Only a verified-format ticker gets an expected market."""
+    if re.fullmatch(r"[0-9]{6}\\.(KS|KQ)", symbol):
+        return "KR"
+    if re.fullmatch(r"[A-Z][A-Z0-9.-]{0,11}", symbol) and not symbol.endswith((".KS", ".KQ")):
+        return "US"
+    raise ValueError("Unsupported exchange or malformed symbol")
+
+
+def article_symbol_conflicts(article: dict, symbol: str) -> bool:
+    """Reject known company-to-wrong-ticker pairs; don't invent new targets."""
+    text = (str(article.get("title", "")) + " " +
+            str(article.get("summary", ""))).lower()
+    mentioned = {
+        ticker for name, ticker in KNOWN_COMPANY_SYMBOLS.items()
+        if (name in text if not name.isascii() else
+            re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", text))
+    }
+    if not mentioned:
+        return False
+    # If multiple explicitly named firms occur, preserve their listed tickers.
+    # Other stocks must not be inferred from the mentioned company alone.
+    return symbol not in mentioned
+
+
+def validate_asset_evidence(prediction: dict, article: dict) -> dict:
+    """Preserve supported impacts and explicitly abstain on mismatched stocks."""
+    valid = []
+    rejected = list(prediction.get("targetMappingRejections", []))
+    for impact in prediction["impacts"]:
+        if impact["targetType"] != "STOCK":
+            valid.append(impact)
+            continue
+        symbol = impact["priceProxy"]
+        try:
+            asset_market(symbol)
+        except ValueError:
+            code = "UNSUPPORTED_STOCK_EXCHANGE"
+        else:
+            code = ("ARTICLE_TICKER_MISMATCH"
+                    if article_symbol_conflicts(article, symbol) else "")
+        if code:
+            rejected.append({
+                "targetType": "STOCK", "target": symbol,
+                "reasonCode": code,
+            })
+        else:
+            valid.append(impact)
+    if rejected:
+        prediction = dict(prediction)
+        prediction["impacts"] = valid
+        prediction["targetMappingRejections"] = rejected
+        prediction["recoveryStatus"] = (
+            "PARTIAL_TARGET_MAPPING" if valid else "NO_VALID_TARGETS"
+        )
+    return prediction
+
+
+def verify_market_metadata(symbol: str, meta: dict) -> None:
+    """Fail closed if Yahoo's quote isn't a stock/ETF in the expected market."""
+    market = asset_market(symbol)
+    exchange = str(meta.get("exchangeName", "")).upper()
+    currency = str(meta.get("currency", "")).upper()
+    if market == "US":
+        if exchange not in US_EXCHANGES or currency != "USD":
+            raise ValueError("US_MARKET_METADATA_MISMATCH")
+    elif exchange not in KR_EXCHANGES or currency != "KRW":
+        raise ValueError("KR_MARKET_METADATA_MISMATCH")
+    if not meta.get("symbol") or meta["symbol"].upper() != symbol.upper():
+        raise ValueError("MARKET_SYMBOL_MISMATCH")
+
 
 
 def publication_time(article: dict) -> datetime:
@@ -468,7 +558,7 @@ def yahoo_bars(client: httpx.Client, symbol: str, observed: datetime,
     a = int((observed - timedelta(days=14)).timestamp())
     b = int((observed + horizon + timedelta(days=14)).timestamp())
     response = client.get(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
         params={"period1": a, "period2": b, "interval": interval},
         headers={"User-Agent": "Mozilla/5.0"},
     )
@@ -477,6 +567,7 @@ def yahoo_bars(client: httpx.Client, symbol: str, observed: datetime,
     if data.get("error") or not data.get("result"):
         raise ValueError("No supported market data")
     result = data["result"][0]
+    verify_market_metadata(symbol, result.get("meta") or {})
     times = result.get("timestamp") or []
     close = result["indicators"]["quote"][0]["close"]
     return sorted(
@@ -605,6 +696,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     articles, heldout = load_articles(args.source_db, count, cutoff)
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
+        "assetValidationVersion": "exchange-metadata-v1",
         "eligibilityVersion": "original-publication-v3",
         "dailyBarAlignment": "first-reaction-close-v3",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
@@ -706,6 +798,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             "reason": str(exc)[:180],
                         }), flush=True)
                         continue
+                    prediction = validate_asset_evidence(prediction, article)
                     prediction["marketContext"] = market_context
                     # To test rule impact, compare a no-candidate shadow prediction
                     # using the SAME article, before fetching realized prices.
@@ -727,7 +820,9 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             [rule for rule in rules if rule["id"] != focus["id"]]
                         )
                         try:
-                            baseline = predict_with_repair(model, shadow)
+                            baseline = validate_asset_evidence(
+                                predict_with_repair(model, shadow), article,
+                            )
                         except (ValueError, TypeError):
                             baseline = None
                     db.execute(
