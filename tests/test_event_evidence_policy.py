@@ -127,3 +127,91 @@ def test_eligibility_filter_skips_missing_official_attachment(monkeypatch, tmp_p
     # The 80% chronology split retains only the first eligible event.
     assert [row["articleId"] for row in items] == [102]
     assert heldout == 1
+
+
+def test_enriched_cache_requires_matching_text_and_original_capture(
+    monkeypatch, tmp_path,
+):
+    import hashlib
+    import json
+
+    valid = article(
+        "자세한 내용은 첨부파일을 참고하시기 바랍니다.",
+    )
+    valid["captureSha256"] = "original-archive-capture"
+    valid["sourceUrl"] = "https://www.bok.or.kr/portal/example"
+    text_body = (
+        "한국은행은 금융시장 불안을 완화하기 위한 구체적인 조치와 "
+        "금융기관 적용 방안을 포함하는 공식 자료를 발표했습니다."
+    )
+    cache = {
+        "schemaVersion": "retrospective_official_attachment_cache_v1",
+        "sourceDb": str((tmp_path / "news.sqlite3").resolve()),
+        "originalArchiveModified": False,
+        "articles": {
+            "101": {
+                "status": "AVAILABLE",
+                "sourceUrl": valid["sourceUrl"],
+                "captureSha256": valid["captureSha256"],
+                "publishedAtReported": valid["publishedAtReported"],
+                "contentText": text_body,
+                "contentTextSha256": hashlib.sha256(text_body.encode()).hexdigest(),
+                "attachmentUrl": "https://www.bok.or.kr/portal/example.pdf",
+                "contentSha256": "pdf-checksum",
+                "acquiredAt": "2026-11-19T00:00:00+00:00",
+                "pointInTimeCertified": False,
+            }
+        },
+    }
+    path = tmp_path / "cache.json"
+    path.write_text(json.dumps(cache))
+    monkeypatch.setattr(seq, "historical_news_cohort", lambda **kw: {
+        "items": [valid, {**valid, "articleId": 102, "summary": "A fully described release, covering new detailed policy measures and institutional effects."}],
+    })
+    selected, _ = seq.load_articles(
+        tmp_path / "news.sqlite3", 10,
+        datetime(2019, 6, 9, tzinfo=UTC), content_cache=path,
+    )
+    assert selected[0]["articleId"] == 101
+    assert selected[0]["contentEvidence"]["pointInTimeCertified"] is False
+    cache["articles"]["101"]["contentText"] = "tampered"
+    path.write_text(json.dumps(cache))
+    selected, _ = seq.load_articles(
+        tmp_path / "news.sqlite3", 10,
+        datetime(2019, 6, 9, tzinfo=UTC), content_cache=path,
+    )
+    assert selected == []
+
+
+def test_official_attachment_source_rejects_external_hosts():
+    from tris_market_event_intelligence import source_enrichment_cli as source
+
+    assert source.authorized("https://www.bok.or.kr/portal/a.pdf")
+    assert not source.authorized("https://evil.example/files/a.pdf")
+    assert not source.authorized("http://www.bok.or.kr/portal/a.pdf")
+    assert not source.authorized("https://www.bok.or.kr.evil.example/a.pdf")
+
+
+def test_missing_official_pdf_is_explicit_abstention():
+    import httpx
+
+    from tris_market_event_intelligence import source_enrichment_cli as source
+
+    class Client:
+        def get(self, url, **kwargs):
+            return httpx.Response(
+                200,
+                request=httpx.Request("GET", url),
+                headers={"content-type": "text/html"},
+                text='<html><body><a href="unsupported.hwp">HWP</a></body></html>',
+            )
+
+    row = {
+        "sourceUrl": "https://www.bok.or.kr/portal/test",
+        "articleId": 7,
+    }
+    output = source.source_document(Client(), row)
+    assert output == {
+        "status": "UNAVAILABLE",
+        "reasonCode": "PDF_ATTACHMENT_NOT_LINKED_OR_UNSUPPORTED",
+    }
