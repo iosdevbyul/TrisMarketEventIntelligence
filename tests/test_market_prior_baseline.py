@@ -1,7 +1,7 @@
 """Past-only baseline regression, including the no-forward-prices invariant."""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 import pytest
