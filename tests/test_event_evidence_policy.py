@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from tris_market_event_intelligence import event_evidence_policy as evidence
 from tris_market_event_intelligence import sequential_market_learning_cli as seq
 
@@ -235,3 +237,101 @@ def test_korean_headline_cannot_price_unmentioned_american_stock():
         "targetType": "STOCK", "target": "NVDA",
         "reasonCode": "NO_VERIFIED_ARTICLE_ISSUER_LINK",
     }]
+
+
+def test_bok_cdn_pdf_href_and_safe_redirect_are_supported(monkeypatch):
+    import httpx
+
+    from tris_market_event_intelligence import source_enrichment_cli as source
+
+    page_url = "https://www.bok.or.kr/portal/bbs/P0000560/view.do?nttId=123"
+    first = "https://www.bok.or.kr/common/download.do?file=123"
+    cdn = "https://file-cdn.bok.or.kr/portal/123/2/FILE_123.pdf?token=signed"
+    assert source.authorized(cdn)
+    responses = {
+        page_url: httpx.Response(
+            200, request=httpx.Request("GET", page_url),
+            headers={"content-type": "text/html"},
+            text=f'<a href="{first}">보도자료.pdf 다운로드</a>',
+        ),
+        first: httpx.Response(
+            302, request=httpx.Request("GET", first),
+            headers={"location": cdn},
+        ),
+        cdn: httpx.Response(
+            200, request=httpx.Request("GET", cdn),
+            headers={"content-type": "application/pdf"}, content=b"%PDF-test",
+        ),
+    }
+
+    class Client:
+        def get(self, url, **kwargs):
+            return responses[url]
+
+    monkeypatch.setattr(
+        source, "extract_pdf", lambda _: "한국은행은 금융안정 조치와 시장 대응을 구체적으로 발표했습니다. "
+        "금융시장 대응 주체와 세부 조건에 관한 내용을 포함합니다.",
+    )
+    row = article("첨부파일을 참조하시기 바랍니다.")
+    row.update(sourceUrl=page_url, captureSha256="sha")
+    result = source.source_document(Client(), row)
+    assert result["status"] == "AVAILABLE"
+    assert result["attachmentUrl"] == first
+    assert result["contentTextSha256"]
+
+
+def test_bok_external_pdf_redirect_is_rejected():
+    import httpx
+
+    from tris_market_event_intelligence import source_enrichment_cli as source
+
+    url = "https://www.bok.or.kr/common/download.do"
+    class Client:
+        def get(self, url, **kwargs):
+            return httpx.Response(
+                302, request=httpx.Request("GET", url),
+                headers={"location": "https://evil.example/private.pdf"},
+            )
+
+    with pytest.raises(ValueError, match="OUTSIDE_OFFICIAL_HOSTS"):
+        source.fetch(Client(), url)
+
+
+def test_duplicate_gemma_targets_preserve_single_agreeing_direction():
+    class Model:
+        def generate_json(self, **kwargs):
+            return json.dumps({
+                "impacts": [
+                    {"targetType": "MARKET", "target": "SPY",
+                     "direction": "NEGATIVE", "reason": "Domestic risk"},
+                    {"targetType": "MARKET", "target": "BROAD_MARKET",
+                     "direction": "NEGATIVE", "reason": "Same market exposure"},
+                ]
+            })
+
+    result = seq.predict_with_repair(Model(), {})
+    assert len(result["impacts"]) == 1
+    assert result["impacts"][0]["direction"] == "NEGATIVE"
+    assert result["targetMappingRejections"][0]["reasonCode"] == (
+        "DUPLICATE_TARGET_COLLAPSED"
+    )
+
+
+def test_conflicting_gemma_duplicate_abstains_without_invented_verdict():
+    class Model:
+        def generate_json(self, **kwargs):
+            return json.dumps({
+                "impacts": [
+                    {"targetType": "STOCK", "target": "NVDA",
+                     "direction": "POSITIVE", "reason": "Opportunity"},
+                    {"targetType": "STOCK", "target": "NVDA",
+                     "direction": "NEGATIVE", "reason": "Risk"},
+                    {"targetType": "SECTOR", "target": "FINANCIALS",
+                     "direction": "NEUTRAL", "reason": "Uncertain market"},
+                ]
+            })
+
+    result = seq.predict_with_repair(Model(), {})
+    assert [r["target"] for r in result["impacts"]] == ["FINANCIALS"]
+    assert any(x["reasonCode"] == "CONFLICTING_DUPLICATE_TARGET"
+               for x in result["targetMappingRejections"])
