@@ -160,3 +160,117 @@ def test_content_duplicate_does_not_reenter_reserved_chronological_holdout(
     assert [row["articleId"] for row in holdout_rows] == [9]
     assert not ({x["textSha256"] for x in training} &
                 {x["textSha256"] for x in holdout_rows})
+
+
+def test_spread_date_selector_prepares_exactly_30_distinct_release_days():
+    from datetime import UTC, datetime, timedelta
+
+    from tris_market_event_intelligence.distributed_holdout_selection import (
+        release_day,
+        spread_date_selection,
+    )
+
+    start = datetime(2025, 1, 1, 15, tzinfo=UTC)
+    rows = []
+    for day in range(45):
+        instant = (start + timedelta(days=day * 3)).isoformat()
+        for version in range(2):
+            rows.append({
+                "articleId": day * 2 + version,
+                "title": f"Real source fixture {day} variant {version}",
+                "source": "bbc_business" if version == 0 else "bbc_technology",
+                "sourceUrl": f"https://example.org/news/{day}/{version}",
+                "publishedAtReported": instant,
+                "firstObservedAt": instant,
+                "summary": "Detailed publicly announced financial statement.",
+            })
+    selected, report = spread_date_selection(rows, 30)
+    assert len(selected) == 30
+    assert len({release_day(row) for row in selected}) == 30
+    assert report["sufficientDistinctDates"] is True
+    assert report["selectedSpanDays"] >= 100
+    assert len(report["selectedMonths"]) >= 3
+    assert report["selectionUsedFuturePrices"] is False
+    assert len(report["items"]) == 30
+
+
+def test_spread_date_selector_fails_closed_on_83_articles_from_three_dates():
+    from datetime import UTC, datetime, timedelta
+
+    from tris_market_event_intelligence.distributed_holdout_selection import (
+        spread_date_selection,
+    )
+
+    start = datetime(2026, 11, 16, 15, tzinfo=UTC)
+    rows = [{
+        "articleId": i + 1,
+        "title": f"Article {i}",
+        "source": "bbc_world",
+        "publishedAtReported": (start + timedelta(days=i % 3)).isoformat(),
+        "summary": "Substantial financial content.",
+    } for i in range(83)]
+    selected, report = spread_date_selection(rows, 30)
+    assert len(selected) == 3
+    assert report["candidateArticles"] == 83
+    assert report["candidateDistinctDates"] == 3
+    assert report["sufficientDistinctDates"] is False
+
+
+def test_spread_date_selection_never_reuses_utc_date_across_local_market_days():
+    from tris_market_event_intelligence.distributed_holdout_selection import (
+        release_day,
+        spread_date_selection,
+    )
+
+    rows = [
+        {"articleId": 1, "source": "bbc_business", "title": "US article",
+         "publishedAtReported": "2026-11-17T01:00:00+00:00"},
+        {"articleId": 2, "source": "bbc_business", "title": "US article 2",
+         "publishedAtReported": "2026-11-17T08:00:00+00:00"},
+        {"articleId": 3, "source": "bok_all", "title": "한국은행 자료",
+         "publishedAtReported": "2026-11-17T01:00:00+00:00"},
+    ]
+    assert release_day(rows[0]) == "2026-11-16"
+    assert release_day(rows[1]) == "2026-11-17"
+    assert release_day(rows[2]) == "2026-11-17"
+    selected, info = spread_date_selection(rows, 30)
+    assert info["selectedDistinctDates"] == 2
+    assert len(selected) == 2
+
+
+def test_holdout_spread_dates_refuses_incomplete_30_day_study(monkeypatch, tmp_path):
+    db = tmp_path / "news.sqlite3"
+    db.touch()
+    journal = tmp_path / "study.sqlite3"
+    with sqlite3.connect(journal) as conn:
+        conn.execute("CREATE TABLE runs(id INTEGER, settings_json TEXT)")
+        conn.execute(
+            "INSERT INTO runs VALUES (1, ?)",
+            (json.dumps({
+                "sourceDb": str(db.resolve()),
+                "sourceContentCache": None,
+                "cutoff": "2026-11-19T00:00:00+00:00",
+                "horizonHours": 24, "interval": "1d", "model": "fake",
+            }),),
+        )
+        conn.execute("CREATE TABLE steps(article_id INTEGER, observed_at TEXT, phase TEXT)")
+        conn.execute(
+            "INSERT INTO steps VALUES (1,'2026-03-01T00:00:00+00:00','COMPLETE')"
+        )
+    rows = [{
+        "articleId": i + 5, "source": "bbc_business", "title": f"Story {i}",
+        "publishedAtReported": f"2026-11-{16+i:02d}T10:00:00+00:00",
+    } for i in range(3)]
+    monkeypatch.setattr(holdout, "load_articles", lambda *args, **kwargs: (rows, 10))
+    selected, settings = holdout.holdout_selection(
+        journal, db, 30, selection_policy="spread-dates",
+    )
+    assert len(selected) == 3
+    assert settings["holdoutInfo"]["dateSpread"]["candidateDistinctDates"] == 3
+    with pytest.raises(ValueError, match="INSUFFICIENT_DISTINCT_RELEASE_DATES"):
+        holdout.evaluate_holdout(
+            journal=journal, source_db=db,
+            output=tmp_path / "must_not_write.json", model=object(),
+            client=object(), count=30, selection_policy="spread-dates",
+        )
+    assert not (tmp_path / "must_not_write.json").exists()
