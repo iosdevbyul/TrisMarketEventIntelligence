@@ -14,16 +14,24 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.event_evidence_policy import (
-    article_market, content_quality, localize_prediction,
+    article_market,
+    content_quality,
+    localize_prediction,
 )
 from tris_market_event_intelligence.event_grounding import (
-    enforce_event_grounding, event_facts,
+    enforce_event_grounding,
+    event_facts,
 )
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 from tris_market_event_intelligence.sequential_market_learning_cli import (
-    evaluate, load_articles, pre_event_market_context, predict_with_repair,
-    publication_time, timestamp, validate_asset_evidence,
+    evaluate,
+    load_articles,
+    pre_event_market_context,
+    predict_with_repair,
+    publication_time,
+    timestamp,
+    validate_asset_evidence,
 )
 
 
