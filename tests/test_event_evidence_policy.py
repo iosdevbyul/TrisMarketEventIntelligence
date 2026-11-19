@@ -336,3 +336,90 @@ def test_conflicting_gemma_duplicate_abstains_without_invented_verdict():
     assert [r["target"] for r in result["impacts"]] == ["FINANCIALS"]
     assert any(x["reasonCode"] == "CONFLICTING_DUPLICATE_TARGET"
                for x in result["targetMappingRejections"])
+
+
+def test_bok_denial_remains_false_not_a_confirmed_policy():
+    from tris_market_event_intelligence.event_grounding import (
+        event_facts, enforce_event_grounding,
+    )
+    row = article(
+        "<p>(보도내용) 한은이 외환시장에 개입하고 균형환율을 "
+        "결정했다.</p><p>(해명내용) 위 보도 내용은 사실과 다름</p>"
+    )
+    facts = event_facts(row)
+    assert facts["officialDenial"] is True
+    assert facts["confirmedPolicy"] is False
+    assert "외환시장" in facts["pressClaim"]
+    result = enforce_event_grounding({
+        "summary": "The Bank of Korea confirmed an intervention policy.",
+        "impacts": [{"targetType": "MARKET", "target": "BROAD_MARKET",
+                     "direction": "POSITIVE", "priceProxy": "069500.KS"}],
+    }, row)
+    assert result["impacts"] == []
+    assert "OFFICIAL_DENIAL_REVERSED" in result["eventGroundingReasons"]
+
+
+def test_non_market_cultural_release_does_not_score_bank_sector():
+    from tris_market_event_intelligence.event_grounding import enforce_event_grounding
+
+    row = article("한국은행이 숭례문 기념주화 발행 계획을 부인하였습니다. "
+                  "통화정책이나 금융업종의 수익과 관련된 내용은 없습니다.")
+    result = enforce_event_grounding({
+        "summary": "The coin issuance was denied.",
+        "impacts": [{"targetType": "SECTOR", "target": "FINANCIALS",
+                     "direction": "NEUTRAL", "priceProxy": "091170.KS"}],
+    }, row)
+    assert result["impacts"] == []
+    assert "NO_DIRECT_ECONOMIC_EXPOSURE" in result["eventGroundingReasons"]
+
+
+def test_news_similarity_removes_contact_and_html_boilerplate():
+    from tris_market_event_intelligence.event_grounding import substantive_terms
+
+    row = article('<p>문의처 tel http www 공보실 Fax</p>'
+                  '<p>통화스와프 논의를 부인합니다.</p>')
+    words = substantive_terms(row)
+    assert "통화스와프" in words
+    assert not ({"tel", "http", "www", "공보실", "문의처", "fax"} & words)
+
+
+def test_diversity_policy_preserves_publication_order():
+    from tris_market_event_intelligence.sequential_market_learning_cli import (
+        diversify_articles,
+    )
+
+    rows = []
+    for i in range(1, 9):
+        rows.append({
+            "articleId": i, "source": "bok_corrections" if i <= 6 else "other",
+            "publishedAtReported": f"2020-01-{i:02d}T00:00:00+00:00",
+            "firstObservedAt": f"2020-01-{i:02d}T00:00:00+00:00",
+        })
+    selected = diversify_articles(rows, 4)
+    assert len(selected) == 4
+    assert set(item["source"] for item in selected) == {"other", "bok_corrections"}
+    assert [i["articleId"] for i in selected] == sorted(
+        i["articleId"] for i in selected
+    )
+
+
+def test_absolute_price_and_sector_relative_direction_both_visible(monkeypatch):
+    from datetime import timedelta
+
+    def price(client, symbol, observed, horizon, interval):
+        return {
+            "return": {"091170.KS": 0.01, "069500.KS": 0.03}[symbol],
+            "baselineAt": "2020-01-01T06:30:00+00:00",
+            "outcomeAt": "2020-01-02T06:30:00+00:00",
+        }
+
+    monkeypatch.setattr(seq, "price_return", price)
+    result = seq.evaluate(
+        {"impacts": [{"targetType": "SECTOR", "target": "FINANCIALS",
+                      "priceProxy": "091170.KS", "direction": "POSITIVE"}]},
+        datetime(2020, 1, 2, tzinfo=UTC), timedelta(days=1), "1d", object(),
+    )["impacts"][0]
+    assert result["status"] == "CORRECT"
+    assert result["relativeDirection"] == "NEGATIVE"
+    assert result["relativeDirectionVerdict"] == "WRONG"
+    assert result["eventAttributionVerdict"] == "NOT_ESTABLISHED"
