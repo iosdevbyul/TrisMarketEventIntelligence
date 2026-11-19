@@ -129,6 +129,10 @@ def test_no_feedback_on_unavailable_price(monkeypatch, tmp_path):
     result = seq.run(config, model=fake, client=object())
     assert result["marketReturnsAnalyzed"] is False
     assert result["lessons"] == 0
+    assert result["articleCoverage"]["articlesWithVerifiedTargets"] == 0
+    assert result["articleCoverage"]["articlesWithOnlyUnverifiedTargets"] == 1
+    assert result["articleCoverage"]["articlesWithoutTargets"] == 0
+    assert result["learningRuleDiagnostics"]["ruleApplications"] == 0
     assert len(fake.prompts) == 1
 
 
