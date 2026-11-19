@@ -434,3 +434,69 @@ holdout and not verified source-PIT. The training DB is read-only and no
 feedback rules are applied. Multiple distinct dates do not by themselves
 establish market regime independence; inspect per-date returns and compare
 against constant-direction and past-only trend baselines.
+
+### Economic-event-first research cohort: 30 distinct dates
+
+The preceding 30-day exploratory experiment selected articles using release
+dates rather than economic-event suitability. It found 30 different dates
+across April–November 2026, but only 18 articles had priced targets (23 target
+observations). The price-direction coincidence rates were Gemma-only 2/23,
+past-price 8/23, naive combination 7/23, and evidence-gated 8/23 (no gating
+overrides). Those results do not prove causation or broad independent
+generalization. Editorial/programme titles and reports with missing original
+content must not fill a future economic-impact research cohort.
+
+The new `event-spread-dates` policy **screens before selecting dates**.
+Only explicit monetary-policy actions, real statistical releases, earnings or
+guidance changes, contracts/corporate actions and regulatory decisions qualify.
+It rejects programmes, speculative editorials, purely administrative
+clarifications, title-only/attachment-placeholder articles, and missing
+source URLs. Selection never consults actual price returns, prior correctness
+or model predictions. It records event categories, exclusion reason counts,
+available independent release dates and complete article manifest entries.
+Qualifying candidates are not yet certified to have moved market prices or to
+have clean source point-in-time provenance.
+
+**First inspect the real archive; it may have fewer than 30 qualifying dates.**
+The exclusion options intentionally cover BOTH prior 83-event and 30-event
+research results. This produces an immutable manifest without Gemma/price
+queries or mutation of the original news/training stores:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+
+python -m tris_market_event_intelligence.sequential_holdout_cli \
+  --journal "$DATA/market-evidence-v3-100.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --exclude-report "$DATA/market-holdout-baseline-news-v2.json" \
+  --exclude-report "$DATA/research-30-distinct-dates-results-v1.json" \
+  --selection-policy event-spread-dates \
+  --count 30 --preview \
+  --manifest "$DATA/market-event-research-30-manifest-v1.json"
+```
+
+Inspect `economicEventScreen`, `dateSpread.items` and
+`dateSpread.sufficientDistinctDates` before proceeding. If fewer than 30
+qualifying dates exist, **do not lower the quality threshold just to reach
+30**; acquire more correctly timestamped original economic announcements,
+earnings, contracts and regulatory releases, then repeat the preflight.
+With 30 verified eligible dates in the saved manifest, run the exact same
+sample with a manifest consistency check:
+
+```bash
+python -m tris_market_event_intelligence.sequential_holdout_cli \
+  --journal "$DATA/market-evidence-v3-100.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --exclude-report "$DATA/market-holdout-baseline-news-v2.json" \
+  --exclude-report "$DATA/research-30-distinct-dates-results-v1.json" \
+  --selection-policy event-spread-dates --count 30 \
+  --selection-manifest "$DATA/market-event-research-30-manifest-v1.json" \
+  --output "$DATA/market-event-research-30-results-v1.json"
+```
+
+Running against a changed article set, content cache or selection policy
+fails before inference. The training journal remains immutable. The model
+does not receive prior feedback lessons on holdout. Economic indicators
+may still lack a reliable pre-release consensus, individual security
+exposure and independently timestamp-certified full text; the engine
+records such limits and must not claim a causal forecasting success.
