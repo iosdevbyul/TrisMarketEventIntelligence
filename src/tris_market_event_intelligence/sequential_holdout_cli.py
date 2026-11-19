@@ -83,6 +83,13 @@ def price_direction_comparison(cases: list[dict]) -> dict:
     paired_combo = [
         row for row in outcomes if row.get("combinedPriceMatch") is not None
     ]
+    paired_gated = [
+        row for row in outcomes if row.get("gatedPriceMatch") is not None
+    ]
+    gated_reasons = Counter(
+        (row.get("gatedNewsAdjustment") or {}).get("reasonCode", "UNKNOWN")
+        for row in outcomes if row.get("gatedNewsAdjustment")
+    )
     paired_learned = [
         row for row in outcomes if row.get("frozenCalibrationMatch") is not None
     ]
@@ -110,6 +117,20 @@ def price_direction_comparison(cases: list[dict]) -> dict:
             ),
             "baselineMatchesOnSameTargets": sum(
                 x.get("baselinePriceMatch") is True for x in paired_learned
+            ),
+        },
+        "evidenceGatedNews": {
+            "compared": len(paired_gated),
+            "matches": sum(row["gatedPriceMatch"] for row in paired_gated),
+            "accuracy": (sum(row["gatedPriceMatch"] for row in paired_gated)
+                         / len(paired_gated) if paired_gated else None),
+            "newsChangedForecastCount": sum(
+                row["gatedNewsAdjustment"].get("newsAdjusted") is True
+                for row in paired_gated
+            ),
+            "reasonCounts": dict(sorted(gated_reasons.items())),
+            "baselineMatchesOnSameTargets": sum(
+                row["baselinePriceMatch"] is True for row in paired_gated
             ),
         },
         "baselinePlusNews": {
@@ -257,7 +278,10 @@ def evaluate_holdout(
             )
             # Commit every pre-event price baseline and the news-adjusted
             # direction before fetching any of the post-release closes.
-            precommitted = forecast_targets(prediction, client, observed)
+            precommitted = forecast_targets(
+                prediction, client, observed,
+                market_context=context["marketContext"],
+            )
             prior_calibration = [
                 calibrate_direction(fitted, str(row.get("priceProxy", "")),
                                     row["direction"])
@@ -300,7 +324,7 @@ def evaluate_holdout(
     ]
     comparison = price_direction_comparison(outcomes)
     result = {
-        "schemaVersion": "frozen_chronological_holdout_v2",
+        "schemaVersion": "frozen_chronological_holdout_v3",
         "cohort": settings["holdoutInfo"],
         "priceDirectionControls": comparison,
         "trainedPriceCalibration": fitted,
@@ -330,7 +354,8 @@ def evaluate_holdout(
                     "not an independently verified gain from training. "
                     "The train/holdout source material may be retrospectively enriched. "
                     "Calibration is historical price coincidence, not model fine tuning. "
-                    "One month of Holdout cannot establish regime generalization."),
+                    "One month of Holdout cannot establish regime generalization. "
+                    "Evidence gating is a conservative safety policy, not proof of alpha."),
         "articles": outcomes,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
