@@ -424,3 +424,46 @@ def test_absolute_price_and_sector_relative_direction_both_visible(monkeypatch):
     assert result["relativeDirection"] == "NEGATIVE"
     assert result["relativeDirectionVerdict"] == "WRONG"
     assert result["eventAttributionVerdict"] == "NOT_ESTABLISHED"
+
+
+def test_market_etf_misreported_as_stock_is_reclassified_not_rejected():
+    row = article(
+        "한국은행은 금융시장 안정 정책을 발표하였으며 금융기관에 적용되는 "
+        "세부 정책의 시행 시점을 공개했습니다."
+    )
+    raw = seq.canonical_prediction({
+        "impacts": [{
+            "targetType": "STOCK", "target": "069500.KS",
+            "direction": "NEUTRAL", "reason": "Domestic broad-market ETF",
+        }],
+    })
+    scoped = evidence.localize_prediction(raw, row)
+    assert scoped["impacts"][0]["targetType"] == "MARKET"
+    assert scoped["impacts"][0]["target"] == "BROAD_MARKET"
+    assert scoped["impacts"][0]["priceProxy"] == "069500.KS"
+
+
+def test_denied_exchange_rate_claim_not_a_confirmed_bok_policy():
+    row = article(
+        "<p>(보도내용) 한국은행은 원화 가치 상승을 유도하는 정책을 지지한다고 보도</p>"
+        "<p>(해명내용) 위 보도 내용은 사실과 다름</p>"
+    )
+    facts = evidence.event_fact_check(row)
+    assert facts["officialStatementStatus"] == "OFFICIAL_DENIAL"
+    assert facts["officiallyConfirmedPolicyAction"] is False
+    assert "사실과 다름" in facts["officialResponseText"]
+
+
+def test_ceremonial_news_without_economic_mechanism_abstains():
+    row = article("기념주화 발행 여부에 관해 해당 기관은 결정된 사항이 없음을 밝혔습니다.")
+    raw = seq.canonical_prediction({
+        "impacts": [{
+            "targetType": "SECTOR", "target": "FINANCIALS",
+            "direction": "NEUTRAL", "reason": "Broad financial exposure",
+        }],
+    })
+    scoped = evidence.localize_prediction(raw, row)
+    assert scoped["impacts"] == []
+    assert scoped["targetMappingRejections"][0]["reasonCode"] == (
+        "NO_IDENTIFIABLE_MARKET_MECHANISM"
+    )
