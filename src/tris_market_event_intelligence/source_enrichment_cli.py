@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+from pypdf.errors import PdfReadError
 
 from tris_market_event_intelligence.event_evidence_policy import (
     content_quality, plain_text,
@@ -114,11 +115,15 @@ def source_document(client: httpx.Client, row: dict) -> dict:
                 "sourceUrl": url, "attachmentUrl": link,
                 "contentText": body[:25000],
                 "contentSha256": hashlib.sha256(pdf).hexdigest(),
+                "contentTextSha256": hashlib.sha256(body[:25000].encode()).hexdigest(),
+                "captureSha256": row.get("captureSha256"),
+                "publishedAtReported": row.get("publishedAtReported"),
                 "acquiredAt": datetime.now(UTC).isoformat(),
                 "pointInTimeCertified": False,
             }
         return {"status": "UNAVAILABLE", "reasonCode": "PDF_TEXT_NOT_EXTRACTABLE"}
-    except (ValueError, httpx.HTTPError, OSError, KeyError, IndexError) as exc:
+    except (ValueError, PdfReadError, httpx.HTTPError, OSError,
+            KeyError, IndexError) as exc:
         return {"status": "UNAVAILABLE", "reasonCode": type(exc).__name__ +
                 ":" + str(exc)[:120]}
 
