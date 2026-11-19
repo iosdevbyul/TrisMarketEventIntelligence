@@ -204,3 +204,40 @@ def test_active_rule_retired_after_paired_regression():
             "SELECT status, version FROM memory_rules WHERE id=1"
         ).fetchone() == ("RETIRED", 4)
         assert not lm.select(db, seq=22, article=article(22, 50))
+
+
+def test_backfilled_article_cannot_turn_future_rule_into_past_trial():
+    with sqlite3.connect(":memory:") as db:
+        lm.initialize(db)
+        origin = article(1)
+        lm.learn(
+            db, seq=1, article_id=1, article=origin,
+            evaluation=evaluation(origin["firstObservedAt"]),
+            feedback=feedback(),
+        )
+        release = (datetime(2025, 1, 1, tzinfo=UTC)
+                   + timedelta(hours=1)).isoformat()
+        backfilled = article(2, 60)
+        backfilled["publishedAtReported"] = release
+        assert lm.select(db, seq=2, article=backfilled) == []
+        eligible_after = db.execute(
+            "SELECT eligible_after FROM memory_rules WHERE id=1"
+        ).fetchone()[0]
+        baseline = {"impacts": [
+            {"targetType": "STOCK", "target": "NVDA",
+             "direction": "NEGATIVE"},
+        ]}
+        primary = {"impacts": [
+            {"targetType": "STOCK", "target": "NVDA",
+             "direction": "POSITIVE"},
+        ]}
+        result = lm.compare_trial(
+            db, seq=2, article=backfilled,
+            candidate={"id": 1, "eligibleAfter": eligible_after},
+            primary=primary, baseline=baseline,
+            evaluation=evaluation(release),
+        )
+        assert result["eligible"] is False
+        assert db.execute(
+            "SELECT eligible FROM memory_rule_trials WHERE seq=2"
+        ).fetchone()[0] == 0
