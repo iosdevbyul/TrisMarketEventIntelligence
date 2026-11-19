@@ -380,7 +380,38 @@ def load_articles(db: Path, count: int, cutoff: datetime, *,
         selected.append(row)
         if len(selected) >= count:
             break
+    # Source-diverse research is opted in by cohort policy below. When only
+    # one source exists, do not hallucinate another source or rewrite dates.
     return selected, len(items) - train_end
+
+
+def diversify_articles(rows: list[dict], count: int) -> list[dict]:
+    """Balance independent sources while preserving chronological replay."""
+    sources: dict[str, list[dict]] = {}
+    for row in rows:
+        sources.setdefault(str(row.get("source") or "UNKNOWN"), []).append(row)
+    if len(sources) < 2:
+        return rows[:count]
+    selected: list[dict] = []
+    seen: set[int] = set()
+    while len(selected) < count:
+        changed = False
+        for source in sorted(sources, key=lambda k: (-len(sources[k]), k)):
+            if len(selected) >= count:
+                break
+            remaining = sources[source]
+            if not remaining:
+                continue
+            row = remaining.pop(0)
+            if row["articleId"] in seen:
+                continue
+            selected.append(row)
+            seen.add(row["articleId"])
+            changed = True
+        if not changed:
+            break
+    selected.sort(key=lambda x: (publication_time(x), x["articleId"]))
+    return selected
 
 
 
@@ -725,12 +756,27 @@ def evaluate(model_prediction: dict, observed: datetime, horizon: timedelta,
             change = result["return"]
             actual = ("POSITIVE" if change > 0.001 else
                       "NEGATIVE" if change < -0.001 else "NEUTRAL")
+            # Price direction is observable. A news-caused move is NOT.
+            # The stored legacy status remains comparable as a price-only label.
+            excess = (change - benchmark["return"]
+                      if "error" not in benchmark else None)
+            relative = ("POSITIVE" if excess > 0.005 else
+                        "NEGATIVE" if excess < -0.005 else "NEUTRAL") if (
+                            excess is not None and impact["targetType"] != "MARKET"
+                        ) else "UNVERIFIED"
             row.update(
+                priceDirectionVerdict=("CORRECT" if actual == impact["direction"]
+                                       else "WRONG"),
+                eventAttributionVerdict="NOT_ESTABLISHED",
+                relativeDirection=relative,
+                relativeDirectionVerdict=(
+                    "UNVERIFIED" if relative == "UNVERIFIED" else
+                    "CORRECT" if relative == impact["direction"] else "WRONG"
+                ),
                 status="CORRECT" if actual == impact["direction"] else "WRONG",
                 actualDirection=actual, absoluteReturn=change,
                 benchmarkReturn=(benchmark.get("return") if "error" not in benchmark else None),
-                excessReturn=(change - benchmark["return"]
-                              if "error" not in benchmark else None),
+                excessReturn=excess,
                 baselineAt=result["baselineAt"], outcomeAt=result["outcomeAt"],
                 baselinePrice=result.get("baselinePrice"),
                 outcomePrice=result.get("outcomePrice"),
@@ -798,10 +844,24 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
         articles, heldout = load_articles(
             args.source_db, count, cutoff, content_cache=Path(cache_path),
         )
+    cohort_policy = getattr(args, "cohort_policy", "diverse")
+    if cohort_policy not in {"diverse", "chronological"}:
+        raise ValueError("Unsupported cohort policy")
+    if cohort_policy == "diverse":
+        # Diversification must select from a sufficiently large eligible pool.
+        # An existing study with one source will remain explicitly one-source.
+        pool = load_articles(
+            args.source_db, 1000, cutoff, **(
+                {"content_cache": Path(cache_path)} if cache_path else {}
+            ),
+        )[0]
+        articles = diversify_articles(pool, count)
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
         "assetValidationVersion": "jurisdiction-content-grounding-v3",
         "eventGroundingVersion": "press-claim-v1",
+        "cohortPolicy": cohort_policy,
+        "evaluationContract": "absolute-relative-attribution-separated-v2",
         "eligibilityVersion": "substantive-body-v4",
         "dailyBarAlignment": "exchange-local-close-v4",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
@@ -1109,6 +1169,8 @@ def main() -> None:
     parser.add_argument("--journal", type=Path, required=True)
     parser.add_argument("--as-of", required=True, help="ISO timestamp with timezone")
     parser.add_argument("--count", type=int, default=1000)
+    parser.add_argument("--cohort-policy", choices=["diverse", "chronological"],
+                        default="diverse")
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--horizon-hours", type=float, default=24)
     parser.add_argument("--interval", choices=["1d", "60m", "1m"], default="1d")
