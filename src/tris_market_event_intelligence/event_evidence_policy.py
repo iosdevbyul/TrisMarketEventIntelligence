@@ -44,8 +44,15 @@ def event_fact_check(article: dict[str, Any]) -> dict[str, Any]:
     title = plain_text(article.get("title"))
     correction = (str(article.get("source") or "") == "bok_corrections"
                   or "보도해명" in title)
-    has_denial = any(marker in body for marker in OFFICIAL_DENIALS)
-    has_pending = any(marker in body for marker in UNDECIDED_MARKERS)
+    # The second section of a BOK correction is the authoritative response.
+    # A denied claim quoted above the response is not the BOK's own policy.
+    official_marker = re.search(
+        r"(?:해명내용|한국은행(?: 및 기획재정부)? 입장|관계기관 입장|한은의 입장)"
+        r"\s*[:：>]*", body,
+    )
+    response = body[official_marker.end():].strip() if official_marker else body
+    has_denial = any(marker in response for marker in OFFICIAL_DENIALS)
+    has_pending = any(marker in response for marker in UNDECIDED_MARKERS)
     status = (
         "OFFICIAL_DENIAL" if correction and has_denial else
         "NOT_FINALIZED" if correction and has_pending else
@@ -55,7 +62,7 @@ def event_fact_check(article: dict[str, Any]) -> dict[str, Any]:
         "sourceType": "OFFICIAL_CORRECTION" if correction else "OTHER",
         "officialStatementStatus": status,
         "reportedClaim": title,
-        "officialResponseText": body[:1500] if correction else "",
+        "officialResponseText": response[:1500] if correction else "",
         "officiallyConfirmedPolicyAction": False if correction else None,
         "limitation": ("A news allegation quoted in an official correction is "
                        "NOT a confirmed policy or an adopted decision."),
@@ -68,7 +75,7 @@ def target_relevance(article: dict[str, Any], item: dict[str, Any]) -> str:
             plain_text(article.get("summary"))).casefold()
     economic = (
         "금리", "통화정책", "물가", "환율", "외환", "스와프",
-        "유동성", "대출", "은행", "금융", "채권", "주식",
+        "유동성", "대출", "채권", "주식",
         "기업", "수출", "수입", "경기", "성장률", "실적",
         "rate", "inflation", "earnings", "revenue",
         "semiconductor", "investment", "liquidity",
