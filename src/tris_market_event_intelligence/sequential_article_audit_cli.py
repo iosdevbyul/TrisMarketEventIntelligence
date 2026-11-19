@@ -484,7 +484,7 @@ def html_report(report: dict[str, Any]) -> str:
             f"<b>출처:</b> {esc(record['source'])}</p>"
             f"<p><b>기사 원문 링크:</b> {article_link(record['sourceUrl'])}</p>"
             + source_notice
-            f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
+            + f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
             f"<p><b>Gemma 분석:</b> {esc(record['originalPredictionSummary'])}</p>"
             + "<h3>발표 전 시장 기대·새로운 정보 분석</h3>"
             + assessment_text
