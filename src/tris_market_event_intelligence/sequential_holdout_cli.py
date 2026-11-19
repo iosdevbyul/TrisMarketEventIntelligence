@@ -14,6 +14,9 @@ from pathlib import Path
 
 import httpx
 
+from tris_market_event_intelligence.distributed_holdout_selection import (
+    spread_date_selection,
+)
 from tris_market_event_intelligence.event_evidence_policy import (
     article_market,
     content_quality,
@@ -182,9 +185,14 @@ def price_direction_comparison(cases: list[dict]) -> dict:
     }
 
 
-def holdout_selection(journal: Path, source_db: Path, count: int) -> tuple[list[dict], dict]:
+def holdout_selection(
+    journal: Path, source_db: Path, count: int, *,
+    selection_policy: str = "chronological",
+) -> tuple[list[dict], dict]:
     if not 1 <= count <= 1000:
         raise ValueError("Holdout count must be 1..1000")
+    if selection_policy not in {"chronological", "spread-dates"}:
+        raise ValueError("Unknown holdout selection policy")
     if journal.is_symlink() or source_db.is_symlink():
         raise ValueError("Symlink inputs are not allowed")
     if not journal.is_file() or not source_db.is_file():
@@ -213,10 +221,15 @@ def holdout_selection(journal: Path, source_db: Path, count: int) -> tuple[list[
         source_db, 1000, cutoff, partition="holdout", **kwargs,
     )
     last_training = timestamp(bounds[0])
-    selected = [
+    eligible = [
         a for a in holdout if a["articleId"] not in training_ids
         and publication_time(a) > last_training
-    ][:count]
+    ]
+    distinct_info = None
+    if selection_policy == "spread-dates":
+        selected, distinct_info = spread_date_selection(eligible, count)
+    else:
+        selected = eligible[:count]
     info = {
         "trainingJournal": str(journal),
         "holdoutSourceDb": str(source_db),
@@ -233,6 +246,8 @@ def holdout_selection(journal: Path, source_db: Path, count: int) -> tuple[list[
         "learnedRulesApplied": 0,
         "learningDisabled": True,
         "assessmentMode": "FROZEN_NO_FEEDBACK_NOT_TRAINED_MODEL_A_B",
+        "selectionPolicy": selection_policy,
+        "dateSpread": distinct_info,
     }
     return selected, {**settings, "holdoutInfo": info}
 
@@ -240,10 +255,19 @@ def holdout_selection(journal: Path, source_db: Path, count: int) -> tuple[list[
 def evaluate_holdout(
     *, journal: Path, source_db: Path, output: Path, model: object,
     client: httpx.Client, count: int = 100,
+    selection_policy: str = "chronological",
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise ValueError("Refusing to overwrite a holdout result")
-    selected, settings = holdout_selection(journal, source_db, count)
+    selected, settings = holdout_selection(
+        journal, source_db, count, selection_policy=selection_policy,
+    )
+    if selection_policy == "spread-dates" and len(selected) != count:
+        available = settings["holdoutInfo"]["dateSpread"]["candidateDistinctDates"]
+        raise ValueError(
+            f"INSUFFICIENT_DISTINCT_RELEASE_DATES: requested {count}, "
+            f"eligible {available}; collect more historically dated articles"
+        )
     last_training = timestamp(settings["holdoutInfo"]["lastTrainingPublishedAt"])
     # Fit once on sealed training journal only. No holdout labels enter fitting.
     fitted = (
@@ -370,15 +394,34 @@ def main() -> None:
     parser.add_argument("--source-db", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--count", type=int, default=100)
+    parser.add_argument(
+        "--selection-policy", choices=["chronological", "spread-dates"],
+        default="chronological",
+        help="spread-dates requires distinct original release dates",
+    )
+    parser.add_argument("--manifest", type=Path,
+                        help="Write immutable selected-article list during preview")
     parser.add_argument("--preview", action="store_true",
                         help="Inspect reserved holdout counts without Gemma or price requests")
     args = parser.parse_args()
     if args.preview:
-        _, settings = holdout_selection(args.journal, args.source_db, args.count)
-        print(json.dumps(settings["holdoutInfo"], ensure_ascii=False))
+        _, settings = holdout_selection(
+            args.journal, args.source_db, args.count,
+            selection_policy=args.selection_policy,
+        )
+        report = settings["holdoutInfo"]
+        if args.manifest is not None:
+            if args.manifest.exists() or args.manifest.is_symlink():
+                parser.error("Refusing to overwrite article selection manifest")
+            args.manifest.parent.mkdir(parents=True, exist_ok=True)
+            with args.manifest.open("x", encoding="utf-8") as output:
+                json.dump(report, output, ensure_ascii=False, indent=2)
+        print(json.dumps(report, ensure_ascii=False))
         return
     if args.output is None:
         parser.error("--output is required unless --preview is provided")
+    if args.manifest is not None:
+        parser.error("--manifest is supported only with --preview")
     if args.journal.is_symlink() or args.source_db.is_symlink():
         parser.error("Symlink inputs are not allowed")
     with sqlite3.connect(f"file:{args.journal.resolve()}?mode=ro", uri=True) as db:
@@ -397,6 +440,7 @@ def main() -> None:
             journal=args.journal, source_db=args.source_db,
             output=args.output, model=model, client=client,
             count=args.count,
+            selection_policy=args.selection_policy,
         ), ensure_ascii=False))
 
 
