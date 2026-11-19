@@ -377,7 +377,9 @@ def pre_event_market_context(
             })
         if len(related) >= 5:
             break
-    benchmark_symbol = ("069500.KS" if article_market(article) == "KR" else "SPY")
+    is_korean = article_market(article) == "KR"
+    benchmark_symbol = "069500.KS" if is_korean else "SPY"
+    market_zone = SEOUL if is_korean else NEW_YORK
     market = {"status": "UNAVAILABLE", "symbol": benchmark_symbol}
     try:
         response = client.get(
@@ -398,7 +400,7 @@ def pre_event_market_context(
                 strict=False,
             )
             if p is not None and float(p) > 0
-            and datetime.fromtimestamp(t, UTC).astimezone(NEW_YORK).date() < observed.astimezone(NEW_YORK).date()
+            and datetime.fromtimestamp(t, UTC).astimezone(market_zone).date() < observed.astimezone(market_zone).date()
         ]
         if len(candles) >= 2:
             window = candles[-6:]
@@ -423,6 +425,7 @@ def pre_event_market_context(
             "Keyword overlap does not prove the same information was priced in",
             "Market benchmark trend is not the individual target's price history",
             "No post-event prices or articles are included",
+            "Publication date and retrospective source content are not PIT-certified",
         ],
     }
 
@@ -737,6 +740,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
         "count": count, "horizonHours": args.horizon_hours,
         "interval": args.interval, "model": args.model,
+        "sourceContentPolicy": "substantive-body-only-v1",
     }
     if model is None:
         from dataclasses import replace
