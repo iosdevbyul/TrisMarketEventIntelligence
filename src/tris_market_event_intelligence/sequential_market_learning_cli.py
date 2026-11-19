@@ -7,13 +7,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import sqlite3
 import re
-from datetime import UTC, datetime, timedelta, time
-from zoneinfo import ZoneInfo
-from urllib.parse import quote
+import sqlite3
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -898,10 +898,6 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                                       for r in assessment["impacts"]),
                     "phase": "COMPLETE",
                 }), flush=True)
-            totals = db.execute("""
-                SELECT COUNT(*), SUM(CASE WHEN feedback_json IS NOT NULL THEN 1 ELSE 0 END)
-                FROM steps
-            """).fetchone()
             lessons_count = db.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
             skipped_count = db.execute(
                 "SELECT COUNT(*) FROM steps WHERE phase='SKIPPED_MODEL_ERROR'"
