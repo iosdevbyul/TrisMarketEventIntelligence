@@ -456,6 +456,7 @@ def test_denied_exchange_rate_claim_not_a_confirmed_bok_policy():
 
 def test_ceremonial_news_without_economic_mechanism_abstains():
     row = article("기념주화 발행 여부에 관해 해당 기관은 결정된 사항이 없음을 밝혔습니다.")
+    row["title"] = "숭례문 기념주화 관련 보도해명자료"
     raw = seq.canonical_prediction({
         "impacts": [{
             "targetType": "SECTOR", "target": "FINANCIALS",
