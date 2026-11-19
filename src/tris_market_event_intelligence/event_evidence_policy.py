@@ -18,6 +18,13 @@ KOREAN_BROAD_PROXY = "069500.KS"  # KODEX 200, a KR-listed liquid market proxy
 KOREAN_SECTOR_PROXIES = {
     "FINANCIALS": "091170.KS",  # KODEX Bank, not an American finance ETF
 }
+EXPLICIT_ISSUERS = {
+    "NVDA": ("nvidia", "엔비디아"),
+    "AMD": ("amd", "advanced micro devices"),
+    "000660.KS": ("sk hynix", "sk하이닉스", "sk 하이닉스"),
+    "005930.KS": ("삼성전자", "samsung electronics"),
+    "086790.KS": ("하나금융지주", "하나금융"),
+}
 MISSING_BODY_MARKERS = (
     "자세한 내용은 첨부파일", "자세한 내용은 붙임",
     "첨부파일을 참고", "첨부파일을 참조", "붙임 자료 참조",
@@ -98,6 +105,16 @@ def localize_prediction(prediction: dict[str, Any],
             row["priceProxy"] = KOREAN_BROAD_PROXY
         elif kind == "SECTOR" and target in KOREAN_SECTOR_PROXIES:
             row["priceProxy"] = KOREAN_SECTOR_PROXIES[target]
+        elif kind == "STOCK":
+            ticker = str(row.get("priceProxy") or "")
+            text = (plain_text(article.get("title")) + " " +
+                    plain_text(article.get("summary"))).casefold()
+            aliases = EXPLICIT_ISSUERS.get(ticker, ())
+            if not (ticker.casefold() in text or
+                    any(alias in text for alias in aliases)):
+                rejected.append({"targetType": kind, "target": target,
+                                 "reasonCode": "NO_VERIFIED_ARTICLE_ISSUER_LINK"})
+                continue
         elif kind == "SECTOR":
             rejected.append({"targetType": kind, "target": target,
                              "reasonCode": "NO_VERIFIED_KR_SECTOR_PROXY"})
