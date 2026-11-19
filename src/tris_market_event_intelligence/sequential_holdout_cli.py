@@ -24,6 +24,10 @@ from tris_market_event_intelligence.event_grounding import (
     event_facts,
 )
 from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.market_prior_baseline import (
+    annotate_price_study,
+    forecast_targets,
+)
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 from tris_market_event_intelligence.sequential_market_learning_cli import (
     evaluate,
@@ -69,8 +73,43 @@ def price_direction_comparison(cases: list[dict]) -> dict:
         row for row in outcomes
         if row.get("relativeDirectionVerdict") in {"CORRECT", "WRONG"}
     ]
+    paired_baseline = [
+        row for row in outcomes if row.get("baselinePriceMatch") is not None
+    ]
+    paired_combo = [
+        row for row in outcomes if row.get("combinedPriceMatch") is not None
+    ]
+    by_week = Counter(
+        str(case.get("releaseAt", ""))[:7] for case in cases
+        if case.get("releaseAt")
+    )
     return {
         "units": "target-observations",
+        "monthDistribution": dict(sorted(by_week.items())),
+        "multipleMonthsObserved": len(by_week) >= 2,
+        "priorBaseline": {
+            "compared": len(paired_baseline),
+            "matches": sum(x["baselinePriceMatch"] for x in paired_baseline),
+            "accuracy": (sum(x["baselinePriceMatch"] for x in paired_baseline)
+                         / len(paired_baseline) if paired_baseline else None),
+        },
+        "baselinePlusNews": {
+            "compared": len(paired_combo),
+            "matches": sum(x["combinedPriceMatch"] for x in paired_combo),
+            "accuracy": (sum(x["combinedPriceMatch"] for x in paired_combo)
+                         / len(paired_combo) if paired_combo else None),
+        },
+        "pairedModelAgainstBaseline": {
+            "compared": len(paired_baseline),
+            "modelMatches": sum(x.get("status") == "CORRECT"
+                                for x in paired_baseline),
+            "baselineMatches": sum(x["baselinePriceMatch"]
+                                   for x in paired_baseline),
+            "modelWins": sum(x.get("status") == "CORRECT"
+                             and not x["baselinePriceMatch"] for x in paired_baseline),
+            "baselineWins": sum(x.get("status") == "WRONG"
+                                and x["baselinePriceMatch"] for x in paired_baseline),
+        },
         "scoredTargets": paired,
         "modelDirectionMatches": correct,
         "modelDirectionalAccuracy": correct / paired if paired else None,
@@ -192,8 +231,12 @@ def evaluate_holdout(
                     ), article,
                 ), article,
             )
-            price = evaluate(
-                prediction, observed, horizon, settings["interval"], client,
+            # Commit every pre-event price baseline and the news-adjusted
+            # direction before fetching any of the post-release closes.
+            precommitted = forecast_targets(prediction, client, observed)
+            price = annotate_price_study(
+                evaluate(prediction, observed, horizon, settings["interval"], client),
+                precommitted,
             )
             status = "COMPLETE"
             issue = None
@@ -240,6 +283,7 @@ def evaluate_holdout(
             x["status"] == "CORRECT" for x in directional
         ),
         "causalAttributionEstablished": False,
+        "pastOnlyBaselineEnabled": True,
         "warning": ("Retrospective content is not PIT-certified. Model prompting "
                     "uses no learned feedback. This evaluates a frozen baseline, "
                     "not an independently verified gain from training. "
