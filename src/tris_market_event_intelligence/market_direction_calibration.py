@@ -37,7 +37,7 @@ def fit_price_calibrator(
         db.execute("PRAGMA query_only=ON")
         rows = db.execute(
             "SELECT observed_at, prediction_json, evaluation_json "
-            "FROM steps WHERE phase='COMPLETE' ORDER BY observed_at, seq"
+            "FROM steps WHERE phase='COMPLETE' ORDER BY observed_at"
         )
         for published, pred_raw, eval_raw in rows:
             if timestamp(published) >= first_holdout_release:
