@@ -1039,6 +1039,13 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 coverage["articlesWithEnrichedContent"] += int(
                     bool(predicted.get("contentEvidence"))
                 )
+            last_publication = db.execute(
+                "SELECT MAX(observed_at) FROM steps WHERE phase='COMPLETE'"
+            ).fetchone()[0]
+            matured_rules = db.execute(
+                "SELECT COUNT(*) FROM memory_rules WHERE eligible_after < ?",
+                (last_publication or cutoff.isoformat(),),
+            ).fetchone()[0]
             return {
                 "status": ("COMPLETE" if complete_count == count
                            else "PARTIAL_WITH_MODEL_ERRORS" if skipped_count
@@ -1047,6 +1054,18 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 "articlesCompleted": complete_count,
                 "articlesSkippedModelError": skipped_count,
                 "articleCoverage": coverage,
+                "learningRuleDiagnostics": {
+                    "maturedRulesByLastPublication": matured_rules,
+                    "latestArticlePublication": last_publication,
+                    "ruleApplications": db.execute(
+                        "SELECT COUNT(*) FROM memory_rule_applications"
+                    ).fetchone()[0],
+                    "explanation": (
+                        "Rule availability requires its market outcome to predate "
+                        "the next article's original publication time. Zero "
+                        "applications does not prove a defective rule selector."
+                    ),
+                },
                 "lessons": lessons_count,
                 "holdoutReserved": heldout, "journal": str(args.journal),
                 "marketReturnsAnalyzed": any(
