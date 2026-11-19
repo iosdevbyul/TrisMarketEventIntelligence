@@ -340,7 +340,8 @@ def test_conflicting_gemma_duplicate_abstains_without_invented_verdict():
 
 def test_bok_denial_remains_false_not_a_confirmed_policy():
     from tris_market_event_intelligence.event_grounding import (
-        event_facts, enforce_event_grounding,
+        enforce_event_grounding,
+        event_facts,
     )
     row = article(
         "<p>(보도내용) 한은이 외환시장에 개입하고 균형환율을 "
@@ -397,7 +398,7 @@ def test_diversity_policy_preserves_publication_order():
         })
     selected = diversify_articles(rows, 4)
     assert len(selected) == 4
-    assert set(item["source"] for item in selected) == {"other", "bok_corrections"}
+    assert {item["source"] for item in selected} == {"other", "bok_corrections"}
     assert [i["articleId"] for i in selected] == sorted(
         i["articleId"] for i in selected
     )
