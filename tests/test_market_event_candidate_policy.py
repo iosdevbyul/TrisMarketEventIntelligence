@@ -7,11 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from tris_market_event_intelligence import sequential_holdout_cli as holdout
 from tris_market_event_intelligence.market_event_candidate_policy import (
     filter_market_event_candidates,
     research_candidate,
 )
-from tris_market_event_intelligence import sequential_holdout_cli as holdout
 
 
 def article(
