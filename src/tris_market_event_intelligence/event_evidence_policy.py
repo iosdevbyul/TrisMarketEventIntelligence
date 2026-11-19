@@ -73,6 +73,13 @@ def target_relevance(article: dict[str, Any], item: dict[str, Any]) -> str:
     """Exclude price claims without a recognizable economic transmission path."""
     text = (plain_text(article.get("title")) + " " +
             plain_text(article.get("summary"))).casefold()
+    summary = plain_text(article.get("summary")).casefold()
+    if any(marker in summary for marker in (
+        "기념주화", "청첩장", "2만원권 발행", "노조 집행부",
+    )) and not any(marker in summary for marker in (
+        "시장금리", "은행주", "지급준비율", "기준금리", "자금조달",
+    )):
+        return "NO_IDENTIFIABLE_MARKET_MECHANISM"
     economic = (
         "금리", "통화정책", "물가", "환율", "외환", "스와프",
         "유동성", "대출", "채권", "주식",
