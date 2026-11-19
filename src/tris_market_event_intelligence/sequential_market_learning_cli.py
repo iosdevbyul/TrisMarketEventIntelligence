@@ -25,6 +25,9 @@ from tris_market_event_intelligence.event_evidence_policy import (
     plain_text,
 )
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
+from tris_market_event_intelligence.event_grounding import (
+    enforce_event_grounding, event_facts, substantive_terms,
+)
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
@@ -124,7 +127,12 @@ expectationStatus ABOVE|IN_LINE|BELOW|UNKNOWN,
 novelty NEW|REPEATED|UNKNOWN, pricedInStatus POSSIBLE|UNSUPPORTED|UNKNOWN,
 and rationale. Label possible priced-in only with corroborating earlier
 coverage, otherwise UNKNOWN.
-No forward-looking factual knowledge or price results; distinguish risks from facts."""
+No forward-looking factual knowledge or price results; distinguish risks from facts.
+If an official release denies a press claim, NEVER treat the claim as a confirmed action.
+Distinguish press allegations, official denials and pending decisions. Do not
+turn administrative or ceremonial stories into financial-sector forecasts.
+NEUTRAL requires an economic no-impact thesis, not price-direction uncertainty;
+when evidence is insufficient return no impacts instead of guessing."""
 CRITIC = """You are a research reviewer. Given an immutable earlier prediction and its
 later realized price assessment, diagnose ONE generalizable error. Output JSON
 {"diagnosis":"...", "lesson":"..."}.
@@ -381,9 +389,7 @@ def pre_event_market_context(
 ) -> dict[str, Any]:
     """Reconstruct historical context relative to the original release time."""
     observed = publication_time(article)
-    terms = set(re.findall(r"[a-zA-Z가-힣]{3,}", (
-        plain_text(article.get("title")) + " " + plain_text(article.get("summary"))
-    ).lower()))
+    terms = substantive_terms(article)
     stop = {"with", "from", "this", "that", "will", "have", "after",
             "about", "market", "reported", "could", "company", "shares",
             "federal", "reserve", "board", "announces", "issues",
@@ -395,11 +401,7 @@ def pre_event_market_context(
         when = publication_time(previous)
         if when >= observed or observed - when > timedelta(days=14):
             continue
-        prior_terms = set(re.findall(
-            r"[a-zA-Z가-힣]{3,}",
-            (plain_text(previous.get("title")) + " " +
-             plain_text(previous.get("summary"))).lower(),
-        )) - stop
+        prior_terms = substantive_terms(previous) - stop
         overlap = sorted(terms & prior_terms)
         if len(overlap) >= 2:
             related.append({
@@ -798,7 +800,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
         )
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
-        "assetValidationVersion": "jurisdiction-content-causality-v2",
+        "assetValidationVersion": "jurisdiction-content-grounding-v3",
+        "eventGroundingVersion": "press-claim-v1",
         "eligibilityVersion": "substantive-body-v4",
         "dailyBarAlignment": "exchange-local-close-v4",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
@@ -872,6 +875,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             "evaluationAt": observed.isoformat(),
                             "source": article["source"],
                             "contentEvidence": article.get("contentEvidence"),
+                            "eventFacts": event_facts(article),
                         },
                         "priorFeedbackLessons": relevant,
                     }
@@ -907,8 +911,10 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             "reason": str(exc)[:180],
                         }), flush=True)
                         continue
-                    prediction = localize_prediction(
-                        validate_asset_evidence(prediction, article), article,
+                    prediction = enforce_event_grounding(
+                        localize_prediction(
+                            validate_asset_evidence(prediction, article), article,
+                        ), article,
                     )
                     prediction["marketContext"] = market_context
                     prediction["contentEvidence"] = article.get("contentEvidence")
@@ -932,9 +938,11 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             [rule for rule in rules if rule["id"] != focus["id"]]
                         )
                         try:
-                            baseline = localize_prediction(
-                                validate_asset_evidence(
-                                    predict_with_repair(model, shadow), article,
+                            baseline = enforce_event_grounding(
+                                localize_prediction(
+                                    validate_asset_evidence(
+                                        predict_with_repair(model, shadow), article,
+                                    ), article,
                                 ), article,
                             )
                         except (ValueError, TypeError):
