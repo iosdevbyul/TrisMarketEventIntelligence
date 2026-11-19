@@ -111,6 +111,8 @@ def inspect(journal: Path, *, limit: int = 1000,
         count = Counter()
         outcome_times = Counter()
         neutral_wrong = 0
+        relative_verdicts: Counter[str] = Counter()
+        attribution_verdicts: Counter[str] = Counter()
         for seq, article_id, observed_at, raw_prediction, raw_evaluation, raw_feedback, phase in entries:
             prediction = json.loads(raw_prediction)
             evaluation = json.loads(raw_evaluation) if raw_evaluation else {}
@@ -141,6 +143,10 @@ def inspect(journal: Path, *, limit: int = 1000,
             for result in assessed:
                 status = result.get("status", "UNVERIFIED")
                 count[status] += 1
+                if result.get("relativeDirectionVerdict"):
+                    relative_verdicts[result["relativeDirectionVerdict"]] += 1
+                if result.get("eventAttributionVerdict"):
+                    attribution_verdicts[result["eventAttributionVerdict"]] += 1
                 if status == "WRONG" and result.get("direction") == "NEUTRAL":
                     neutral_wrong += 1
                 if result.get("outcomeAt"):
@@ -154,6 +160,10 @@ def inspect(journal: Path, *, limit: int = 1000,
                     "predictionReason": matched.get("reason", result.get("reason")),
                     "observedDirection": result.get("actualDirection"),
                     "verdict": status,
+                    "priceDirectionVerdict": result.get("priceDirectionVerdict", status),
+                    "relativeDirection": result.get("relativeDirection"),
+                    "relativeDirectionVerdict": result.get("relativeDirectionVerdict"),
+                    "eventAttributionVerdict": result.get("eventAttributionVerdict"),
                     "absoluteReturn": result.get("absoluteReturn"),
                     "benchmarkReturn": result.get("benchmarkReturn"),
                     "excessReturn": result.get("excessReturn"),
@@ -206,6 +216,9 @@ def inspect(journal: Path, *, limit: int = 1000,
                 "publishedAtReported": info.get("publishedAtReported"),
                 "firstObservedAt": observed_at,
                 "originalPredictionSummary": prediction.get("summary"),
+                "eventFacts": prediction.get("eventFacts"),
+                "eventGroundingStatus": prediction.get("eventGroundingStatus"),
+                "eventGroundingReasons": prediction.get("eventGroundingReasons"),
                 "surpriseAssessment": prediction.get("surpriseAssessment"),
                 "marketContext": prediction.get("marketContext"),
                 "eventMarket": prediction.get("eventMarket"),
@@ -217,6 +230,8 @@ def inspect(journal: Path, *, limit: int = 1000,
                 "outcomes": outcomes,
                 "diagnosis": feedback.get("diagnosis"),
                 "correctiveRule": feedback.get("lesson"),
+                "unverifiedHypothesis": feedback.get("unverifiedHypothesis"),
+                "hypothesisStatus": feedback.get("hypothesisStatus"),
                 "rulesApplied": rules,
                 "pairedShadow": shadow,
                 "phase": phase,
@@ -235,6 +250,8 @@ def inspect(journal: Path, *, limit: int = 1000,
             "New study: incomplete article bodies are excluded, not scored as neutral.",
             "Korean market and sector ETF proxies require exchange-specific price validation.",
             "Market movement is not evidence that the news event caused the price change.",
+            "Price direction labels and benchmark-relative labels are descriptive, not causal validation.",
+            "Unverified critic hypotheses are not approved memory rules.",
             "No causal effect or price timestamp validity is established by this report.",
         ]
         if source_db is None:
@@ -264,6 +281,9 @@ def inspect(journal: Path, *, limit: int = 1000,
                     correct / (correct + wrong) if correct + wrong else None
                 ),
                 "neutralPredictionsMarkedWrong": neutral_wrong,
+                "relativeDirectionVerdicts": dict(relative_verdicts),
+                "eventAttributionVerdicts": dict(attribution_verdicts),
+                "priceDirectionsAreNotEventAttribution": True,
                 "commonOutcomeTimestamps": [
                     {"outcomeAt": t, "count": n} for t, n in repeated
                 ],
@@ -348,6 +368,9 @@ def markdown(report: dict[str, Any]) -> str:
                 "",
             ])
         lines.extend([
+            f"- 기사 의미 확인: {_text(record.get('eventFacts'))}",
+            f"- 근거 필터: {_text(record.get('eventGroundingStatus'))}",
+            f"- 검증 전 학습 가설: {_text(record.get('unverifiedHypothesis'))}",
             f"- Gemma 오답 진단: {_text(record['diagnosis'])}",
             f"- 생성된 개선 규칙: {_text(record['correctiveRule'])}",
             "- 이번 분석에 전달한 기억 규칙:",
