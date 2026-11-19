@@ -95,10 +95,10 @@ def source_document(client: httpx.Client, row: dict) -> dict:
             link = urljoin(url, href.strip())
             if not authorized(link):
                 continue
-            if (re.search(r"\.pdf(?:$|[?#])", link, re.IGNORECASE)
-                    or re.search(r"\bpdf\b", name, re.IGNORECASE)):
-                if link not in candidates:
-                    candidates.append(link)
+            is_pdf = bool(re.search(r"\\.pdf(?:$|[?#])", link, re.IGNORECASE))
+            pdf_label = bool(re.search(r"\\bpdf\\b", name, re.IGNORECASE))
+            if (is_pdf or pdf_label) and link not in candidates:
+                candidates.append(link)
         if not candidates:
             return {"status": "UNAVAILABLE",
                     "reasonCode": "PDF_ATTACHMENT_NOT_LINKED_OR_UNSUPPORTED"}
