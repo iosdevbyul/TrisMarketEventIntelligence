@@ -322,3 +322,60 @@ directional-price denominator separately from neutral-event hypotheses.
 A retrospective holdout using later-downloaded documents is **not
 point-in-time-certified**, and when it supplies no learned rule context it
 measures a frozen baseline rather than proven training improvement.
+
+### Past-only market baseline + news-pressure A/B/C/D study
+
+The original 83-event November 2026 holdout had only 17.73% recorded price-direction
+agreement, compared with 85.82% for the trivial constant-negative control
+during that short bearish window. This is neither a causal price model nor
+evidence that the model is permanently inferior: the narrow period and market
+regime make the sample unrepresentative.
+
+A frozen holdout now records four **separate, pre-outcome decisions** on the same
+observed targets:
+
+1. Gemma4 price-pressure direction (existing research contract).
+2. A deterministic **past-only price trend** from three completed exchange-local
+   trading sessions before the article's published timestamp. The Yahoo query
+   ends at publication time; the bar with a session close after release is never
+   a feature.
+3. A prespecified signed sum of price-trend and Gemma4 news pressure. Neutral
+   news pressure means *no adjustment*, not a prediction that tomorrow's asset
+   price will be flat.
+4. An optional **training-journal calibration rule**, fitted once from earlier
+   complete price observations, with a minimum sample of eight per
+   market-and-predicted-direction bucket. If historical support is insufficient,
+   the trained rule abstains; it cannot use held-out outcomes or assume a
+   Korean ETF historical label generalizes to U.S. securities.
+
+The report keeps paired denominators for baseline, combination and trained
+calibration, rather than ranking accuracies computed on different subsets. It
+also exposes source/month distributions, unchanged constant-direction
+controls, price-direction labels versus same-market relative direction,
+and explicit `causalAttributionEstablished: false`. The calibration learns
+**past price coincidence**, not whether a specific news event caused that
+move. This does not establish a successful AI learning gain. If the selected
+holdout spans only one month, the output explicitly reports insufficient
+regime diversity.
+
+Use the already completed **original** 100-case journal, not a new training run.
+The command below only creates one new holdout output; it does not modify
+the source archive or the training journal:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+
+python -m tris_market_event_intelligence.sequential_holdout_cli \
+  --journal "$DATA/market-evidence-v3-100.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --output "$DATA/market-holdout-baseline-news-v2.json" \
+  --count 83
+```
+
+Running this study again uses Yahoo historical price queries and Gemma4
+inference for each eligible holdout article. Verify the source dates and
+historical content separately; publication timestamps, retrospectively
+downloaded PDF documents and third-party daily prices are not
+point-in-time-certified. Do not merge or enable automatic learning until
+the independent source regime, price alignment and multi-period robustness
+checks have been reviewed.
