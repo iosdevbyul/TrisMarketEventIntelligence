@@ -375,14 +375,20 @@ def load_articles(db: Path, count: int, cutoff: datetime, *,
     if partition not in {"train", "holdout"}:
         raise ValueError("Unknown chronological cohort partition")
     selected = []
-    seen = set()
+    def fingerprint(row: dict) -> str | int:
+        return row.get("textSha256") or row.get("sourceUrl") or row["articleId"]
+    # Do not let a reprinted headline re-enter through the later partition.
+    seen = (
+        {fingerprint(row) for row in items[:train_end]}
+        if partition == "holdout" else set()
+    )
     # Never overlap the trailing, chronologically later evaluation partition.
     selected_rows = items[train_end:] if partition == "holdout" else items[:train_end]
     for row in selected_rows:
-        fingerprint = row.get("textSha256") or row.get("sourceUrl") or row["articleId"]
-        if fingerprint in seen:
+        key = fingerprint(row)
+        if key in seen:
             continue
-        seen.add(fingerprint)
+        seen.add(key)
         selected.append(row)
         if len(selected) >= count:
             break
