@@ -192,3 +192,30 @@ The sequential feedback process remains **retrospective** and is not a leakage-f
 forward-test benchmark. The proposed A/B/C performance comparison (article-only
 vs pre-event context vs context plus learned rules) requires distinct controlled
 runs and chronological held-out scoring; no such performance gain is claimed here.
+
+
+### Historical news to listed asset mapping (sequential 100-article check)
+
+The sequential market study compares prices against the **original reported
+publication time**, not the RSS ingestion time. It uses the close before release
+and the first session close at or after the release (the following session for
+after-close releases). Exact intraday execution-price attribution is NOT
+claimed; release times and daily bars still require source validation.
+
+Before price scoring, stock predictions pass through an explicit
+company-to-ticker consistency check for covered entities (including NVIDIA
+NVDA, SK hynix 000660.KS and Samsung Electronics 005930.KS). Known mismatches
+are rejected and recorded, never silently translated. The price provider's
+actual returned symbol, exchange and currency must also agree with the
+requested market; metadata mismatches produce UNVERIFIED rather than a wrong
+or correct prediction. Supported U.S. and Korean ticker formats are
+intentionally narrow. The known entity mapping is NOT a complete security
+master: unrecognized firms still need better issuer identifier verification.
+Sector proxies such as SMH or XLK represent U.S.-listed ETFs and must not be
+confused with constituent stocks.
+
+For a new controlled 100-article run, use a fresh journal path rather than
+resuming a journal created before these asset checks. Model-format failures
+are persisted as explicit SKIPPED_MODEL_ERROR entries rather than counted as
+verified predictions. No independent forecast accuracy is claimed until the
+report has been reviewed.
