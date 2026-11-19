@@ -27,13 +27,13 @@ from tris_market_event_intelligence.event_grounding import (
     event_facts,
 )
 from tris_market_event_intelligence.llm_runtime import LLMSettings
-from tris_market_event_intelligence.market_event_candidate_policy import (
-    filter_market_event_candidates,
-    research_candidate,
-)
 from tris_market_event_intelligence.market_direction_calibration import (
     calibrate_direction,
     fit_price_calibrator,
+)
+from tris_market_event_intelligence.market_event_candidate_policy import (
+    filter_market_event_candidates,
+    research_candidate,
 )
 from tris_market_event_intelligence.market_prior_baseline import (
     annotate_price_study,
