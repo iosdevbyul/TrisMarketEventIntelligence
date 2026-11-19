@@ -12,10 +12,10 @@ import hashlib
 import io
 import json
 import re
+from collections import Counter
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from collections import Counter
 from urllib.parse import urljoin, urlsplit
 
 import httpx
