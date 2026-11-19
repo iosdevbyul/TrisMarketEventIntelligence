@@ -210,6 +210,7 @@ def inspect(journal: Path, *, limit: int = 1000,
                 "marketContext": prediction.get("marketContext"),
                 "eventMarket": prediction.get("eventMarket"),
                 "sourceContentQuality": prediction.get("sourceContentQuality"),
+                "contentEvidence": prediction.get("contentEvidence"),
                 "targetMappingRejections": prediction.get("targetMappingRejections", []),
                 "recoveryStatus": prediction.get("recoveryStatus"),
                 "predictedImpacts": predicted,
@@ -314,6 +315,9 @@ def markdown(report: dict[str, Any]) -> str:
             f"- 기사 ID: {record['articleId']}",
             f"- 최초 관측 시각(UTC): {_text(record['firstObservedAt'])}",
             f"- 기사 출처: {_text(record['source'])}",
+            f"- 시장 관할: {_text(record.get('eventMarket'))}",
+            f"- 본문 완전성: {_text(record.get('sourceContentQuality'))}",
+            f"- 확보된 원문 증거: {_text(record.get('contentEvidence'))}",
             f"- 기사 URL: {_text(record['sourceUrl'])}",
             f"- AI 분석 요약: {_text(record['originalPredictionSummary'])}",
             f"- 발표 전 시장 근거: {_text(record.get('marketContext'))}",
@@ -451,7 +455,7 @@ def html_report(report: dict[str, Any]) -> str:
             f"<b>정보 신규성:</b> {esc(surprise.get('novelty'))} · "
             f"<b>선반영 가능성:</b> {esc(surprise.get('pricedInStatus'))}</p>"
             f"<p><b>판단 근거:</b> {esc(surprise.get('rationale'))}</p>"
-            f"<p><b>발표 전 SPY 흐름:</b> {esc(_percent(market.get('return')))} "
+            f"<p><b>발표 전 {esc(market.get('symbol'))} 흐름:</b> {esc(_percent(market.get('return')))} "
             f"({esc(market.get('status'))}) · "
             f"<b>컨센서스:</b> {esc((context.get('consensus') or {}).get('status'))}</p>"
             f"<p><b>발표 전 관련 기사:</b></p><ul>{earlier}</ul>"
@@ -461,6 +465,14 @@ def html_report(report: dict[str, Any]) -> str:
             f"({esc(r['roleAtApplication'])}): {esc(r['rule'])}</li>"
             for r in record["rulesApplied"]
         ) or "<li>기록 없음</li>"
+        evidence = record.get("contentEvidence") or {}
+        source_notice = (
+            f"<p><b>시장 관할:</b> {esc(record.get('eventMarket'))} · "
+            f"<b>본문 완전성:</b> {esc((record.get('sourceContentQuality') or {}).get('status'))}</p>"
+            f"<p><b>확보 원문:</b> {article_link(evidence.get('attachmentUrl'))} · "
+            f"<b>파일 SHA256:</b> {esc(evidence.get('contentSha256'))} · "
+            f"<b>당시 원문 검증:</b> {esc(evidence.get('pointInTimeCertified'))}</p>"
+        )
         sections.append(
             "<details>"
             f"<summary>#{esc(record['seq'])} "
@@ -471,6 +483,7 @@ def html_report(report: dict[str, Any]) -> str:
             f"<b>최초 수집 시각:</b> {esc(record['firstObservedAt'])} · "
             f"<b>출처:</b> {esc(record['source'])}</p>"
             f"<p><b>기사 원문 링크:</b> {article_link(record['sourceUrl'])}</p>"
+            + source_notice
             f"<p><b>저장된 기사 요약:</b> {esc(record['articleSummary'])}</p>"
             f"<p><b>Gemma 분석:</b> {esc(record['originalPredictionSummary'])}</p>"
             + "<h3>발표 전 시장 기대·새로운 정보 분석</h3>"
