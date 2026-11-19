@@ -195,8 +195,9 @@ def select(db: sqlite3.Connection, *, seq: int,
         """SELECT id, version, family, sector, lesson, status, created_seq,
                   eligible_after, failure_count
            FROM memory_rules
-           WHERE created_seq < ? AND status != 'RETIRED'""",
-        (seq,),
+           WHERE created_seq < ? AND status != 'RETIRED'
+              AND eligible_after < ?""",
+        (seq, _date(str(article["publishedAtReported"])).isoformat()),
     ).fetchall()
     ranked = []
     for row in rows:
