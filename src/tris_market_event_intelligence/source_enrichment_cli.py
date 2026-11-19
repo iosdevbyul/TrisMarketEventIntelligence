@@ -21,7 +21,8 @@ import httpx
 from pypdf.errors import PdfReadError
 
 from tris_market_event_intelligence.event_evidence_policy import (
-    content_quality, plain_text,
+    content_quality,
+    plain_text,
 )
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 
