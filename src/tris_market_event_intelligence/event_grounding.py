@@ -76,11 +76,10 @@ def is_denial_inversion(prediction: dict[str, Any], facts: dict[str, Any]) -> bo
     summary = plain_text(prediction.get("summary")).casefold()
     if re.search(r"(?:confirmed|announced|implemented|approved|decided|finalized)"
                  r".{0,70}(?:policy|plan|measure|swap|rate|investment|intervention)",
-                 summary):
-        if not any(term in summary for term in (
-            "denied", "not ", "false", "incorrect", "untrue", "refuted", "no decision",
-        )):
-            return True
+                 summary) and not any(term in summary for term in (
+        "denied", "not ", "false", "incorrect", "untrue", "refuted", "no decision",
+    )):
+        return True
     return False
 
 
