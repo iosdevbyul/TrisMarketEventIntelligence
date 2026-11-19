@@ -539,7 +539,8 @@ def recover_unsupported_targets(raw: dict[str, Any]) -> dict[str, Any]:
     cleaned["impacts"] = [item for item in valid if item is not None]
     recovered = canonical_prediction(cleaned)
     recovered["targetMappingRejections"] = rejected
-    recovered["recoveryStatus"] = "PARTIAL_TARGET_MAPPING" if valid else "NO_VALID_TARGETS"
+    recovered["recoveryStatus"] = ("PARTIAL_TARGET_MAPPING"
+                                   if recovered["impacts"] else "NO_VALID_TARGETS")
     return recovered
 
 
