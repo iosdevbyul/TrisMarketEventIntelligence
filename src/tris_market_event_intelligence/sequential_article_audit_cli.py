@@ -8,14 +8,14 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import sqlite3
 import os
+import sqlite3
 import tempfile
-from urllib.parse import urlsplit
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 
