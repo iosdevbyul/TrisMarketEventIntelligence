@@ -22,12 +22,13 @@ from tris_market_event_intelligence.event_evidence_policy import (
     article_market,
     content_quality,
     localize_prediction,
-    plain_text,
+)
+from tris_market_event_intelligence.event_grounding import (
+    enforce_event_grounding,
+    event_facts,
+    substantive_terms,
 )
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
-from tris_market_event_intelligence.event_grounding import (
-    enforce_event_grounding, event_facts, substantive_terms,
-)
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
 
