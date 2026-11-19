@@ -90,3 +90,35 @@ def test_train_publication_overlap_rejected_even_if_outcome_missing(tmp_path):
         ))
     with pytest.raises(ValueError, match="overlaps"):
         fit_price_calibrator(path, datetime(2026, 11, 16, tzinfo=UTC))
+
+
+def test_near_even_historical_votes_do_not_produce_false_learning(tmp_path):
+    path = tmp_path / "near_even.sqlite3"
+    journal(path, n=74)
+    with sqlite3.connect(path) as db:
+        for i in range(35):
+            evaluation = {
+                "impacts": [{
+                    "targetType": "MARKET",
+                    "target": "BROAD_MARKET",
+                    "priceProxy": "069500.KS",
+                    "direction": "NEUTRAL",
+                    "actualDirection": "POSITIVE",
+                    "status": "WRONG",
+                    "outcomeAt": (
+                        datetime(2026, 9, 1, tzinfo=UTC)
+                        + timedelta(days=i)
+                    ).isoformat(),
+                }],
+            }
+            db.execute("UPDATE steps SET evaluation_json=? WHERE seq=?",
+                       (json.dumps(evaluation), i))
+    trained = fit_price_calibrator(
+        path, datetime(2026, 11, 16, tzinfo=UTC), minimum_support=8,
+    )
+    assert trained["ruleCount"] == 0
+    assert trained["status"] == "NO_SUPPORTED_RULES"
+    rejected = trained["rejectedBuckets"]["KR:NEUTRAL"]
+    assert rejected["reasonCode"] == "NO_DOMINANT_HISTORICAL_DIRECTION"
+    assert rejected["leaderMargin"] < trained["minimumLeaderMargin"]
+    assert calibrate_direction(trained, "069500.KS", "NEUTRAL")["status"] == "ABSTAIN"
