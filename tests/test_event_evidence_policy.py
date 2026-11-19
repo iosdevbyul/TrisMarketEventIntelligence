@@ -215,3 +215,23 @@ def test_missing_official_pdf_is_explicit_abstention():
         "status": "UNAVAILABLE",
         "reasonCode": "PDF_ATTACHMENT_NOT_LINKED_OR_UNSUPPORTED",
     }
+
+
+def test_korean_headline_cannot_price_unmentioned_american_stock():
+    row = article(
+        "한국은행은 금융안정을 위한 조치를 발표하였으며 구체적인 적용 대상과 정책 기준을 함께 공지했습니다."
+    )
+    prediction = seq.canonical_prediction({
+        "impacts": [
+            {"targetType": "STOCK", "target": "NVDA",
+             "direction": "POSITIVE", "reason": "Unsupported global spillover"},
+            {"targetType": "MARKET", "target": "BROAD_MARKET",
+             "direction": "NEUTRAL", "reason": "Domestic equity benchmark"},
+        ],
+    })
+    scoped = evidence.localize_prediction(prediction, row)
+    assert [item["priceProxy"] for item in scoped["impacts"]] == ["069500.KS"]
+    assert scoped["targetMappingRejections"] == [{
+        "targetType": "STOCK", "target": "NVDA",
+        "reasonCode": "NO_VERIFIED_ARTICLE_ISSUER_LINK",
+    }]
