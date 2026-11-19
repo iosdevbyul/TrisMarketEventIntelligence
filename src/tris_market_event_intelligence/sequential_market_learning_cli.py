@@ -372,7 +372,7 @@ def load_articles(db: Path, count: int, cutoff: datetime, *,
     # in the order an RSS backfill happened to be ingested.
     items.sort(key=lambda a: (publication_time(a), a["articleId"]))
     train_end = int(len(items) * 0.8)
-    if partition not in {"train", "holdout"}:
+    if partition not in {"train", "holdout", "all"}:
         raise ValueError("Unknown chronological cohort partition")
     selected = []
     def fingerprint(row: dict) -> str | int:
@@ -382,8 +382,12 @@ def load_articles(db: Path, count: int, cutoff: datetime, *,
         {fingerprint(row) for row in items[:train_end]}
         if partition == "holdout" else set()
     )
-    # Never overlap the trailing, chronologically later evaluation partition.
-    selected_rows = items[train_end:] if partition == "holdout" else items[:train_end]
+    # 'all' exposes untrained candidate dates for an explicitly labeled
+    # retrospective date-spread evaluation, NOT the strict trailing holdout.
+    selected_rows = (
+        items[train_end:] if partition == "holdout" else
+        items if partition == "all" else items[:train_end]
+    )
     for row in selected_rows:
         key = fingerprint(row)
         if key in seen:
