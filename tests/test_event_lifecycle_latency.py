@@ -74,6 +74,11 @@ def test_end_to_end_local_stages_from_first_seen_to_model_checkpoint(tmp_path: P
     setup(path)
     insert_event(path, event_id=1)
     insert_checkpoint(path, 1)
+    # SQLite may checkpoint committed WAL pages on the last reader close.
+    # Establish a stable physical baseline before asserting read-only audit
+    # access leaves the underlying database bytes unchanged.
+    with sqlite3.connect(path) as db:
+        db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     original = path.read_bytes()
     report = audit_event_lifecycle(path, as_of=NOW)
     source = report["sources"][0]
