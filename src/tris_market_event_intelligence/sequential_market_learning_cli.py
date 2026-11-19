@@ -490,11 +490,13 @@ def recover_unsupported_targets(raw: dict[str, Any]) -> dict[str, Any]:
     items = raw.get("impacts")
     if not isinstance(items, list) or len(items) > 8:
         raise ValueError("Malformed impacts cannot be recovered")
-    valid = []
-    rejected = []
+    valid: list[dict] = []
+    rejected: list[dict] = []
+    positions: dict[tuple[str, str], int] = {}
+    conflicting: set[tuple[str, str]] = set()
     for item in items:
         try:
-            canonical_prediction({"summary": "", "impacts": [item]})
+            normalized = canonical_prediction({"summary": "", "impacts": [item]})["impacts"][0]
         except ValueError as exc:
             code = {
                 "Unsupported non-stock target": "UNSUPPORTED_NON_STOCK_TARGET",
@@ -507,12 +509,34 @@ def recover_unsupported_targets(raw: dict[str, Any]) -> dict[str, Any]:
                 "target": item.get("target"),
                 "reasonCode": code,
             })
-        else:
-            valid.append(item)
+            continue
+        key = (normalized["targetType"], normalized["target"])
+        if key in conflicting:
+            rejected.append({
+                "targetType": key[0], "target": key[1],
+                "reasonCode": "CONFLICTING_DUPLICATE_TARGET",
+            })
+            continue
+        if key in positions:
+            previous = canonical_prediction({
+                "summary": "", "impacts": [valid[positions[key]]],
+            })["impacts"][0]
+            conflict = previous["direction"] != normalized["direction"]
+            rejected.append({
+                "targetType": key[0], "target": key[1],
+                "reasonCode": ("CONFLICTING_DUPLICATE_TARGET" if conflict
+                               else "DUPLICATE_TARGET_COLLAPSED"),
+            })
+            if conflict:
+                valid[positions[key]] = None
+                conflicting.add(key)
+            continue
+        positions[key] = len(valid)
+        valid.append(item)
     if not rejected:
-        raise ValueError("No unsupported mappings to recover")
+        raise ValueError("No recoverable targets")
     cleaned = dict(raw)
-    cleaned["impacts"] = valid
+    cleaned["impacts"] = [item for item in valid if item is not None]
     recovered = canonical_prediction(cleaned)
     recovered["targetMappingRejections"] = rejected
     recovered["recoveryStatus"] = "PARTIAL_TARGET_MAPPING" if valid else "NO_VALID_TARGETS"
@@ -563,7 +587,8 @@ def predict_with_repair(model: Any, payload: dict) -> dict:
             return prediction
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             last_error = str(exc)[:180]
-    if last_error in {"Unsupported non-stock target", "Malformed ticker"} and last_raw is not None:
+    if last_error in {"Unsupported non-stock target", "Malformed ticker",
+                      "Duplicate impact target"} and last_raw is not None:
         prediction = recover_unsupported_targets(last_raw)
         # Guard surprise claims just as strictly on this recovery path.
         context = payload.get("marketContext", {})
