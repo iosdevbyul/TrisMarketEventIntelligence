@@ -24,6 +24,10 @@ from tris_market_event_intelligence.event_grounding import (
     event_facts,
 )
 from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.market_direction_calibration import (
+    calibrate_direction,
+    fit_price_calibrator,
+)
 from tris_market_event_intelligence.market_prior_baseline import (
     annotate_price_study,
     forecast_targets,
@@ -79,6 +83,9 @@ def price_direction_comparison(cases: list[dict]) -> dict:
     paired_combo = [
         row for row in outcomes if row.get("combinedPriceMatch") is not None
     ]
+    paired_learned = [
+        row for row in outcomes if row.get("frozenCalibrationMatch") is not None
+    ]
     by_week = Counter(
         str(case.get("releaseAt", ""))[:7] for case in cases
         if case.get("releaseAt")
@@ -92,6 +99,18 @@ def price_direction_comparison(cases: list[dict]) -> dict:
             "matches": sum(x["baselinePriceMatch"] for x in paired_baseline),
             "accuracy": (sum(x["baselinePriceMatch"] for x in paired_baseline)
                          / len(paired_baseline) if paired_baseline else None),
+        },
+        "trainedCalibration": {
+            "compared": len(paired_learned),
+            "matches": sum(x["frozenCalibrationMatch"] for x in paired_learned),
+            "accuracy": (sum(x["frozenCalibrationMatch"] for x in paired_learned)
+                         / len(paired_learned) if paired_learned else None),
+            "rawModelMatchesOnSameTargets": sum(
+                x.get("status") == "CORRECT" for x in paired_learned
+            ),
+            "baselineMatchesOnSameTargets": sum(
+                x.get("baselinePriceMatch") is True for x in paired_learned
+            ),
         },
         "baselinePlusNews": {
             "compared": len(paired_combo),
@@ -205,6 +224,11 @@ def evaluate_holdout(
         raise ValueError("Refusing to overwrite a holdout result")
     selected, settings = holdout_selection(journal, source_db, count)
     last_training = timestamp(settings["holdoutInfo"]["lastTrainingPublishedAt"])
+    # Fit once on sealed training journal only. No holdout labels enter fitting.
+    fitted = (
+        fit_price_calibrator(journal, publication_time(selected[0]))
+        if selected else {"status": "NO_HOLDOUT", "ruleCount": 0, "rules": {}}
+    )
     outcomes = []
     from datetime import timedelta
 
@@ -234,10 +258,24 @@ def evaluate_holdout(
             # Commit every pre-event price baseline and the news-adjusted
             # direction before fetching any of the post-release closes.
             precommitted = forecast_targets(prediction, client, observed)
+            prior_calibration = [
+                calibrate_direction(fitted, str(row.get("priceProxy", "")),
+                                    row["direction"])
+                for row in prediction["impacts"]
+            ]
             price = annotate_price_study(
                 evaluate(prediction, observed, horizon, settings["interval"], client),
                 precommitted,
             )
+            for assessed, calibrated in zip(
+                price["impacts"], prior_calibration, strict=True,
+            ):
+                assessed["frozenCalibration"] = calibrated
+                assessed["frozenCalibrationMatch"] = (
+                    calibrated["direction"] == assessed.get("actualDirection")
+                    if calibrated["status"] == "AVAILABLE"
+                    and assessed.get("status") in {"CORRECT", "WRONG"} else None
+                )
             status = "COMPLETE"
             issue = None
         except (TypeError, ValueError, json.JSONDecodeError) as error:
@@ -265,6 +303,8 @@ def evaluate_holdout(
         "schemaVersion": "frozen_chronological_holdout_v2",
         "cohort": settings["holdoutInfo"],
         "priceDirectionControls": comparison,
+        "trainedPriceCalibration": fitted,
+        "marketRegimeDiversityVerified": comparison["multipleMonthsObserved"],
         "trainingJournal": str(journal), "holdoutSourceDb": str(source_db),
         "pointInTimeCertified": False, "independentSourceVerified": False,
         "learningDisabled": True, "feedbackRulesApplied": 0,
@@ -287,7 +327,9 @@ def evaluate_holdout(
         "warning": ("Retrospective content is not PIT-certified. Model prompting "
                     "uses no learned feedback. This evaluates a frozen baseline, "
                     "not an independently verified gain from training. "
-                    "The train/holdout source material may be retrospectively enriched."),
+                    "The train/holdout source material may be retrospectively enriched. "
+                    "Calibration is historical price coincidence, not model fine tuning. "
+                    "One month of Holdout cannot establish regime generalization."),
         "articles": outcomes,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
