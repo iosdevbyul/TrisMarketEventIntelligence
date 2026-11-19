@@ -13,6 +13,7 @@ dependencies = [
   "uvicorn>=0.30,<1",
   "pydantic>=2.8,<3",
   "httpx>=0.27,<1",
+  "pypdf>=5,<7",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,7 @@ dev = [
 
 [project.scripts]
 market-event-sequential-learn = "tris_market_event_intelligence.sequential_market_learning_cli:main"
+market-event-source-enrich = "tris_market_event_intelligence.source_enrichment_cli:main"
 market-event-learning-report = "tris_market_event_intelligence.learning_memory_report_cli:main"
 market-event-article-audit = "tris_market_event_intelligence.sequential_article_audit_cli:main"
 market-event-api = "tris_market_event_intelligence.__main__:main"
