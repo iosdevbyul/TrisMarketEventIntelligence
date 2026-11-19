@@ -551,3 +551,64 @@ def test_at_exact_market_close_release_is_next_day(monkeypatch):
     )
     assert output["baselinePrice"] == 105.0
     assert output["outcomePrice"] == 110.0
+
+
+def test_nvidia_article_rejects_unrelated_korean_ticker():
+    article = sample(71, datetime(2026, 11, 11, tzinfo=UTC))
+    article["title"] = "NVIDIA announces new AI accelerators"
+    prediction = seq.canonical_prediction({"impacts": [
+        {"targetType": "STOCK", "target": "NVDA",
+         "direction": "POSITIVE", "reason": "NVIDIA product launch"},
+        {"targetType": "STOCK", "target": "005930.KS",
+         "direction": "POSITIVE", "reason": "Unsubstantiated spillover"},
+    ]})
+    result = seq.validate_asset_evidence(prediction, article)
+    assert [(x["target"], x["priceProxy"]) for x in result["impacts"]] == [
+        ("NVDA", "NVDA"),
+    ]
+    assert result["targetMappingRejections"] == [{
+        "targetType": "STOCK", "target": "005930.KS",
+        "reasonCode": "ARTICLE_TICKER_MISMATCH",
+    }]
+
+
+def test_explicitly_mentioned_us_and_korean_companies_can_coexist():
+    article = sample(72, datetime(2026, 11, 11, tzinfo=UTC))
+    article["title"] = "NVIDIA and SK hynix announce agreement"
+    prediction = seq.canonical_prediction({"impacts": [
+        {"targetType": "STOCK", "target": "NVDA",
+         "direction": "POSITIVE", "reason": "Direct buyer exposure"},
+        {"targetType": "STOCK", "target": "000660.KS",
+         "direction": "POSITIVE", "reason": "Direct supplier exposure"},
+    ]})
+    assert seq.validate_asset_evidence(prediction, article)["impacts"] == prediction["impacts"]
+    assert seq.asset_market("NVDA") == "US"
+    assert seq.asset_market("000660.KS") == "KR"
+    assert seq.asset_market("005930.KQ") == "KR"
+
+
+def test_unverified_exchange_metadata_fails_closed():
+    seq.verify_market_metadata("NVDA", {
+        "symbol": "NVDA", "currency": "USD", "exchangeName": "NMS",
+    })
+    seq.verify_market_metadata("000660.KS", {
+        "symbol": "000660.KS", "currency": "KRW", "exchangeName": "KSC",
+    })
+    with pytest.raises(ValueError, match="US_MARKET_METADATA_MISMATCH"):
+        seq.verify_market_metadata("NVDA", {
+            "symbol": "NVDA", "currency": "KRW", "exchangeName": "KSC",
+        })
+    with pytest.raises(ValueError, match="KR_MARKET_METADATA_MISMATCH"):
+        seq.verify_market_metadata("000660.KS", {
+            "symbol": "000660.KS", "currency": "USD", "exchangeName": "NMS",
+        })
+    with pytest.raises(ValueError, match="MARKET_SYMBOL_MISMATCH"):
+        seq.verify_market_metadata("NVDA", {
+            "symbol": "AMD", "currency": "USD", "exchangeName": "NMS",
+        })
+
+
+def test_ticker_suffix_without_exchange_is_not_assumed_korean():
+    for ticker in ("000660", "005930", "NVDA.KS", "NVDA:US"):
+        with pytest.raises(ValueError):
+            seq.asset_market(ticker)
