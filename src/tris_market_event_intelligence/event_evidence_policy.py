@@ -76,6 +76,7 @@ def target_relevance(article: dict[str, Any], item: dict[str, Any]) -> str:
     economic = (
         "금리", "통화정책", "물가", "환율", "외환", "스와프",
         "유동성", "대출", "채권", "주식",
+        "금융기관", "금융안정", "금융시장", "은행주", "은행권",
         "기업", "수출", "수입", "경기", "성장률", "실적",
         "rate", "inflation", "earnings", "revenue",
         "semiconductor", "investment", "liquidity",
