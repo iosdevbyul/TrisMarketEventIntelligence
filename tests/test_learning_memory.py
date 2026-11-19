@@ -82,7 +82,12 @@ def test_no_promotion_from_overlapping_outcomes():
             db, seq=1, article_id=1, article=origin,
             evaluation=evaluation(origin["firstObservedAt"]), feedback=feedback(),
         )
-        rule = lm.select(db, seq=2, article=article(2))[0]
+        assert lm.select(db, seq=2, article=article(2)) == []
+        # Trial policy also fails closed if an overlapping rule is supplied directly.
+        eligible_after = db.execute(
+            "SELECT eligible_after FROM memory_rules WHERE id=1"
+        ).fetchone()[0]
+        rule = {"id": 1, "eligibleAfter": eligible_after}
         primary = {"impacts": [
             {"targetType": "STOCK", "target": "NVDA", "direction": "POSITIVE"},
         ]}
