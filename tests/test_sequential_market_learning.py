@@ -97,7 +97,8 @@ def test_wrong_answer_updates_next_article_and_resume(monkeypatch, tmp_path):
     assert result["lessons"] == 0
     assert fake.predictions == 2
     assert fake.prompts[0]["priorFeedbackLessons"] == []
-    assert fake.prompts[1]["priorFeedbackLessons"] == []
+    assert [p["priorFeedbackLessons"] for p in fake.prompts
+            if "priorFeedbackLessons" in p] == [[], []]
     with sqlite3.connect(config.journal) as db:
         predictions = db.execute(
             "SELECT prediction_json, phase FROM steps ORDER BY seq"
