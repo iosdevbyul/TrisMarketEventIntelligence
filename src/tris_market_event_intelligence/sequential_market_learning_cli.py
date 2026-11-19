@@ -332,11 +332,17 @@ def load_articles(db: Path, count: int, cutoff: datetime, *,
         record = cache.get(str(row["articleId"]), {})
         if (record.get("status") == "AVAILABLE"
                 and record.get("sourceUrl") == row.get("sourceUrl")
+                and record.get("publishedAtReported") == row.get("publishedAtReported")
+                and record.get("captureSha256") == row.get("captureSha256")
+                and record.get("contentTextSha256") == hashlib.sha256(
+                    str(record.get("contentText", "")).encode()
+                ).hexdigest()
                 and record.get("pointInTimeCertified") is False):
             row["summary"] = record["contentText"]
             row["contentEvidence"] = {
                 "attachmentUrl": record["attachmentUrl"],
                 "contentSha256": record["contentSha256"],
+                "contentTextSha256": record["contentTextSha256"],
                 "acquiredAt": record["acquiredAt"],
                 "pointInTimeCertified": False,
             }
