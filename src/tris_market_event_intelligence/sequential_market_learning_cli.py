@@ -19,7 +19,10 @@ import httpx
 
 from tris_market_event_intelligence import learning_memory
 from tris_market_event_intelligence.event_evidence_policy import (
-    article_market, content_quality, localize_prediction, plain_text,
+    article_market,
+    content_quality,
+    localize_prediction,
+    plain_text,
 )
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 from tris_market_event_intelligence.llm_runtime import LLMSettings
