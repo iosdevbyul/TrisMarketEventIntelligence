@@ -502,7 +502,9 @@ def price_return(client: httpx.Client, symbol: str, observed: datetime,
         close_at = datetime.combine(session_day, time(16, 0), NEW_YORK).astimezone(UTC)
         sessions.append((close_at, price))
     sessions.sort()
-    prior = [(t, p) for t, p in sessions if t < observed]
+    # At exactly 16:00 NY time, treat the day's closing print as the
+    # pre-release reference, with the next session as the first response.
+    prior = [(t, p) for t, p in sessions if t <= observed]
     # A release stamped exactly at the close cannot use that same close
     # as its post-release reaction; start with the next trading session.
     later = [(t, p) for t, p in sessions if t > observed]
