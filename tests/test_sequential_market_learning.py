@@ -92,11 +92,12 @@ def test_wrong_answer_updates_next_article_and_resume(monkeypatch, tmp_path):
     config = args(tmp_path)
     result = seq.run(config, model=fake, client=object())
     assert result["articlesCompleted"] == 2
-    assert result["lessons"] == 1
-    # Two primary predictions plus one pre-outcome baseline comparison.
-    assert fake.predictions == 3
+    # Price-only hindsight is retained as an unverified critic hypothesis,
+    # not applied as a certified learning rule to the next article.
+    assert result["lessons"] == 0
+    assert fake.predictions == 2
     assert fake.prompts[0]["priorFeedbackLessons"] == []
-    assert "pricing power" in fake.prompts[2]["priorFeedbackLessons"][0]
+    assert fake.prompts[1]["priorFeedbackLessons"] == []
     with sqlite3.connect(config.journal) as db:
         predictions = db.execute(
             "SELECT prediction_json, phase FROM steps ORDER BY seq"
