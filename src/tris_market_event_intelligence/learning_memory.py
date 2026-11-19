@@ -197,7 +197,8 @@ def select(db: sqlite3.Connection, *, seq: int,
            FROM memory_rules
            WHERE created_seq < ? AND status != 'RETIRED'
               AND eligible_after < ?""",
-        (seq, _date(str(article["publishedAtReported"])).isoformat()),
+        (seq, _date(str(article.get("publishedAtReported") or
+                         article["firstObservedAt"])).isoformat()),
     ).fetchall()
     ranked = []
     for row in rows:
