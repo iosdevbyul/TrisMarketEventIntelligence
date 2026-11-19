@@ -25,6 +25,58 @@ EXPLICIT_ISSUERS = {
     "005930.KS": ("삼성전자", "samsung electronics"),
     "086790.KS": ("하나금융지주", "하나금융"),
 }
+
+TRADED_PROXIES = {
+    "069500.KS": ("MARKET", "BROAD_MARKET"),
+    "091170.KS": ("SECTOR", "FINANCIALS"),
+}
+OFFICIAL_DENIALS = (
+    "사실과 다름", "사실이 아님", "사실이 아니",
+    "검토하고 있지 않", "논의한 바 없", "추진하고 있지 않",
+    "결정된 바 없", "결정된 내용이 없",
+)
+UNDECIDED_MARKERS = ("결정되지 않았", "확정되지 않았", "협의 중", "검토 중")
+
+
+def event_fact_check(article: dict[str, Any]) -> dict[str, Any]:
+    """Separate attributed media claims from the official response."""
+    body = plain_text(article.get("summary"))
+    title = plain_text(article.get("title"))
+    correction = (str(article.get("source") or "") == "bok_corrections"
+                  or "보도해명" in title)
+    has_denial = any(marker in body for marker in OFFICIAL_DENIALS)
+    has_pending = any(marker in body for marker in UNDECIDED_MARKERS)
+    status = (
+        "OFFICIAL_DENIAL" if correction and has_denial else
+        "NOT_FINALIZED" if correction and has_pending else
+        "UNVERIFIED_CLARIFICATION" if correction else "UNKNOWN"
+    )
+    return {
+        "sourceType": "OFFICIAL_CORRECTION" if correction else "OTHER",
+        "officialStatementStatus": status,
+        "reportedClaim": title,
+        "officialResponseText": body[:1500] if correction else "",
+        "officiallyConfirmedPolicyAction": False if correction else None,
+        "limitation": ("A news allegation quoted in an official correction is "
+                       "NOT a confirmed policy or an adopted decision."),
+    }
+
+
+def target_relevance(article: dict[str, Any], item: dict[str, Any]) -> str:
+    """Exclude price claims without a recognizable economic transmission path."""
+    text = (plain_text(article.get("title")) + " " +
+            plain_text(article.get("summary"))).casefold()
+    economic = (
+        "금리", "통화정책", "물가", "환율", "외환", "스와프",
+        "유동성", "대출", "은행", "금융", "채권", "주식",
+        "기업", "수출", "수입", "경기", "성장률", "실적",
+        "rate", "inflation", "earnings", "revenue",
+        "semiconductor", "investment", "liquidity",
+    )
+    if not any(word in text for word in economic):
+        return "NO_IDENTIFIABLE_MARKET_MECHANISM"
+    return ""
+
 MISSING_BODY_MARKERS = (
     "자세한 내용은 첨부파일", "자세한 내용은 붙임",
     "첨부파일을 참고", "첨부파일을 참조", "붙임 자료 참조",
@@ -93,6 +145,7 @@ def localize_prediction(prediction: dict[str, Any],
     result = dict(prediction)
     result["eventMarket"] = jurisdiction
     result["sourceContentQuality"] = content_quality(article)
+    result["eventFacts"] = event_fact_check(article)
     if jurisdiction != "KR":
         return result
     allowed = []
@@ -101,6 +154,11 @@ def localize_prediction(prediction: dict[str, Any],
         row = dict(item)
         kind = row.get("targetType")
         target = row.get("target")
+        proxy = TRADED_PROXIES.get(str(row.get("priceProxy") or ""))
+        if kind == "STOCK" and proxy is not None:
+            kind, target = proxy
+            row["targetType"] = kind
+            row["target"] = target
         if kind == "MARKET" and target == "BROAD_MARKET":
             row["priceProxy"] = KOREAN_BROAD_PROXY
         elif kind == "SECTOR" and target in KOREAN_SECTOR_PROXIES:
@@ -122,6 +180,11 @@ def localize_prediction(prediction: dict[str, Any],
         elif kind != "STOCK":
             rejected.append({"targetType": kind, "target": target,
                              "reasonCode": "UNSUPPORTED_MARKET_TARGET"})
+            continue
+        relevance = target_relevance(article, row)
+        if relevance:
+            rejected.append({"targetType": kind, "target": target,
+                             "reasonCode": relevance})
             continue
         allowed.append(row)
     result["impacts"] = allowed
