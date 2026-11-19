@@ -309,14 +309,37 @@ def publication_time(article: dict) -> datetime:
     return release
 
 
-def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], int]:
+def load_articles(db: Path, count: int, cutoff: datetime, *,
+                  content_cache: Path | None = None) -> tuple[list[dict], int]:
     cohort = historical_news_cohort(
         source_db=db, as_of=cutoff, after_id=0, limit=5000,
     )
+    cache: dict = {}
+    if content_cache is not None:
+        if content_cache.is_symlink() or not content_cache.is_file():
+            raise ValueError("Missing or unsafe source-content cache")
+        payload = json.loads(content_cache.read_text(encoding="utf-8"))
+        if (payload.get("schemaVersion") != "retrospective_official_attachment_cache_v1"
+                or payload.get("sourceDb") != str(db.resolve())
+                or payload.get("originalArchiveModified") is not False):
+            raise ValueError("Source-content cache provenance mismatch")
+        cache = payload["articles"]
     items = []
-    for row in cohort["items"]:
+    for original in cohort["items"]:
+        row = dict(original)
         if not row.get("title") or not row.get("summary"):
             continue
+        record = cache.get(str(row["articleId"]), {})
+        if (record.get("status") == "AVAILABLE"
+                and record.get("sourceUrl") == row.get("sourceUrl")
+                and record.get("pointInTimeCertified") is False):
+            row["summary"] = record["contentText"]
+            row["contentEvidence"] = {
+                "attachmentUrl": record["attachmentUrl"],
+                "contentSha256": record["contentSha256"],
+                "acquiredAt": record["acquiredAt"],
+                "pointInTimeCertified": False,
+            }
         if content_quality(row)["status"] != "ELIGIBLE":
             continue
         try:
@@ -731,7 +754,13 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     if args.journal.is_symlink() or args.source_db.is_symlink():
         raise ValueError("Symlink paths prohibited")
     cutoff = timestamp(args.as_of)
-    articles, heldout = load_articles(args.source_db, count, cutoff)
+    cache_path = getattr(args, "content_cache", None)
+    if cache_path is None:
+        articles, heldout = load_articles(args.source_db, count, cutoff)
+    else:
+        articles, heldout = load_articles(
+            args.source_db, count, cutoff, content_cache=Path(cache_path),
+        )
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
         "assetValidationVersion": "jurisdiction-content-causality-v2",
@@ -740,7 +769,10 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
         "count": count, "horizonHours": args.horizon_hours,
         "interval": args.interval, "model": args.model,
-        "sourceContentPolicy": "substantive-body-only-v1",
+        "sourceContentPolicy": "substantive-body-plus-official-pdf-v2",
+        "sourceContentCache": (
+            str(Path(cache_path).resolve()) if cache_path is not None else None
+        ),
     }
     if model is None:
         from dataclasses import replace
@@ -804,6 +836,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             "publishedAtReported": article["publishedAtReported"],
                             "evaluationAt": observed.isoformat(),
                             "source": article["source"],
+                            "contentEvidence": article.get("contentEvidence"),
                         },
                         "priorFeedbackLessons": relevant,
                     }
@@ -843,6 +876,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         validate_asset_evidence(prediction, article), article,
                     )
                     prediction["marketContext"] = market_context
+                    prediction["contentEvidence"] = article.get("contentEvidence")
                     # To test rule impact, compare a no-candidate shadow prediction
                     # using the SAME article, before fetching realized prices.
                     candidate = next(
@@ -966,6 +1000,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                     "Original reported publication dates control reaction windows; "
                     "historical ingestion dates do not. Reported publication "
                     "timestamps and daily close bars are not independently verified. "
+                    "Retrospectively acquired PDF text is not PIT-certified. "
                     "Corrective lessons "
                     "may include outcomes learned after other historical articles; "
                     "this remains a retrospective study, not leakage-free accuracy."
@@ -980,6 +1015,8 @@ def main() -> None:
     base = Path.home() / "Library/Application Support/TrisMarketEventIntelligence"
     parser = argparse.ArgumentParser(description="Sequential 1,000-article market feedback study")
     parser.add_argument("--source-db", type=Path, default=base / "news.sqlite3")
+    parser.add_argument("--content-cache", type=Path,
+                        help="Read-only official source PDF evidence cache")
     parser.add_argument("--journal", type=Path, required=True)
     parser.add_argument("--as-of", required=True, help="ISO timestamp with timezone")
     parser.add_argument("--count", type=int, default=1000)
