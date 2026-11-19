@@ -81,3 +81,79 @@ def test_frozen_holdout_excludes_training_articles_and_pretraining_dates(
             journal=journal, source_db=db_path, output=path,
             model=object(), client=object(),
         )
+
+
+def test_price_direction_controls_use_exact_same_scored_assets():
+    cases = [
+        {"evaluation": {"impacts": [
+            {"status": "WRONG", "direction": "NEUTRAL",
+             "actualDirection": "POSITIVE", "relativeDirectionVerdict": "WRONG"},
+            {"status": "CORRECT", "direction": "NEGATIVE",
+             "actualDirection": "NEGATIVE",
+             "relativeDirectionVerdict": "CORRECT"},
+        ]}},
+        {"evaluation": {"impacts": [
+            {"status": "UNVERIFIED", "direction": "POSITIVE"},
+            {"status": "WRONG", "direction": "NEUTRAL",
+             "actualDirection": "POSITIVE",
+             "relativeDirectionVerdict": "UNVERIFIED"},
+        ]}},
+    ]
+    result = holdout.price_direction_comparison(cases)
+    assert result["scoredTargets"] == 3
+    assert result["modelDirectionMatches"] == 1
+    assert result["modelDirectionalAccuracy"] == pytest.approx(1 / 3)
+    assert result["directionalAccuracy"] == 1.0
+    assert result["constantDirectionControls"]["POSITIVE"]["correct"] == 2
+    assert result["constantDirectionControls"]["NEUTRAL"]["correct"] == 0
+    assert result["beatsEveryConstantControl"] is False
+    assert result["relativeScoredTargets"] == 2
+    assert result["relativeAccuracy"] == 0.5
+    assert result["attributionEstablished"] is False
+
+
+def test_price_direction_empty_coverage_does_not_report_perfect_success():
+    result = holdout.price_direction_comparison([
+        {"evaluation": {"impacts": [{"status": "UNVERIFIED"}]}},
+        {"evaluation": {"impacts": []}},
+    ])
+    assert result["scoredTargets"] == 0
+    assert result["modelDirectionalAccuracy"] is None
+    assert result["beatsEveryConstantControl"] is None
+
+
+def test_content_duplicate_does_not_reenter_reserved_chronological_holdout(
+    monkeypatch, tmp_path,
+):
+    from datetime import UTC, datetime, timedelta
+
+    from tris_market_event_intelligence import sequential_market_learning_cli as seq
+
+    start = datetime(2025, 1, 1, tzinfo=UTC)
+    rows = []
+    for i in range(10):
+        t = (start + timedelta(days=i)).isoformat()
+        rows.append({
+            "articleId": i + 1,
+            "title": f"News {i}",
+            "summary": "The central bank has announced a significant "
+                       "interest rate change affecting the market.",
+            "publishedAtReported": t, "firstObservedAt": t,
+            "textSha256": f"source-{i}",
+        })
+    rows[-1]["textSha256"] = rows[0]["textSha256"]
+    monkeypatch.setattr(seq, "historical_news_cohort", lambda **kwargs: {
+        "items": rows,
+    })
+    training, reserve = seq.load_articles(
+        tmp_path / "news.sqlite3", 100, start + timedelta(days=20),
+    )
+    holdout_rows, _ = seq.load_articles(
+        tmp_path / "news.sqlite3", 100, start + timedelta(days=20),
+        partition="holdout",
+    )
+    assert reserve == 2
+    assert len(training) == 8
+    assert [row["articleId"] for row in holdout_rows] == [9]
+    assert not ({x["textSha256"] for x in training} &
+                {x["textSha256"] for x in holdout_rows})
