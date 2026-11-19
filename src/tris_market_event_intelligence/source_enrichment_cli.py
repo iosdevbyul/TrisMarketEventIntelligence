@@ -15,6 +15,7 @@ import re
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
+from collections import Counter
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -26,7 +27,8 @@ from tris_market_event_intelligence.event_evidence_policy import (
 )
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 
-ALLOWED_HOSTS = {"www.bok.or.kr", "bok.or.kr"}
+ALLOWED_HOSTS = {"www.bok.or.kr", "bok.or.kr", "file-cdn.bok.or.kr"}
+PAGE_HOSTS = {"www.bok.or.kr", "bok.or.kr"}
 MAX_BYTES = 5_000_000
 
 
@@ -58,8 +60,8 @@ def authorized(url: str) -> bool:
             and parts.username is None and parts.password is None)
 
 
-def fetch(client: httpx.Client, url: str) -> httpx.Response:
-    if not authorized(url):
+def fetch(client: httpx.Client, url: str, *, page: bool = False) -> httpx.Response:
+    if not authorized(url) or (page and urlsplit(url).hostname not in PAGE_HOSTS):
         raise ValueError("SOURCE_HOST_NOT_ALLOWED")
     response = client.get(url, headers={"User-Agent": "TrisMarketEventIntelligence/1.0"})
     if response.is_redirect:
@@ -85,7 +87,7 @@ def source_document(client: httpx.Client, row: dict) -> dict:
     if not authorized(url):
         return {"status": "UNAVAILABLE", "reasonCode": "NON_OFFICIAL_SOURCE"}
     try:
-        page = fetch(client, url)
+        page = fetch(client, url, page=True)
         if "html" not in page.headers.get("content-type", "").lower():
             raise ValueError("SOURCE_NOT_HTML")
         parser = Links()
@@ -95,21 +97,28 @@ def source_document(client: httpx.Client, row: dict) -> dict:
             link = urljoin(url, href.strip())
             if not authorized(link):
                 continue
-            is_pdf = bool(re.search(r"\\.pdf(?:$|[?#])", link, re.IGNORECASE))
-            pdf_label = bool(re.search(r"\\bpdf\\b", name, re.IGNORECASE))
+            is_pdf = bool(re.search(r"\.pdf(?:$|[?#])", link, re.IGNORECASE))
+            pdf_label = bool(re.search(r"\bpdf\b", name, re.IGNORECASE))
             if (is_pdf or pdf_label) and link not in candidates:
                 candidates.append(link)
         if not candidates:
             return {"status": "UNAVAILABLE",
                     "reasonCode": "PDF_ATTACHMENT_NOT_LINKED_OR_UNSUPPORTED"}
-        for link in candidates[:3]:
-            response = fetch(client, link)
-            pdf = response.content
-            if not pdf.startswith(b"%PDF-"):
-                continue
-            body = extract_pdf(pdf)
-            enriched = {**row, "summary": body}
-            if content_quality(enriched)["status"] != "ELIGIBLE":
+        problems: list[str] = []
+        for link in candidates[:5]:
+            try:
+                response = fetch(client, link)
+                pdf = response.content
+                if not pdf.startswith(b"%PDF-"):
+                    problems.append("ATTACHMENT_NOT_PDF")
+                    continue
+                body = extract_pdf(pdf)
+                enriched = {**row, "summary": body}
+                if content_quality(enriched)["status"] != "ELIGIBLE":
+                    problems.append("PDF_TEXT_INSUFFICIENT")
+                    continue
+            except (ValueError, PdfReadError, httpx.HTTPError, OSError) as exc:
+                problems.append(type(exc).__name__)
                 continue
             return {
                 "status": "AVAILABLE",
@@ -122,7 +131,9 @@ def source_document(client: httpx.Client, row: dict) -> dict:
                 "acquiredAt": datetime.now(UTC).isoformat(),
                 "pointInTimeCertified": False,
             }
-        return {"status": "UNAVAILABLE", "reasonCode": "PDF_TEXT_NOT_EXTRACTABLE"}
+        return {"status": "UNAVAILABLE",
+                "reasonCode": problems[-1] if problems else "PDF_TEXT_NOT_EXTRACTABLE",
+                "attachmentCandidates": len(candidates)}
     except (ValueError, PdfReadError, httpx.HTTPError, OSError,
             KeyError, IndexError) as exc:
         return {"status": "UNAVAILABLE", "reasonCode": type(exc).__name__ +
@@ -161,8 +172,11 @@ def enrich(source_db: Path, output: Path, as_of: datetime, limit: int,
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", encoding="utf-8") as file:
         json.dump(result, file, ensure_ascii=False, indent=2)
+    reasons = Counter(value.get("reasonCode", "UNKNOWN")
+                      for value in cache.values() if value["status"] != "AVAILABLE")
     return {
         "fetched": len(cache),
+        "unavailableReasons": dict(sorted(reasons.items())),
         "available": sum(x["status"] == "AVAILABLE" for x in cache.values()),
         "unavailable": sum(x["status"] != "AVAILABLE" for x in cache.values()),
         "output": str(output),
