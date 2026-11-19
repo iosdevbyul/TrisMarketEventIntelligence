@@ -506,7 +506,10 @@ def test_older_original_publication_is_eligible_even_if_backfilled(monkeypatch, 
     rows = [sample(i, early + timedelta(days=i)) for i in range(1, 12)]
     for row in rows:
         row["firstObservedAt"] = datetime(2026, 11, 13, tzinfo=UTC).isoformat()
-        row["summary"] = row["title"]
+        row["summary"] = (
+            "Detailed description of the production shift and its expected "
+            "impact on supply chain revenue forecasts."
+        )
     monkeypatch.setattr(seq, "historical_news_cohort",
                         lambda **kwargs: {"items": rows})
     selected, _ = seq.load_articles(
