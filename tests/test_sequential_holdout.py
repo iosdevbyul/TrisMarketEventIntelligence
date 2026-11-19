@@ -278,3 +278,64 @@ def test_holdout_spread_dates_refuses_incomplete_30_day_study(monkeypatch, tmp_p
             client=object(), count=30, selection_policy="spread-dates",
         )
     assert not (tmp_path / "must_not_write.json").exists()
+
+
+def test_spread_dates_uses_untrained_archive_but_excludes_prior_83_holdout(
+    monkeypatch, tmp_path,
+):
+    from datetime import UTC, datetime, timedelta
+
+    source = tmp_path / "news.sqlite3"
+    source.touch()
+    journal = tmp_path / "study.sqlite3"
+    with sqlite3.connect(journal) as db:
+        db.execute("CREATE TABLE runs(id INTEGER, settings_json TEXT)")
+        db.execute("INSERT INTO runs VALUES (1,?)", (json.dumps({
+            "sourceDb": str(source.resolve()),
+            "sourceContentCache": None,
+            "cutoff": "2026-11-19T00:00:00+00:00",
+            "horizonHours": 24, "interval": "1d", "model": "fake",
+        }),))
+        db.execute("CREATE TABLE steps(article_id INTEGER, observed_at TEXT, phase TEXT)")
+        db.execute(
+            "INSERT INTO steps VALUES (1,'2026-01-01T00:00:00+00:00','COMPLETE')"
+        )
+    previous = tmp_path / "market-holdout.json"
+    previous.write_text(json.dumps({
+        "schemaVersion": "frozen_chronological_holdout_v3",
+        "holdoutSourceDb": str(source.resolve()),
+        "articles": [{"articleId": 2}, {"articleId": 3}],
+    }))
+    start = datetime(2026, 2, 1, 15, tzinfo=UTC)
+    rows = []
+    for i in range(45):
+        published = (start + timedelta(days=i * 4)).isoformat()
+        rows.append({
+            "articleId": i + 1, "source": "bbc_business",
+            "title": f"Article {i+1}",
+            "publishedAtReported": published, "firstObservedAt": published,
+            "textSha256": f"hash-{i}",
+        })
+    observed_partitions = []
+
+    def fake_loader(source_db, count, cutoff, **kwargs):
+        observed_partitions.append(kwargs.get("partition"))
+        return rows, 9
+
+    monkeypatch.setattr(holdout, "load_articles", fake_loader)
+    selected, settings = holdout.holdout_selection(
+        journal, source, 30, selection_policy="spread-dates",
+        exclude_report=previous,
+    )
+    assert observed_partitions == ["all"]
+    assert len(selected) == 30
+    assert 1 not in {row["articleId"] for row in selected}
+    assert 2 not in {row["articleId"] for row in selected}
+    assert 3 not in {row["articleId"] for row in selected}
+    info = settings["holdoutInfo"]
+    assert info["dateSpread"]["sufficientDistinctDates"]
+    assert info["previouslyEvaluatedArticleIdsExcluded"] == 2
+    assert info["candidateScope"] == (
+        "UNTRAINED_POST_TRAINING_ARCHIVE_NOT_ORIGINAL_HOLDOUT"
+    )
+    assert info["dateSpread"]["selectedSpanDays"] >= 100
