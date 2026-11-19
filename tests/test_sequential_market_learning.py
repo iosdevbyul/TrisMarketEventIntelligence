@@ -154,7 +154,8 @@ def test_retrospective_learning_continues_across_overlapping_articles(
     assert result["articlesCompleted"] == 2
     assert result["pointInTimeCertified"] is False
     assert result["evaluationMode"] == "RETROSPECTIVE_SEQUENTIAL_FEEDBACK"
-    assert "pricing power" in fake.prompts[2]["priorFeedbackLessons"][0]
+    # A later article cannot use a lesson whose outcome matured seven days later.
+    assert fake.prompts[2]["priorFeedbackLessons"] == []
 
 
 def test_same_day_articles_are_not_dropped_by_selection(monkeypatch, tmp_path):
