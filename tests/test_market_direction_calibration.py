@@ -96,23 +96,27 @@ def test_near_even_historical_votes_do_not_produce_false_learning(tmp_path):
     path = tmp_path / "near_even.sqlite3"
     journal(path, n=74)
     with sqlite3.connect(path) as db:
-        for i in range(35):
+        for i in range(74):
+            released = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=i)
+            observed = (
+                "POSITIVE" if i < 35 else
+                "NEGATIVE" if i < 71 else "NEUTRAL"
+            )
             evaluation = {
                 "impacts": [{
                     "targetType": "MARKET",
                     "target": "BROAD_MARKET",
                     "priceProxy": "069500.KS",
                     "direction": "NEUTRAL",
-                    "actualDirection": "POSITIVE",
-                    "status": "WRONG",
-                    "outcomeAt": (
-                        datetime(2026, 9, 1, tzinfo=UTC)
-                        + timedelta(days=i)
-                    ).isoformat(),
+                    "actualDirection": observed,
+                    "status": "CORRECT" if observed == "NEUTRAL" else "WRONG",
+                    "outcomeAt": (released + timedelta(days=1)).isoformat(),
                 }],
             }
-            db.execute("UPDATE steps SET evaluation_json=? WHERE seq=?",
-                       (json.dumps(evaluation), i))
+            db.execute(
+                "UPDATE steps SET observed_at=?, evaluation_json=? WHERE seq=?",
+                (released.isoformat(), json.dumps(evaluation), i),
+            )
     trained = fit_price_calibrator(
         path, datetime(2026, 11, 16, tzinfo=UTC), minimum_support=8,
     )
@@ -120,5 +124,8 @@ def test_near_even_historical_votes_do_not_produce_false_learning(tmp_path):
     assert trained["status"] == "NO_SUPPORTED_RULES"
     rejected = trained["rejectedBuckets"]["KR:NEUTRAL"]
     assert rejected["reasonCode"] == "NO_DOMINANT_HISTORICAL_DIRECTION"
+    assert rejected["distribution"] == {
+        "NEGATIVE": 36, "NEUTRAL": 3, "POSITIVE": 35,
+    }
     assert rejected["leaderMargin"] < trained["minimumLeaderMargin"]
     assert calibrate_direction(trained, "069500.KS", "NEUTRAL")["status"] == "ABSTAIN"
