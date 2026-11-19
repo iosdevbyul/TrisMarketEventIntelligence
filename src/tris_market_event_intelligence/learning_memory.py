@@ -247,7 +247,10 @@ def compare_trial(db: sqlite3.Connection, *, seq: int,
                   primary: dict[str, Any], baseline: dict[str, Any],
                   evaluation: dict[str, Any]) -> dict[str, Any]:
     """Paired directional comparison, only on matching supported targets."""
-    observed = _date(str(article["firstObservedAt"]))
+    # A backfilled historical article must be judged at its original release
+    # time, never at the later first ingestion time.
+    observed = _date(str(article.get("publishedAtReported") or
+                         article["firstObservedAt"]))
     eligible = observed > _date(str(candidate["eligibleAfter"]))
     primary_map = {(row["targetType"], row["target"]): row["direction"]
                    for row in primary["impacts"]}
