@@ -612,3 +612,46 @@ def test_ticker_suffix_without_exchange_is_not_assumed_korean():
     for ticker in ("000660", "005930", "NVDA.KS", "NVDA:US"):
         with pytest.raises(ValueError):
             seq.asset_market(ticker)
+
+
+def test_krx_equity_uses_korea_close_not_new_york_close(monkeypatch):
+    from zoneinfo import ZoneInfo
+    kr = ZoneInfo("Asia/Seoul")
+    def local(day, hour, minute=0):
+        return datetime(2026, 11, day, hour, minute, tzinfo=kr).astimezone(UTC)
+    monkeypatch.setattr(seq, "yahoo_bars", lambda *a, **kw: [
+        (local(12, 9), 100.0),
+        (local(13, 9), 108.0),
+        (local(16, 9), 102.0),
+    ])
+    intraday = seq.price_return(
+        object(), "000660.KS", local(13, 11), timedelta(hours=24), "1d",
+    )
+    assert intraday["baselinePrice"] == 100.0
+    assert intraday["outcomePrice"] == 108.0
+    assert intraday["sessionTimeZone"] == "Asia/Seoul"
+    assert intraday["outcomeAt"] == local(13, 15, 30).isoformat()
+    after_close = seq.price_return(
+        object(), "000660.KS", local(13, 16), timedelta(hours=24), "1d",
+    )
+    assert after_close["baselinePrice"] == 108.0
+    assert after_close["outcomePrice"] == 102.0
+    assert after_close["outcomeAt"] == local(16, 15, 30).isoformat()
+
+
+def test_us_exchange_calendar_unchanged_by_korean_support(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ny = ZoneInfo("America/New_York")
+    def local(day, hour):
+        return datetime(2026, 11, day, hour, tzinfo=ny).astimezone(UTC)
+    monkeypatch.setattr(seq, "yahoo_bars", lambda *a, **kw: [
+        (local(12, 9), 100.0),
+        (local(13, 9), 102.0),
+        (local(16, 9), 104.0),
+    ])
+    output = seq.price_return(
+        object(), "NVDA", local(13, 17), timedelta(hours=24), "1d",
+    )
+    assert output["baselinePrice"] == 102.0
+    assert output["outcomePrice"] == 104.0
+    assert output["sessionTimeZone"] == "America/New_York"
