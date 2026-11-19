@@ -379,3 +379,58 @@ downloaded PDF documents and third-party daily prices are not
 point-in-time-certified. Do not merge or enable automatic learning until
 the independent source regime, price alignment and multi-period robustness
 checks have been reviewed.
+
+### Thirty genuinely different release days (frozen exploratory test)
+
+A chronological holdout that contains 83 articles collected from only three
+calendar days **cannot** establish 30 independent article dates, however many
+articles it has. The new `spread-dates` sampling contract examines all
+eligible **untrained, post-training-release** source records (not just the
+existing trailing 20% cohort) and excludes the article IDs in the old
+83-article holdout. It selects at most one article for each local trading
+market release day, spanning the available period using a deterministic
+maximin-date algorithm. The selection **never** consults price outcomes.
+
+First inventory real available candidates on the Mac using the read-only
+original news archive and original 100-article training journal:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.sequential_holdout_cli \
+  --journal "$DATA/market-evidence-v3-100.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --exclude-report "$DATA/market-holdout-baseline-news-v2.json" \
+  --selection-policy spread-dates --count 30 \
+  --preview --manifest "$DATA/research-30-distinct-dates-manifest-v1.json"
+```
+
+The immutable manifest shows original article IDs, full source URLs, original
+reported publication timestamp, market-local date, title, date span, source
+composition and whether 30 distinct dates really exist. If the archive
+contains fewer than 30 independent dates, **do not** run or report a
+30-date evaluation; ingest older real releases first, with their verifiable
+original publication times, and repeat the preflight. A failed preflight does
+not establish that 30 historical releases exist.
+
+Once `dateSpread.sufficientDistinctDates` is true and the manifest has been
+reviewed, execute the exact same selection against the same source DB:
+
+```bash
+python -m tris_market_event_intelligence.sequential_holdout_cli \
+  --journal "$DATA/market-evidence-v3-100.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --exclude-report "$DATA/market-holdout-baseline-news-v2.json" \
+  --selection-policy spread-dates --count 30 \
+  --output "$DATA/research-30-distinct-dates-results-v1.json"
+```
+
+The study fails before Gemma inference or outcome queries if fewer than 30
+dates are eligible, and existing report files are never overwritten.
+Dates are distinct by jurisdiction-local release date, not by RSS receipt
+time. Results are explicitly labeled
+`UNTRAINED_POST_TRAINING_ARCHIVE_NOT_ORIGINAL_HOLDOUT`: this is a
+retrospective exploratory sample, **not** the untouched strict last-20%
+holdout and not verified source-PIT. The training DB is read-only and no
+feedback rules are applied. Multiple distinct dates do not by themselves
+establish market regime independence; inspect per-date returns and compare
+against constant-direction and past-only trend baselines.
