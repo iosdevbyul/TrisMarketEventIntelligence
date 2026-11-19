@@ -37,6 +37,7 @@ SECTOR_ETFS = {
 }
 DIRECTIONS = {"POSITIVE", "NEGATIVE", "NEUTRAL"}
 NEW_YORK = ZoneInfo("America/New_York")
+SEOUL = ZoneInfo("Asia/Seoul")
 # Explicit entity aliases prevent e.g. an NVDA article from being scored
 # using an unrelated Korean company's ticker. No fuzzy ticker guessing.
 KNOWN_COMPANY_SYMBOLS = {
@@ -587,10 +588,13 @@ def price_return(client: httpx.Client, symbol: str, observed: datetime,
     actual available daily bars, not weekday arithmetic.
     """
     bars = yahoo_bars(client, symbol, observed, horizon, interval=interval)
+    market = asset_market(symbol)
+    session_zone = SEOUL if market == "KR" else NEW_YORK
+    market_close = time(15, 30) if market == "KR" else time(16, 0)
     sessions = []
     for stamp, price in bars:
-        session_day = stamp.astimezone(NEW_YORK).date()
-        close_at = datetime.combine(session_day, time(16, 0), NEW_YORK).astimezone(UTC)
+        session_day = stamp.astimezone(session_zone).date()
+        close_at = datetime.combine(session_day, market_close, session_zone).astimezone(UTC)
         sessions.append((close_at, price))
     sessions.sort()
     # At exactly 16:00 NY time, treat the day's closing print as the
@@ -614,6 +618,8 @@ def price_return(client: httpx.Client, symbol: str, observed: datetime,
         "baselinePrice": start, "outcomePrice": end,
         "actualWindowHours": (after - before).total_seconds() / 3600,
         "evaluationBasis": "FIRST_POST_RELEASE_SESSION_CLOSE",
+        "market": market,
+        "sessionTimeZone": str(session_zone),
         "return": end / start - 1,
     }
 
@@ -698,7 +704,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     settings = {
         "assetValidationVersion": "exchange-metadata-v1",
         "eligibilityVersion": "original-publication-v3",
-        "dailyBarAlignment": "first-reaction-close-v3",
+        "dailyBarAlignment": "exchange-local-close-v4",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
         "count": count, "horizonHours": args.horizon_hours,
         "interval": args.interval, "model": args.model,
