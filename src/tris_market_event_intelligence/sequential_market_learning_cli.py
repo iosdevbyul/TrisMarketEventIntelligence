@@ -223,7 +223,7 @@ def canonical_prediction(raw: Any) -> dict[str, Any]:
 
 def asset_market(symbol: str) -> str:
     """Only a verified-format ticker gets an expected market."""
-    if re.fullmatch(r"[0-9]{6}\\.(KS|KQ)", symbol):
+    if re.fullmatch(r"[0-9]{6}\.(KS|KQ)", symbol):
         return "KR"
     if re.fullmatch(r"[A-Z][A-Z0-9.-]{0,11}", symbol) and not symbol.endswith((".KS", ".KQ")):
         return "US"
