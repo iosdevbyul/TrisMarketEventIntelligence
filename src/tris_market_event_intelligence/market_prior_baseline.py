@@ -15,7 +15,6 @@ import httpx
 
 from tris_market_event_intelligence.sequential_market_learning_cli import (
     asset_market,
-    yahoo_bars,
 )
 
 DIRECTIONS = ("NEGATIVE", "NEUTRAL", "POSITIVE")
@@ -36,10 +35,10 @@ def historical_sessions(
     # Fetching a future-looking Yahoo range is not allowed even if filtered.
     # yahoo_bars() requests future data, so we do not call it here.
     # The supplied client may enforce an earlier end timestamp.
-    import urllib.parse
+    from urllib.parse import quote
 
     url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
-           + urllib.parse.quote(symbol, safe=""))
+           + quote(symbol, safe=""))
     response = client.get(
         url,
         params={
@@ -129,50 +128,60 @@ def combine_pressure(
     }
 
 
-def annotate_price_study(
-    prediction: dict[str, Any], evaluation: dict[str, Any],
-    client: httpx.Client, release: datetime,
-) -> dict[str, Any]:
-    """Record fixed baseline/news/combined forecasts before checking outcomes.
+def forecast_targets(
+    prediction: dict[str, Any], client: httpx.Client, release: datetime,
+) -> list[dict[str, Any]]:
+    """Freeze baseline and combined decisions before any outcome is fetched."""
+    cache: dict[str, dict] = {}
+    forecasts = []
+    for row in prediction.get("impacts", []):
+        symbol = row.get("priceProxy")
+        if not symbol:
+            forecasts.append({"status": "UNAVAILABLE", "reasonCode": "NO_PRICE_TARGET"})
+            continue
+        if symbol not in cache:
+            cache[symbol] = trend_forecast(client, symbol, release)
+        base = cache[symbol]
+        forecasts.append({
+            "priorOnlyBaseline": base,
+            "baselinePlusNews": combine_pressure(
+                base.get("direction") if base["status"] == "AVAILABLE" else None,
+                row.get("direction"),
+            ),
+        })
+    return forecasts
 
-    Caller must calculate forecasts first in its own prediction phase for
-    genuine temporal replay. This helper is suitable for research diagnostics
-    only and never trains or certifies PIT evidence.
-    """
+
+def annotate_price_study(
+    evaluation: dict[str, Any], precommitted: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Join previously calculated forecasts to realized outcomes by position."""
     from copy import deepcopy
 
     out = deepcopy(evaluation)
-    cached: dict[str, dict] = {}
-    for item in out.get("impacts", []):
-        symbol = item.get("priceProxy")
-        if not symbol:
-            continue
-        if symbol not in cached:
-            cached[symbol] = trend_forecast(client, symbol, release)
-        baseline = cached[symbol]
-        news = item.get("direction")
-        paired = combine_pressure(
-            baseline.get("direction") if baseline["status"] == "AVAILABLE" else None,
-            news,
-        )
-        item["priorOnlyBaseline"] = baseline
-        item["baselinePlusNews"] = paired
-        actual = item.get("actualDirection")
-        if item.get("status") in {"CORRECT", "WRONG"} and actual in SCORES:
-            item["baselinePriceMatch"] = (
-                baseline["direction"] == actual
-                if baseline["status"] == "AVAILABLE" else None
+    if len(out.get("impacts", [])) != len(precommitted):
+        raise ValueError("Forecast/outcome target count mismatch")
+    for row, projected in zip(out["impacts"], precommitted, strict=True):
+        base = projected.get("priorOnlyBaseline", {"status": "UNAVAILABLE"})
+        combined = projected.get("baselinePlusNews", {"status": "ABSTAIN"})
+        row["priorOnlyBaseline"] = base
+        row["baselinePlusNews"] = combined
+        actual = row.get("actualDirection")
+        if row.get("status") in {"CORRECT", "WRONG"} and actual in SCORES:
+            row["baselinePriceMatch"] = (
+                base["direction"] == actual if base["status"] == "AVAILABLE"
+                else None
             )
-            item["combinedPriceMatch"] = (
-                paired["direction"] == actual if paired["status"] == "AVAILABLE"
+            row["combinedPriceMatch"] = (
+                combined["direction"] == actual if combined["status"] == "AVAILABLE"
                 else None
             )
         else:
-            item["baselinePriceMatch"] = None
-            item["combinedPriceMatch"] = None
+            row["baselinePriceMatch"] = None
+            row["combinedPriceMatch"] = None
     out["priceStudyContract"] = "past_only_baseline_plus_news_v1"
     out["priceStudyLimitation"] = (
-        "Baseline and combined forecasts are research diagnostics only; "
-        "price-source publication times are not independently verified."
+        "Baseline and combined decisions were computed before the outcome "
+        "fetch, but retrospective source data are not independently PIT-certified."
     )
     return out
