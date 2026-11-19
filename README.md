@@ -219,3 +219,65 @@ resuming a journal created before these asset checks. Model-format failures
 are persisted as explicit SKIPPED_MODEL_ERROR entries rather than counted as
 verified predictions. No independent forecast accuracy is claimed until the
 report has been reviewed.
+
+### Evidence-aware Korean-market rerun
+
+The previous 100-case study scored Korean Bank of Korea clarifications against
+U.S. SPY/XLF and often learned from same-day U.S. moves even when the article
+body said only "see attachment". **Those legacy CORRECT/WRONG outcomes are not
+a verified measure of article-driven price predictability.** They are preserved,
+not overwritten. A new journal is required to use this research contract.
+
+The revised sequential engine:
+
+- Checks substantive source content first. Articles with a missing attachment,
+  placeholder, or title-only body are **excluded from inference**, not counted
+  as either neutral guesses or unverified price predictions.
+- Supports an optional, immutable official-source PDF cache. Unsupported HWP,
+  JS-only, unavailable or non-PDF attachments remain explicit unavailable
+  records. The original RSS news database stays read-only.
+- Uses Korea-listed KODEX 200 `069500.KS` as a broad Korean market proxy and
+  KODEX Bank `091170.KS` as a Korean financial-sector proxy. These proxy
+  choices do not imply article-specific causality; Yahoo metadata, exchange and
+  currency must verify before any observed price move is scored. Other Korean
+  sector proxies **abstain** unless a reviewed mapping exists. U.S. securities
+  retain U.S. benchmarks. All symbols and their historical listing periods
+  still require live quote-provider validation.
+- Removes HTML-markup tokens from related article matching. Applies
+  exchange-local trading session closes to 1-day price returns.
+- Separates economic interpretation from scored asset prices. Whole-market
+  daily moves are not causal evidence for a single release; only substantive
+  articles with a meaningful sector/stock relative move can form provisional
+  feedback hypotheses. Those hypotheses are never proof of causation.
+- Makes past feedback available to a later historical article **only if the
+  observed price outcome had occurred by that later publication timestamp**.
+  Unverified chronology and retrospective documents remain explicitly
+  non-certified PIT evidence.
+
+If an official PDF is directly linked, collect its content into a new
+read-only cache file before the sequential run:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.source_enrichment_cli \
+  --source-db "$DATA/news.sqlite3" \
+  --output "$DATA/official-content-100-v1.json" \
+  --as-of "2026-11-19T00:00:00+09:00" \
+  --limit 100
+
+python -m tris_market_event_intelligence.sequential_market_learning_cli \
+  --source-db "$DATA/news.sqlite3" \
+  --content-cache "$DATA/official-content-100-v1.json" \
+  --journal "$DATA/market-evidence-v2-100.sqlite3" \
+  --as-of "2026-11-19T00:00:00+09:00" \
+  --count 100 --model gemma4:e2b --horizon-hours 24 --interval 1d
+```
+
+The optional cache reports the number of PDFs actually extracted. If none are
+available, the run processes only other *substantive* archived articles; it
+must not silently backfill made-up content. No 100-article coverage guarantee.
+A PDF retrieved in 2026 may have been replaced since its original publication;
+therefore enrichment is retrospective and **not PIT-certified**. Daily candles
+still cannot measure an exact within-session post-release response. Never
+present a one-day directional coincidence as evidence that the original news
+caused the price change.
