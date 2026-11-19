@@ -10,6 +10,7 @@ from tris_market_event_intelligence.market_prior_baseline import (
     annotate_price_study,
     combine_pressure,
     forecast_targets,
+    gated_news_adjustment,
     historical_sessions,
     trend_forecast,
 )
@@ -109,3 +110,78 @@ def test_korea_zone_excludes_same_day_close_at_release(monkeypatch):
     assert candles[-1][1] == 94
     assert len(candles) == 4
     assert all(when < release for when, _ in candles)
+
+
+def test_model_authored_surprise_cannot_override_market_price_without_external_evidence():
+    release = datetime(2026, 11, 18, 12, tzinfo=UTC)
+    claimed = {"novelty": "NEW", "expectationStatus": "ABOVE"}
+    context = {"consensus": {"status": "UNKNOWN"}}
+    gated = gated_news_adjustment(
+        "NEGATIVE", "POSITIVE", claimed, context, release,
+    )
+    assert gated["direction"] == "NEGATIVE"
+    assert gated["newsAdjusted"] is False
+    assert gated["reasonCode"] == "NO_INDEPENDENT_PRE_RELEASE_CONSENSUS"
+
+
+def test_only_verified_pre_release_target_specific_surprise_can_change_direction():
+    release = datetime(2026, 11, 18, 12, tzinfo=UTC)
+    claimed = {"novelty": "NEW", "expectationStatus": "ABOVE"}
+    context = {"consensus": {
+        "status": "VERIFIED", "publishedAt": "2026-11-17T08:00:00+00:00",
+        "issuerLinkVerified": True,
+    }}
+    result = gated_news_adjustment(
+        "NEGATIVE", "POSITIVE", claimed, context, release,
+    )
+    assert result["status"] == "NEWS_ADJUSTED"
+    assert result["direction"] == "NEUTRAL"
+    assert result["newsAdjusted"] is True
+    context["consensus"]["publishedAt"] = "2026-11-19T08:00:00+00:00"
+    stopped = gated_news_adjustment(
+        "NEGATIVE", "POSITIVE", claimed, context, release,
+    )
+    assert stopped["direction"] == "NEGATIVE"
+    assert stopped["reasonCode"] == "CONSENSUS_NOT_PRIOR_TO_RELEASE"
+    context["consensus"]["publishedAt"] = "2026-11-17T08:00:00+00:00"
+    context["consensus"]["issuerLinkVerified"] = False
+    stopped = gated_news_adjustment(
+        "NEGATIVE", "POSITIVE", claimed, context, release,
+    )
+    assert stopped["reasonCode"] == "TARGET_SPECIFIC_EXPOSURE_UNVERIFIED"
+
+
+def test_neutral_news_keeps_negative_baseline_even_with_external_estimate():
+    release = datetime(2026, 11, 18, 12, tzinfo=UTC)
+    gated = gated_news_adjustment(
+        "NEGATIVE", "NEUTRAL", {"novelty": "NEW", "expectationStatus": "ABOVE"},
+        {"consensus": {"status": "VERIFIED", "issuerLinkVerified": True,
+                       "publishedAt": "2026-11-17T08:00:00+00:00"}},
+        release,
+    )
+    assert gated["direction"] == "NEGATIVE"
+    assert gated["newsAdjusted"] is False
+
+
+def test_forecast_joins_gated_and_raw_decisions_without_leaking_outcomes(monkeypatch):
+    import tris_market_event_intelligence.market_prior_baseline as baseline
+
+    monkeypatch.setattr(
+        baseline, "trend_forecast", lambda client, symbol, release: {
+            "status": "AVAILABLE", "direction": "NEGATIVE",
+        },
+    )
+    forecast = forecast_targets(
+        {"impacts": [{"priceProxy": "NVDA", "direction": "POSITIVE"}],
+         "surpriseAssessment": {"novelty": "NEW", "expectationStatus": "ABOVE"}},
+        object(), datetime(2026, 11, 18, 12, tzinfo=UTC),
+        market_context={"consensus": {"status": "UNKNOWN"}},
+    )
+    assert forecast[0]["baselinePlusNews"]["direction"] == "NEUTRAL"
+    assert forecast[0]["gatedNewsAdjustment"]["direction"] == "NEGATIVE"
+    assessed = annotate_price_study(
+        {"impacts": [{"actualDirection": "NEGATIVE", "status": "WRONG"}]},
+        forecast,
+    )
+    assert assessed["impacts"][0]["gatedPriceMatch"] is True
+    assert assessed["impacts"][0]["combinedPriceMatch"] is False
