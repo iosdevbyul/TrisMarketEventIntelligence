@@ -128,8 +128,70 @@ def combine_pressure(
     }
 
 
+def gated_news_adjustment(
+    baseline_direction: str | None, news_direction: str | None,
+    surprise: dict[str, Any] | None, market_context: dict[str, Any] | None,
+    release: datetime,
+) -> dict[str, Any]:
+    """Require independently timestamped expectations before overriding a trend.
+
+    Model-authored surpriseAssessment is a *claim*, not proof that an outcome
+    differed from the market's pre-release expectations. Without a verified
+    before-release expectation feed the safe price forecast is unchanged.
+    """
+    if baseline_direction not in SCORES:
+        return {"status": "ABSTAIN", "direction": None,
+                "reasonCode": "PRICE_BASELINE_UNAVAILABLE"}
+    held = {
+        "status": "BASELINE_RETAINED", "direction": baseline_direction,
+        "newsPressureDirection": news_direction,
+        "newsAdjusted": False, "reasonCode": "NEWS_EVIDENCE_UNVERIFIED",
+        "causalAttributionEstablished": False,
+    }
+    if news_direction not in {"POSITIVE", "NEGATIVE"}:
+        held["reasonCode"] = "NO_DIRECTIONAL_NEWS_SURPRISE"
+        return held
+    surprise = surprise or {}
+    if surprise.get("novelty") != "NEW":
+        held["reasonCode"] = "NOVELTY_NOT_ESTABLISHED"
+        return held
+    if surprise.get("expectationStatus") not in {"ABOVE", "BELOW"}:
+        held["reasonCode"] = "EXPECTATION_SURPRISE_NOT_ESTABLISHED"
+        return held
+    # The expectation source is separate from the Gemma-authored assessment.
+    # UNKNOWN is the current default; do not promote a self-assessed surprise.
+    consensus = (market_context or {}).get("consensus") or {}
+    if consensus.get("status") != "VERIFIED":
+        held["reasonCode"] = "NO_INDEPENDENT_PRE_RELEASE_CONSENSUS"
+        return held
+    published = consensus.get("publishedAt")
+    try:
+        source_time = datetime.fromisoformat(published)
+        if source_time.utcoffset() is None or source_time >= release:
+            held["reasonCode"] = "CONSENSUS_NOT_PRIOR_TO_RELEASE"
+            return held
+    except (TypeError, ValueError):
+        held["reasonCode"] = "CONSENSUS_TIMESTAMP_UNVERIFIED"
+        return held
+    # Without audited evidence connecting the *specific issuer/security*
+    # and surprise, even verified market-wide estimates cannot authorize an
+    # individual asset override.
+    if not consensus.get("issuerLinkVerified", False):
+        held["reasonCode"] = "TARGET_SPECIFIC_EXPOSURE_UNVERIFIED"
+        return held
+    changed = combine_pressure(baseline_direction, news_direction)
+    return {
+        **changed,
+        "status": "NEWS_ADJUSTED",
+        "newsAdjusted": changed.get("direction") != baseline_direction,
+        "reasonCode": "INDEPENDENT_TIMED_SURPRISE_CONFIRMED",
+        "causalAttributionEstablished": False,
+    }
+
+
 def forecast_targets(
     prediction: dict[str, Any], client: httpx.Client, release: datetime,
+    *, market_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Freeze baseline and combined decisions before any outcome is fetched."""
     cache: dict[str, dict] = {}
@@ -143,6 +205,11 @@ def forecast_targets(
             cache[symbol] = trend_forecast(client, symbol, release)
         base = cache[symbol]
         forecasts.append({
+            "gatedNewsAdjustment": gated_news_adjustment(
+                base.get("direction") if base["status"] == "AVAILABLE" else None,
+                row.get("direction"), prediction.get("surpriseAssessment"),
+                market_context, release,
+            ),
             "priorOnlyBaseline": base,
             "baselinePlusNews": combine_pressure(
                 base.get("direction") if base["status"] == "AVAILABLE" else None,
@@ -164,8 +231,10 @@ def annotate_price_study(
     for row, projected in zip(out["impacts"], precommitted, strict=True):
         base = projected.get("priorOnlyBaseline", {"status": "UNAVAILABLE"})
         combined = projected.get("baselinePlusNews", {"status": "ABSTAIN"})
+        gated = projected.get("gatedNewsAdjustment", {"status": "ABSTAIN"})
         row["priorOnlyBaseline"] = base
         row["baselinePlusNews"] = combined
+        row["gatedNewsAdjustment"] = gated
         actual = row.get("actualDirection")
         if row.get("status") in {"CORRECT", "WRONG"} and actual in SCORES:
             row["baselinePriceMatch"] = (
@@ -176,10 +245,15 @@ def annotate_price_study(
                 combined["direction"] == actual if combined["status"] == "AVAILABLE"
                 else None
             )
+            row["gatedPriceMatch"] = (
+                gated["direction"] == actual if gated.get("direction") in SCORES
+                else None
+            )
         else:
             row["baselinePriceMatch"] = None
             row["combinedPriceMatch"] = None
-    out["priceStudyContract"] = "past_only_baseline_plus_news_v1"
+            row["gatedPriceMatch"] = None
+    out["priceStudyContract"] = "past_only_baseline_plus_gated_news_v2"
     out["priceStudyLimitation"] = (
         "Baseline and combined decisions were computed before the outcome "
         "fetch, but retrospective source data are not independently PIT-certified."
