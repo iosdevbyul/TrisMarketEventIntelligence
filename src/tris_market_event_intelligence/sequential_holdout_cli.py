@@ -27,6 +27,10 @@ from tris_market_event_intelligence.event_grounding import (
     event_facts,
 )
 from tris_market_event_intelligence.llm_runtime import LLMSettings
+from tris_market_event_intelligence.market_event_candidate_policy import (
+    filter_market_event_candidates,
+    research_candidate,
+)
 from tris_market_event_intelligence.market_direction_calibration import (
     calibrate_direction,
     fit_price_calibrator,
@@ -188,11 +192,12 @@ def price_direction_comparison(cases: list[dict]) -> dict:
 def holdout_selection(
     journal: Path, source_db: Path, count: int, *,
     selection_policy: str = "chronological",
-    exclude_report: Path | None = None,
+    exclude_report: Path | list[Path] | None = None,
 ) -> tuple[list[dict], dict]:
     if not 1 <= count <= 1000:
         raise ValueError("Holdout count must be 1..1000")
-    if selection_policy not in {"chronological", "spread-dates"}:
+    if selection_policy not in {"chronological", "spread-dates",
+                              "event-spread-dates"}:
         raise ValueError("Unknown holdout selection policy")
     if journal.is_symlink() or source_db.is_symlink():
         raise ValueError("Symlink inputs are not allowed")
@@ -220,20 +225,28 @@ def holdout_selection(
     kwargs = {"content_cache": Path(cache)} if cache else {}
     holdout, reserved = load_articles(
         source_db, 1000, cutoff,
-        partition="all" if selection_policy == "spread-dates" else "holdout",
+        partition="all" if selection_policy in {
+            "spread-dates", "event-spread-dates"
+        } else "holdout",
         **kwargs,
     )
     excluded_previous: set[int] = set()
-    if exclude_report is not None:
-        if exclude_report.is_symlink() or not exclude_report.is_file():
+    previous_reports = (
+        [exclude_report] if isinstance(exclude_report, Path)
+        else list(exclude_report or [])
+    )
+    for prior_path in previous_reports:
+        if prior_path.is_symlink() or not prior_path.is_file():
             raise ValueError("Missing or unsafe previous Holdout report")
-        previous = json.loads(exclude_report.read_text(encoding="utf-8"))
+        previous = json.loads(prior_path.read_text(encoding="utf-8"))
         if (previous.get("holdoutSourceDb") != str(source_db.resolve())
-                or previous.get("schemaVersion", "").split("_")[0] != "frozen"):
+                or not str(previous.get("schemaVersion", "")).startswith(
+                    "frozen_chronological_holdout_"
+                )):
             raise ValueError("Previous Holdout provenance mismatch")
-        excluded_previous = {
+        excluded_previous.update(
             int(item["articleId"]) for item in previous.get("articles", [])
-        }
+        )
     training_fingerprints = {
         (row.get("textSha256") or row.get("sourceUrl"))
         for row in holdout if row["articleId"] in training_ids
@@ -247,9 +260,18 @@ def holdout_selection(
         and publication_time(a) > last_training
         and (a.get("textSha256") or a.get("sourceUrl")) not in training_fingerprints
     ]
+    candidate_audit = None
+    if selection_policy == "event-spread-dates":
+        eligible, candidate_audit = filter_market_event_candidates(eligible)
     distinct_info = None
-    if selection_policy == "spread-dates":
+    if selection_policy in {"spread-dates", "event-spread-dates"}:
         selected, distinct_info = spread_date_selection(eligible, count)
+        if candidate_audit is not None:
+            for item in distinct_info["items"]:
+                article = next(
+                    row for row in selected if row["articleId"] == item["articleId"]
+                )
+                item["marketEventEligibility"] = research_candidate(article)
     else:
         selected = eligible[:count]
     info = {
@@ -271,10 +293,12 @@ def holdout_selection(
         "selectionPolicy": selection_policy,
         "candidateScope": (
             "UNTRAINED_POST_TRAINING_ARCHIVE_NOT_ORIGINAL_HOLDOUT"
-            if selection_policy == "spread-dates" else "STRICT_TRAILING_HOLDOUT"
+            if selection_policy in {"spread-dates", "event-spread-dates"}
+            else "STRICT_TRAILING_HOLDOUT"
         ),
         "previouslyEvaluatedArticleIdsExcluded": len(excluded_previous),
         "dateSpread": distinct_info,
+        "economicEventScreen": candidate_audit,
     }
     return selected, {**settings, "holdoutInfo": info}
 
@@ -283,7 +307,8 @@ def evaluate_holdout(
     *, journal: Path, source_db: Path, output: Path, model: object,
     client: httpx.Client, count: int = 100,
     selection_policy: str = "chronological",
-    exclude_report: Path | None = None,
+    exclude_report: Path | list[Path] | None = None,
+    selection_manifest: Path | None = None,
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise ValueError("Refusing to overwrite a holdout result")
@@ -291,12 +316,24 @@ def evaluate_holdout(
         journal, source_db, count, selection_policy=selection_policy,
         exclude_report=exclude_report,
     )
-    if selection_policy == "spread-dates" and len(selected) != count:
+    if selection_policy in {"spread-dates", "event-spread-dates"} and len(selected) != count:
         available = settings["holdoutInfo"]["dateSpread"]["candidateDistinctDates"]
         raise ValueError(
             f"INSUFFICIENT_DISTINCT_RELEASE_DATES: requested {count}, "
-            f"eligible {available}; collect more historically dated articles"
+            f"eligible {available}; collect more qualifying historical news"
         )
+    if selection_manifest is not None:
+        if selection_manifest.is_symlink() or not selection_manifest.is_file():
+            raise ValueError("Missing or unsafe frozen article manifest")
+        saved = json.loads(selection_manifest.read_text(encoding="utf-8"))
+        current = settings["holdoutInfo"]
+        if (saved.get("holdoutSourceDb") != current["holdoutSourceDb"]
+                or saved.get("selectionPolicy") != selection_policy
+                or saved.get("dateSpread") != current["dateSpread"]
+                or saved.get("economicEventScreen") != current["economicEventScreen"]
+                or saved.get("previouslyEvaluatedArticleIdsExcluded")
+                != current["previouslyEvaluatedArticleIdsExcluded"]):
+            raise ValueError("FROZEN_ARTICLE_MANIFEST_MISMATCH")
     last_training = timestamp(settings["holdoutInfo"]["lastTrainingPublishedAt"])
     # Fit once on sealed training journal only. No holdout labels enter fitting.
     fitted = (
@@ -377,8 +414,9 @@ def evaluate_holdout(
     ]
     comparison = price_direction_comparison(outcomes)
     result = {
-        "schemaVersion": "frozen_chronological_holdout_v3",
+        "schemaVersion": "frozen_chronological_holdout_v4",
         "cohort": settings["holdoutInfo"],
+        "eventCandidateSelectionUsedOutcomes": False,
         "priceDirectionControls": comparison,
         "trainedPriceCalibration": fitted,
         "marketRegimeDiversityVerified": False,
@@ -407,7 +445,7 @@ def evaluate_holdout(
                     "not an independently verified gain from training. "
                     "The train/holdout source material may be retrospectively enriched. "
                     "Calibration is historical price coincidence, not model fine tuning. "
-                    "One month of Holdout cannot establish regime generalization. "
+                    "Distinct release dates do not establish independent market regimes. "
                     "Evidence gating is a conservative safety policy, not proof of alpha."),
         "articles": outcomes,
     }
@@ -424,20 +462,25 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument(
-        "--selection-policy", choices=["chronological", "spread-dates"],
+        "--selection-policy",
+        choices=["chronological", "spread-dates", "event-spread-dates"],
         default="chronological",
         help="spread-dates requires distinct original release dates",
     )
     parser.add_argument(
-        "--exclude-report", type=Path,
+        "--exclude-report", type=Path, action="append",
         help="Avoid reusing article IDs already evaluated in a previous Holdout JSON",
     )
+    parser.add_argument("--selection-manifest", type=Path,
+                        help="Refuse to run if candidate list differs from prior preview")
     parser.add_argument("--manifest", type=Path,
                         help="Write immutable selected-article list during preview")
     parser.add_argument("--preview", action="store_true",
                         help="Inspect reserved holdout counts without Gemma or price requests")
     args = parser.parse_args()
     if args.preview:
+        if args.selection_manifest is not None:
+            parser.error("--selection-manifest is for the actual evaluation run")
         _, settings = holdout_selection(
             args.journal, args.source_db, args.count,
             selection_policy=args.selection_policy,
@@ -476,6 +519,7 @@ def main() -> None:
             count=args.count,
             selection_policy=args.selection_policy,
             exclude_report=args.exclude_report,
+            selection_manifest=args.selection_manifest,
         ), ensure_ascii=False))
 
 
