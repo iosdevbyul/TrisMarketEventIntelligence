@@ -281,3 +281,44 @@ therefore enrichment is retrospective and **not PIT-certified**. Daily candles
 still cannot measure an exact within-session post-release response. Never
 present a one-day directional coincidence as evidence that the original news
 caused the price change.
+
+### Evidence-grounded news-impact research
+
+The event-grounding contract separates an allegation quoted in a Bank of Korea
+press correction from the actual official response. Contradictions and clearly
+administrative/ceremonial releases are abstentions, not "neutral price"
+forecasts. Unsupported target mappings are rejected, and a listed ETF typed as
+a STOCK is reconciled to its known MARKET or SECTOR proxy.
+
+Evaluation reports keep three distinct concepts: observed absolute close-to-
+close price movement, same-market benchmark-relative price movement, and
+**unproven article-level attribution**. A neutral economic-impact assessment
+does not assert the ETF must finish within a 0.1% daily price band. Observed
+prices can still move for unrelated reasons. Post-hoc critic suggestions are
+recorded only as unverified hypotheses and do not automatically become active
+causal rules.
+
+The sequential research runner now accepts `--cohort-policy diverse` (default)
+or `chronological`. Diverse mode balances sources **only if actual source
+variety exists**; it does not generate fictitious news and all selected articles
+are replayed in historical publication order. Never reuse an existing journal
+when changing any study contract.
+
+For a distinct, no-feedback evaluation of reserved *later* articles after a
+research run, execute:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.sequential_holdout_cli \
+  --journal "$DATA/market-evidence-grounded-100-v1.sqlite3" \
+  --source-db "$DATA/news.sqlite3" \
+  --output "$DATA/market-evidence-grounded-holdout-v1.json" \
+  --count 100
+```
+
+The holdout command never mutates the training journal, never produces
+feedback or rules, and prevents overwriting its output. It reports the
+directional-price denominator separately from neutral-event hypotheses.
+A retrospective holdout using later-downloaded documents is **not
+point-in-time-certified**, and when it supplies no learned rule context it
+measures a frozen baseline rather than proven training improvement.
