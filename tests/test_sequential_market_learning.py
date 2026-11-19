@@ -155,7 +155,8 @@ def test_retrospective_learning_continues_across_overlapping_articles(
     assert result["pointInTimeCertified"] is False
     assert result["evaluationMode"] == "RETROSPECTIVE_SEQUENTIAL_FEEDBACK"
     # A later article cannot use a lesson whose outcome matured seven days later.
-    assert fake.prompts[2]["priorFeedbackLessons"] == []
+    assert fake.prompts[1]["priorFeedbackLessons"] == []
+    assert fake.predictions == 2
 
 
 def test_same_day_articles_are_not_dropped_by_selection(monkeypatch, tmp_path):
