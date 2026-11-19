@@ -74,16 +74,21 @@ def is_denial_inversion(prediction: dict[str, Any], facts: dict[str, Any]) -> bo
     if not facts["officialDenial"]:
         return False
     summary = plain_text(prediction.get("summary")).casefold()
-    return bool(
-        re.search(
-            r"(?:confirmed|announced|implemented|approved|decided|finalized)"
-            r".{0,70}(?:policy|plan|measure|swap|rate|investment|intervention)",
-            summary,
-        ) and not any(term in summary for term in (
-            "denied", "not ", "false", "incorrect", "untrue", "refuted",
-            "no decision",
-        ))
+    denied_in_summary = any(term in summary for term in (
+        "denied", "not ", "false", "incorrect", "untrue", "refuted",
+        "no decision", "did not", "hasn't", "no plans", "never",
+    ))
+    official_assertion = re.search(
+        r"(?:bank of korea|\bbok\b|한국은행).{0,30}"
+        r"(?:clarified|stated|said|asserted|indicated) that",
+        summary,
     )
+    policy_assertion = re.search(
+        r"(?:confirmed|announced|implemented|approved|decided|finalized)"
+        r".{0,70}(?:policy|plan|measure|swap|rate|investment|intervention)",
+        summary,
+    )
+    return bool((official_assertion or policy_assertion) and not denied_in_summary)
 
 
 def enforce_event_grounding(
