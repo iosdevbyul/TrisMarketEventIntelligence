@@ -1013,6 +1013,32 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
             complete_count = db.execute(
                 "SELECT COUNT(*) FROM steps WHERE phase='COMPLETE'"
             ).fetchone()[0]
+            coverage = {
+                "articlesWithVerifiedTargets": 0,
+                "articlesWithOnlyUnverifiedTargets": 0,
+                "articlesWithoutTargets": 0,
+                "articlesWithRejectedTargets": 0,
+                "rejectedTargets": 0,
+                "articlesWithEnrichedContent": 0,
+            }
+            for prediction_json, evaluation_json in db.execute(
+                "SELECT prediction_json, evaluation_json FROM steps "
+                "WHERE phase='COMPLETE'"
+            ):
+                predicted = json.loads(prediction_json)
+                impacts = json.loads(evaluation_json or "{}").get("impacts", [])
+                if any(row["status"] in {"CORRECT", "WRONG"} for row in impacts):
+                    coverage["articlesWithVerifiedTargets"] += 1
+                elif impacts:
+                    coverage["articlesWithOnlyUnverifiedTargets"] += 1
+                else:
+                    coverage["articlesWithoutTargets"] += 1
+                rejected = predicted.get("targetMappingRejections") or []
+                coverage["rejectedTargets"] += len(rejected)
+                coverage["articlesWithRejectedTargets"] += int(bool(rejected))
+                coverage["articlesWithEnrichedContent"] += int(
+                    bool(predicted.get("contentEvidence"))
+                )
             return {
                 "status": ("COMPLETE" if complete_count == count
                            else "PARTIAL_WITH_MODEL_ERRORS" if skipped_count
@@ -1020,6 +1046,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                 "articlesRequested": count, "articlesAvailable": len(articles),
                 "articlesCompleted": complete_count,
                 "articlesSkippedModelError": skipped_count,
+                "articleCoverage": coverage,
                 "lessons": lessons_count,
                 "holdoutReserved": heldout, "journal": str(args.journal),
                 "marketReturnsAnalyzed": any(
