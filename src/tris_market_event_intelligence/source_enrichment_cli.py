@@ -63,13 +63,22 @@ def authorized(url: str) -> bool:
 def fetch(client: httpx.Client, url: str, *, page: bool = False) -> httpx.Response:
     if not authorized(url) or (page and urlsplit(url).hostname not in PAGE_HOSTS):
         raise ValueError("SOURCE_HOST_NOT_ALLOWED")
-    response = client.get(url, headers={"User-Agent": "TrisMarketEventIntelligence/1.0"})
-    if response.is_redirect:
-        raise ValueError("SOURCE_REDIRECT_REQUIRES_REVIEW")
-    response.raise_for_status()
-    if len(response.content) > MAX_BYTES:
-        raise ValueError("SOURCE_TOO_LARGE")
-    return response
+    current = url
+    for _ in range(4):
+        response = client.get(
+            current, headers={"User-Agent": "TrisMarketEventIntelligence/1.0"},
+        )
+        if len(response.content) > MAX_BYTES:
+            raise ValueError("SOURCE_TOO_LARGE")
+        if not response.is_redirect:
+            response.raise_for_status()
+            return response
+        destination = urljoin(current, response.headers.get("location", ""))
+        if not authorized(destination) or (page and urlsplit(destination).hostname
+                                           not in PAGE_HOSTS):
+            raise ValueError("SOURCE_REDIRECT_OUTSIDE_OFFICIAL_HOSTS")
+        current = destination
+    raise ValueError("SOURCE_TOO_MANY_REDIRECTS")
 
 
 def extract_pdf(blob: bytes) -> str:
