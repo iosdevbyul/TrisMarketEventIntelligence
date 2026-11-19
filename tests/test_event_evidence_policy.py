@@ -468,3 +468,26 @@ def test_ceremonial_news_without_economic_mechanism_abstains():
     assert scoped["targetMappingRejections"][0]["reasonCode"] == (
         "NO_IDENTIFIABLE_MARKET_MECHANISM"
     )
+
+
+def test_false_bok_exchange_rate_position_is_not_attributed_to_central_bank():
+    from tris_market_event_intelligence.event_grounding import enforce_event_grounding
+
+    row = article(
+        "(보도내용) 한은은 시장 개입을 하지 않아야 한다고 보고 있으며 "
+        "균형환율은 낮아질 것이라고 보도하였다. "
+        "(해명내용) 위 보도 내용은 사실과 다름"
+    )
+    model = {
+        "summary": (
+            "The Bank of Korea clarified that premature exchange-rate "
+            "stabilization would be detrimental to the economy."
+        ),
+        "impacts": [{
+            "targetType": "MARKET", "target": "BROAD_MARKET",
+            "priceProxy": "069500.KS", "direction": "NEGATIVE",
+        }],
+    }
+    result = enforce_event_grounding(model, row)
+    assert result["impacts"] == []
+    assert "OFFICIAL_DENIAL_REVERSED" in result["eventGroundingReasons"]
