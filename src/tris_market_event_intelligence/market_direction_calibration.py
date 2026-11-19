@@ -74,20 +74,38 @@ def fit_price_calibrator(
                 bucket = market + ":" + predicted
                 buckets[bucket][actual] += 1
                 cases += 1
+    # Do not learn a directional rule from a one-vote plurality.
+    # These are predeclared conservative screening thresholds, not
+    # optimized on the held-out price labels.
+    minimum_agreement = 0.60
+    minimum_margin = 0.15
     rules = {}
+    rejected = {}
     for key, observed in sorted(buckets.items()):
         count = sum(observed.values())
-        if count < minimum_support:
-            continue
         ranked = sorted(observed.items(), key=lambda item: (-item[1], item[0]))
         winner = ranked[0]
         runner_up = ranked[1][1] if len(ranked) > 1 else 0
-        if winner[1] <= runner_up:
+        agreement = winner[1] / count
+        margin = (winner[1] - runner_up) / count
+        if count < minimum_support or agreement < minimum_agreement or margin < minimum_margin:
+            rejected[key] = {
+                "reasonCode": (
+                    "INSUFFICIENT_SUPPORT" if count < minimum_support
+                    else "NO_DOMINANT_HISTORICAL_DIRECTION"
+                ),
+                "support": count,
+                "leadingDirection": winner[0],
+                "leadingAgreement": agreement,
+                "leaderMargin": margin,
+                "distribution": dict(sorted(observed.items())),
+            }
             continue
         rules[key] = {
             "direction": winner[0], "support": count,
             "matchingTrainingCases": winner[1],
-            "trainingAgreement": winner[1] / count,
+            "trainingAgreement": agreement,
+            "leaderMargin": margin,
             "distribution": dict(sorted(observed.items())),
         }
     fingerprint = hashlib.sha256(
@@ -95,7 +113,10 @@ def fit_price_calibrator(
     ).hexdigest()
     return {
         "status": "TRAINED" if rules else "NO_SUPPORTED_RULES",
-        "schemaVersion": "price_only_frozen_calibrator_v1",
+        "schemaVersion": "price_only_frozen_calibrator_v2",
+        "minimumAgreement": minimum_agreement,
+        "minimumLeaderMargin": minimum_margin,
+        "rejectedBuckets": rejected,
         "minSupport": minimum_support,
         "trainingTargetObservations": cases,
         "skippedUnverified": skipped_unverified,
