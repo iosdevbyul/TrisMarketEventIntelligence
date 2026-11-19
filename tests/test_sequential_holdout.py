@@ -28,10 +28,13 @@ def test_frozen_holdout_excludes_training_articles_and_pretraining_dates(
         db.execute("CREATE TABLE runs(id INTEGER, settings_json TEXT)")
         db.execute("INSERT INTO runs VALUES (1,?)", (json.dumps(settings),))
         db.execute(
-            "CREATE TABLE steps(article_id INTEGER, observed_at TEXT, phase TEXT)"
+            "CREATE TABLE steps(article_id INTEGER, observed_at TEXT, "
+            "phase TEXT, prediction_json TEXT, evaluation_json TEXT)"
         )
         db.execute(
-            "INSERT INTO steps VALUES (1,'2024-01-01T00:00:00+00:00','COMPLETE')"
+            "INSERT INTO steps VALUES (?, ?, ?, ?, ?)",
+            (1, "2024-01-01T00:00:00+00:00", "COMPLETE",
+             json.dumps({"impacts": []}), json.dumps({"impacts": []})),
         )
     rows = [
         {
