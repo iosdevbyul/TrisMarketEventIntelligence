@@ -322,7 +322,8 @@ def publication_time(article: dict) -> datetime:
 
 
 def load_articles(db: Path, count: int, cutoff: datetime, *,
-                  content_cache: Path | None = None) -> tuple[list[dict], int]:
+                  content_cache: Path | None = None,
+                  partition: str = "train") -> tuple[list[dict], int]:
     cohort = historical_news_cohort(
         source_db=db, as_of=cutoff, after_id=0, limit=5000,
     )
@@ -371,9 +372,13 @@ def load_articles(db: Path, count: int, cutoff: datetime, *,
     # in the order an RSS backfill happened to be ingested.
     items.sort(key=lambda a: (publication_time(a), a["articleId"]))
     train_end = int(len(items) * 0.8)
+    if partition not in {"train", "holdout"}:
+        raise ValueError("Unknown chronological cohort partition")
     selected = []
     seen = set()
-    for row in items[:train_end]:
+    # Never overlap the trailing, chronologically later evaluation partition.
+    selected_rows = items[train_end:] if partition == "holdout" else items[:train_end]
+    for row in selected_rows:
         fingerprint = row.get("textSha256") or row.get("sourceUrl") or row["articleId"]
         if fingerprint in seen:
             continue
