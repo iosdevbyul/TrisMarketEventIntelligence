@@ -18,6 +18,9 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from tris_market_event_intelligence import learning_memory
+from tris_market_event_intelligence.event_evidence_policy import (
+    article_market, content_quality, localize_prediction, plain_text,
+)
 from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
@@ -314,6 +317,8 @@ def load_articles(db: Path, count: int, cutoff: datetime) -> tuple[list[dict], i
     for row in cohort["items"]:
         if not row.get("title") or not row.get("summary"):
             continue
+        if content_quality(row)["status"] != "ELIGIBLE":
+            continue
         try:
             published = publication_time(row)
         except ValueError:
@@ -344,12 +349,14 @@ def pre_event_market_context(
 ) -> dict[str, Any]:
     """Reconstruct historical context relative to the original release time."""
     observed = publication_time(article)
-    terms = set(re.findall(r"[a-zA-Z]{4,}", (
-        str(article.get("title", "")) + " " + str(article.get("summary", ""))
+    terms = set(re.findall(r"[a-zA-Z가-힣]{3,}", (
+        plain_text(article.get("title")) + " " + plain_text(article.get("summary"))
     ).lower()))
     stop = {"with", "from", "this", "that", "will", "have", "after",
             "about", "market", "reported", "could", "company", "shares",
-            "federal", "reserve", "board", "announces", "issues"}
+            "federal", "reserve", "board", "announces", "issues",
+            "nbsp", "quot", "ldquo", "rdquo", "span", "style",
+            "class", "viewwrap", "첨부파일", "참고하시기", "보도해명자료"}
     terms -= stop
     related = []
     for previous in reversed(prior_articles):
@@ -357,9 +364,9 @@ def pre_event_market_context(
         if when >= observed or observed - when > timedelta(days=14):
             continue
         prior_terms = set(re.findall(
-            r"[a-zA-Z]{4,}",
-            (str(previous.get("title", "")) + " " +
-             str(previous.get("summary", ""))).lower(),
+            r"[a-zA-Z가-힣]{3,}",
+            (plain_text(previous.get("title")) + " " +
+             plain_text(previous.get("summary"))).lower(),
         )) - stop
         overlap = sorted(terms & prior_terms)
         if len(overlap) >= 2:
@@ -370,10 +377,11 @@ def pre_event_market_context(
             })
         if len(related) >= 5:
             break
-    market = {"status": "UNAVAILABLE", "symbol": "SPY"}
+    benchmark_symbol = ("069500.KS" if article_market(article) == "KR" else "SPY")
+    market = {"status": "UNAVAILABLE", "symbol": benchmark_symbol}
     try:
         response = client.get(
-            "https://query1.finance.yahoo.com/v8/finance/chart/SPY",
+            "https://query1.finance.yahoo.com/v8/finance/chart/" + benchmark_symbol,
             params={
                 "period1": int((observed - timedelta(days=16)).timestamp()),
                 "period2": int(observed.timestamp()), "interval": "1d",
@@ -395,7 +403,7 @@ def pre_event_market_context(
         if len(candles) >= 2:
             window = candles[-6:]
             market = {
-                "status": "AVAILABLE", "symbol": "SPY",
+                "status": "AVAILABLE", "symbol": benchmark_symbol,
                 "baselineAt": window[0][0].isoformat(),
                 "lastAt": window[-1][0].isoformat(),
                 "return": window[-1][1] / window[0][1] - 1,
@@ -413,7 +421,7 @@ def pre_event_market_context(
         "consensus": {"status": "UNKNOWN", "reason": "No timestamped consensus feed"},
         "limitations": [
             "Keyword overlap does not prove the same information was priced in",
-            "SPY trend is not the individual target's price history",
+            "Market benchmark trend is not the individual target's price history",
             "No post-event prices or articles are included",
         ],
     }
@@ -635,9 +643,18 @@ def evaluate(model_prediction: dict, observed: datetime, horizon: timedelta,
             except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
                 cache[symbol] = {"error": type(exc).__name__}
         return cache[symbol]
-    benchmark = lookup("SPY")
+    # Each target is compared with the benchmark from ITS OWN market.
+    # A KR ETF never receives SPY as its domestic comparison baseline.
+    benchmarks: dict[str, dict] = {}
+
+    def benchmark_for(symbol: str) -> dict:
+        market = asset_market(symbol)
+        if market not in benchmarks:
+            benchmarks[market] = lookup("069500.KS" if market == "KR" else "SPY")
+        return benchmarks[market]
     for impact in model_prediction["impacts"]:
         result = lookup(impact["priceProxy"])
+        benchmark = benchmark_for(impact["priceProxy"])
         row = dict(impact)
         if "error" in result:
             row.update(status="UNVERIFIED", reasonCode=result["error"])
@@ -666,17 +683,29 @@ def next_lesson(model: Any, article: dict, prediction: dict,
     # A title-only RSS item cannot support a causal diagnosis. Even if an
     # unrelated market move disagrees with a direction, don't teach the model
     # to attribute the market move to a headline with missing policy details.
-    if str(article.get("summary", "")).strip().casefold() == str(
-        article.get("title", "")
-    ).strip().casefold():
+    if content_quality(article)["status"] != "ELIGIBLE":
         return {
             "diagnosis": "INSUFFICIENT_ARTICLE_CONTENT: only a headline was supplied; "
                          "price direction mismatch is not evidence of causation",
             "lesson": "",
         }
-    wrong = [r for r in evaluation["impacts"] if r["status"] == "WRONG"]
+    # A whole-market movement cannot be attributed to one news item. For
+    # broad indices there is no independent event-level counterfactual.
+    # Only a substantial sector/stock excess move is eligible for a
+    # *candidate hypothesis*, never for an established causal finding.
+    wrong = [
+        r for r in evaluation["impacts"]
+        if r["status"] == "WRONG"
+        and r["targetType"] in {"SECTOR", "STOCK"}
+        and isinstance(r.get("excessReturn"), (int, float))
+        and abs(r["excessReturn"]) >= 0.005
+    ]
     if not wrong:
-        return {"diagnosis": "", "lesson": ""}
+        return {
+            "diagnosis": "NO_CAUSAL_EVIDENCE: direction mismatch alone does not "
+                         "establish an article caused a market move",
+            "lesson": "",
+        }
     result = model_json(model, CRITIC, {
         "article": {"title": article["title"], "summary": article["summary"]},
         "prediction": prediction, "wrongOutcomes": wrong,
@@ -702,8 +731,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
     articles, heldout = load_articles(args.source_db, count, cutoff)
     horizon = timedelta(hours=args.horizon_hours)
     settings = {
-        "assetValidationVersion": "exchange-metadata-v1",
-        "eligibilityVersion": "original-publication-v3",
+        "assetValidationVersion": "jurisdiction-content-causality-v2",
+        "eligibilityVersion": "substantive-body-v4",
         "dailyBarAlignment": "exchange-local-close-v4",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
         "count": count, "horizonHours": args.horizon_hours,
@@ -778,6 +807,8 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                         article, articles[:index - 1], client,
                     )
                     context["marketContext"] = market_context
+                    context["article"]["eventMarket"] = article_market(article)
+                    context["article"]["bodyQuality"] = content_quality(article)
                     try:
                         prediction = predict_with_repair(model, context)
                     except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -804,7 +835,9 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             "reason": str(exc)[:180],
                         }), flush=True)
                         continue
-                    prediction = validate_asset_evidence(prediction, article)
+                    prediction = localize_prediction(
+                        validate_asset_evidence(prediction, article), article,
+                    )
                     prediction["marketContext"] = market_context
                     # To test rule impact, compare a no-candidate shadow prediction
                     # using the SAME article, before fetching realized prices.
@@ -826,8 +859,10 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
                             [rule for rule in rules if rule["id"] != focus["id"]]
                         )
                         try:
-                            baseline = validate_asset_evidence(
-                                predict_with_repair(model, shadow), article,
+                            baseline = localize_prediction(
+                                validate_asset_evidence(
+                                    predict_with_repair(model, shadow), article,
+                                ), article,
                             )
                         except (ValueError, TypeError):
                             baseline = None
