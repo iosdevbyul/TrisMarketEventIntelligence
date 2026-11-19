@@ -824,7 +824,15 @@ def next_lesson(model: Any, article: dict, prediction: dict,
         raise TypeError("Invalid critic feedback")
     if not (10 <= len(lesson.strip()) <= 600):
         raise ValueError("Empty or oversized corrective rule")
-    return {"diagnosis": diagnosis[:1200], "lesson": lesson.strip()}
+    # A price coincidence is not a source of causal training labels.
+    # Retain the critic hypothesis for audit, but do not promote it to a rule
+    # until an independent attribution protocol exists.
+    return {
+        "diagnosis": diagnosis[:1200],
+        "lesson": "",
+        "unverifiedHypothesis": lesson.strip(),
+        "hypothesisStatus": "AWAITING_INDEPENDENT_EVENT_VALIDATION",
+    }
 
 
 def run(args: argparse.Namespace, *, model: Any | None = None,
@@ -862,6 +870,7 @@ def run(args: argparse.Namespace, *, model: Any | None = None,
         "eventGroundingVersion": "press-claim-v1",
         "cohortPolicy": cohort_policy,
         "evaluationContract": "absolute-relative-attribution-separated-v2",
+        "feedbackContract": "no-price-only-causal-learning-v2",
         "eligibilityVersion": "substantive-body-v4",
         "dailyBarAlignment": "exchange-local-close-v4",
         "sourceDb": str(args.source_db.resolve()), "cutoff": cutoff.isoformat(),
