@@ -188,6 +188,7 @@ def price_direction_comparison(cases: list[dict]) -> dict:
 def holdout_selection(
     journal: Path, source_db: Path, count: int, *,
     selection_policy: str = "chronological",
+    exclude_report: Path | None = None,
 ) -> tuple[list[dict], dict]:
     if not 1 <= count <= 1000:
         raise ValueError("Holdout count must be 1..1000")
@@ -218,12 +219,33 @@ def holdout_selection(
     cache = settings.get("sourceContentCache")
     kwargs = {"content_cache": Path(cache)} if cache else {}
     holdout, reserved = load_articles(
-        source_db, 1000, cutoff, partition="holdout", **kwargs,
+        source_db, 1000, cutoff,
+        partition="all" if selection_policy == "spread-dates" else "holdout",
+        **kwargs,
     )
+    excluded_previous: set[int] = set()
+    if exclude_report is not None:
+        if exclude_report.is_symlink() or not exclude_report.is_file():
+            raise ValueError("Missing or unsafe previous Holdout report")
+        previous = json.loads(exclude_report.read_text(encoding="utf-8"))
+        if (previous.get("holdoutSourceDb") != str(source_db.resolve())
+                or previous.get("schemaVersion", "").split("_")[0] != "frozen"):
+            raise ValueError("Previous Holdout provenance mismatch")
+        excluded_previous = {
+            int(item["articleId"]) for item in previous.get("articles", [])
+        }
+    training_fingerprints = {
+        (row.get("textSha256") or row.get("sourceUrl"))
+        for row in holdout if row["articleId"] in training_ids
+    }
+    training_fingerprints.discard(None)
     last_training = timestamp(bounds[0])
     eligible = [
-        a for a in holdout if a["articleId"] not in training_ids
+        a for a in holdout
+        if a["articleId"] not in training_ids
+        and a["articleId"] not in excluded_previous
         and publication_time(a) > last_training
+        and (a.get("textSha256") or a.get("sourceUrl")) not in training_fingerprints
     ]
     distinct_info = None
     if selection_policy == "spread-dates":
@@ -247,6 +269,11 @@ def holdout_selection(
         "learningDisabled": True,
         "assessmentMode": "FROZEN_NO_FEEDBACK_NOT_TRAINED_MODEL_A_B",
         "selectionPolicy": selection_policy,
+        "candidateScope": (
+            "UNTRAINED_POST_TRAINING_ARCHIVE_NOT_ORIGINAL_HOLDOUT"
+            if selection_policy == "spread-dates" else "STRICT_TRAILING_HOLDOUT"
+        ),
+        "previouslyEvaluatedArticleIdsExcluded": len(excluded_previous),
         "dateSpread": distinct_info,
     }
     return selected, {**settings, "holdoutInfo": info}
@@ -256,11 +283,13 @@ def evaluate_holdout(
     *, journal: Path, source_db: Path, output: Path, model: object,
     client: httpx.Client, count: int = 100,
     selection_policy: str = "chronological",
+    exclude_report: Path | None = None,
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise ValueError("Refusing to overwrite a holdout result")
     selected, settings = holdout_selection(
         journal, source_db, count, selection_policy=selection_policy,
+        exclude_report=exclude_report,
     )
     if selection_policy == "spread-dates" and len(selected) != count:
         available = settings["holdoutInfo"]["dateSpread"]["candidateDistinctDates"]
@@ -399,6 +428,10 @@ def main() -> None:
         default="chronological",
         help="spread-dates requires distinct original release dates",
     )
+    parser.add_argument(
+        "--exclude-report", type=Path,
+        help="Avoid reusing article IDs already evaluated in a previous Holdout JSON",
+    )
     parser.add_argument("--manifest", type=Path,
                         help="Write immutable selected-article list during preview")
     parser.add_argument("--preview", action="store_true",
@@ -408,6 +441,7 @@ def main() -> None:
         _, settings = holdout_selection(
             args.journal, args.source_db, args.count,
             selection_policy=args.selection_policy,
+            exclude_report=args.exclude_report,
         )
         report = settings["holdoutInfo"]
         if args.manifest is not None:
@@ -441,6 +475,7 @@ def main() -> None:
             output=args.output, model=model, client=client,
             count=args.count,
             selection_policy=args.selection_policy,
+            exclude_report=args.exclude_report,
         ), ensure_ascii=False))
 
 
