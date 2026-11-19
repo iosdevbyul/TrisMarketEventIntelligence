@@ -207,6 +207,7 @@ def test_spread_date_selector_fails_closed_on_83_articles_from_three_dates():
         "title": f"Article {i}",
         "source": "bbc_world",
         "publishedAtReported": (start + timedelta(days=i % 3)).isoformat(),
+        "firstObservedAt": (start + timedelta(days=i % 3)).isoformat(),
         "summary": "Substantial financial content.",
     } for i in range(83)]
     selected, report = spread_date_selection(rows, 30)
@@ -230,6 +231,8 @@ def test_spread_date_selection_never_reuses_utc_date_across_local_market_days():
         {"articleId": 3, "source": "bok_all", "title": "한국은행 자료",
          "publishedAtReported": "2026-11-17T01:00:00+00:00"},
     ]
+    for row in rows:
+        row["firstObservedAt"] = row["publishedAtReported"]
     assert release_day(rows[0]) == "2026-11-16"
     assert release_day(rows[1]) == "2026-11-17"
     assert release_day(rows[2]) == "2026-11-17"
@@ -260,6 +263,7 @@ def test_holdout_spread_dates_refuses_incomplete_30_day_study(monkeypatch, tmp_p
     rows = [{
         "articleId": i + 5, "source": "bbc_business", "title": f"Story {i}",
         "publishedAtReported": f"2026-11-{16+i:02d}T10:00:00+00:00",
+        "firstObservedAt": f"2026-11-{16+i:02d}T10:00:00+00:00",
     } for i in range(3)]
     monkeypatch.setattr(holdout, "load_articles", lambda *args, **kwargs: (rows, 10))
     selected, settings = holdout.holdout_selection(
