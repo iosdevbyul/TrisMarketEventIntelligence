@@ -111,7 +111,7 @@ def test_wrong_answer_updates_next_article_and_resume(monkeypatch, tmp_path):
     config.count = 3
     expanded = seq.run(config, model=resumed, client=object())
     assert expanded["articlesCompleted"] == 2
-    assert expanded["status"] == "INSUFFICIENT_CHRONOLOGICAL_ARTICLES"
+    assert expanded["status"] == "INSUFFICIENT_ELIGIBLE_ARTICLES"
     assert resumed.prompts == []
 
 
