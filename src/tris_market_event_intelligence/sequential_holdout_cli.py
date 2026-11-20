@@ -193,6 +193,7 @@ def holdout_selection(
     journal: Path, source_db: Path, count: int, *,
     selection_policy: str = "chronological",
     exclude_report: Path | list[Path] | None = None,
+    inventory_as_of: str | None = None,
 ) -> tuple[list[dict], dict]:
     if not 1 <= count <= 1000:
         raise ValueError("Holdout count must be 1..1000")
@@ -221,6 +222,15 @@ def holdout_selection(
     if settings["sourceDb"] != str(source_db.resolve()):
         raise ValueError("Source archive differs from the training contract")
     cutoff = timestamp(settings["cutoff"])
+    if inventory_as_of is not None:
+        revised = timestamp(inventory_as_of)
+        if revised < cutoff:
+            raise ValueError("INVENTORY_CUTOFF_CANNOT_PRECEDE_TRAINING")
+        from datetime import UTC, datetime
+
+        if revised > datetime.now(UTC):
+            raise ValueError("FUTURE_INVENTORY_CUTOFF_NOT_ALLOWED")
+        cutoff = revised
     cache = settings.get("sourceContentCache")
     kwargs = {"content_cache": Path(cache)} if cache else {}
     holdout, reserved = load_articles(
@@ -277,6 +287,7 @@ def holdout_selection(
     info = {
         "trainingJournal": str(journal),
         "holdoutSourceDb": str(source_db),
+        "inventoryAsOf": cutoff.isoformat(),
         "trainingArticleCount": bounds[1],
         "lastTrainingPublishedAt": last_training.isoformat(),
         "holdoutReserved": reserved,
@@ -309,12 +320,14 @@ def evaluate_holdout(
     selection_policy: str = "chronological",
     exclude_report: Path | list[Path] | None = None,
     selection_manifest: Path | None = None,
+    inventory_as_of: str | None = None,
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise ValueError("Refusing to overwrite a holdout result")
     selected, settings = holdout_selection(
         journal, source_db, count, selection_policy=selection_policy,
         exclude_report=exclude_report,
+        inventory_as_of=inventory_as_of,
     )
     if selection_policy in {"spread-dates", "event-spread-dates"} and len(selected) != count:
         available = settings["holdoutInfo"]["dateSpread"]["candidateDistinctDates"]
@@ -327,7 +340,8 @@ def evaluate_holdout(
             raise ValueError("Missing or unsafe frozen article manifest")
         saved = json.loads(selection_manifest.read_text(encoding="utf-8"))
         current = settings["holdoutInfo"]
-        if (saved.get("holdoutSourceDb") != current["holdoutSourceDb"]
+        if (saved.get("inventoryAsOf") != current["inventoryAsOf"]
+                or saved.get("holdoutSourceDb") != current["holdoutSourceDb"]
                 or saved.get("selectionPolicy") != selection_policy
                 or saved.get("dateSpread") != current["dateSpread"]
                 or saved.get("economicEventScreen") != current["economicEventScreen"]
@@ -471,6 +485,10 @@ def main() -> None:
         "--exclude-report", type=Path, action="append",
         help="Avoid reusing article IDs already evaluated in a previous Holdout JSON",
     )
+    parser.add_argument(
+        "--inventory-as-of",
+        help="ISO-8601 cutoff for newly captured sources; never changes training",
+    )
     parser.add_argument("--selection-manifest", type=Path,
                         help="Refuse to run if candidate list differs from prior preview")
     parser.add_argument("--manifest", type=Path,
@@ -485,6 +503,7 @@ def main() -> None:
             args.journal, args.source_db, args.count,
             selection_policy=args.selection_policy,
             exclude_report=args.exclude_report,
+            inventory_as_of=args.inventory_as_of,
         )
         report = settings["holdoutInfo"]
         if args.manifest is not None:
@@ -520,6 +539,7 @@ def main() -> None:
             selection_policy=args.selection_policy,
             exclude_report=args.exclude_report,
             selection_manifest=args.selection_manifest,
+            inventory_as_of=args.inventory_as_of,
         ), ensure_ascii=False))
 
 
