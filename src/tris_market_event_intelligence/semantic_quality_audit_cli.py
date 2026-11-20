@@ -194,7 +194,7 @@ def audit_article(article: dict[str, Any]) -> dict[str, Any]:
         interpretation = str(fact.get("interpretation") or "")
         quote = str(fact.get("quote") or "")
         if (re.search(r"\d+억\s*[\d,]+만원", quote)
-                and re.search(r"(?:million|billion)\s*(?:KRW|won)", interpretation, re.I)):
+                and re.search(r"(?:million|billion)\s*(?:KRW|won)", interpretation, re.IGNORECASE)):
             _flag(
                 findings, "KOREAN_LARGE_NUMBER_UNIT_CONVERSION_REVIEW",
                 detail="Interpretation converts 억/만원 into English monetary "
@@ -206,7 +206,7 @@ def audit_article(article: dict[str, Any]) -> dict[str, Any]:
         interpretation = str(fact.get("interpretation") or "")
         quote = str(fact.get("quote") or "")
         if ("전기대비" in quote and re.search(
-            r"(year.over.year|yoy)", interpretation, re.I,
+            r"(year.over.year|yoy)", interpretation, re.IGNORECASE,
         ) and not re.search(r"전년동기대비|전년대비", quote)):
             _flag(
                 findings, "PERIOD_COMPARISON_QOQ_VS_YOY_REVIEW",
