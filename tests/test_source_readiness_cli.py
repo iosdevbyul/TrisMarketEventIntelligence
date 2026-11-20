@@ -32,9 +32,11 @@ def test_bok_attachment_reference_blocks():
     article["summary"] += " 상세 통계는 붙임 자료 참조."
     row["originalSourceBodySha256"] = hashlib.sha256(article["summary"].encode()).hexdigest()
     result = evaluate_source(article, row)
-    assert "NON_SEC_ATTACHMENT_REVIEW_REQUIRED" in result["blockingReasons"]
-    assert result["sourceReadiness"] == "SOURCE_REVIEW_REQUIRED"
-    assert result["attachmentEvidence"]["supportingText"]
+    assert "ATTACHMENT_CONTENT_MISSING" in result["blockingReasons"]
+    assert "NON_SEC_ATTACHMENT_CONTENT_UNVERIFIED" in result["blockingReasons"]
+    assert result["sourceReadiness"] == "SOURCE_INCOMPLETE"
+    assert result["eligibleForFactualInterpretation"] is False
+    assert result["attachmentEvidence"]["status"] == "SOURCE_BODY_POINTS_TO_MISSING_ATTACHMENT"
 
 
 def test_earnings_cover_requires_verified_exhibit():
