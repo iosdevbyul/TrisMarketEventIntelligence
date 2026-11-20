@@ -34,6 +34,10 @@ SCALES = {"조원": Decimal(10)**12, "억원": Decimal(10)**8,
           "만원": Decimal(10)**4, "원": Decimal(1)}
 MAX_TEXT = 120_000
 MAX_NUMBERS = 500
+COMPOUND_WON = re.compile(
+    r"(?<![\\w.])(?P<eok>\\d[\\d,]*)\\s*억\\s*"
+    r"(?P<man>\\d[\\d,]*)\\s*만\\s*원"
+)
 
 
 def scale_value(number: str, unit: str) -> str | None:
@@ -49,14 +53,31 @@ def scale_value(number: str, unit: str) -> str | None:
 def extract_quantities(text: str) -> list[dict[str, Any]]:
     """Enumerate verbatim numeric candidates and local context, not model conclusions."""
     rows: list[dict[str, Any]] = []
-    for match in QUANTITY.finditer(text[:MAX_TEXT]):
+    source = text[:MAX_TEXT]
+    compounds = list(COMPOUND_WON.finditer(source))
+    compound_spans = [(m.start(), m.end()) for m in compounds]
+    matches = [(m.start(), m, True) for m in compounds]
+    matches.extend(
+        (m.start(), m, False) for m in QUANTITY.finditer(source)
+        if not any(m.start() < end and m.end() > start
+                   for start, end in compound_spans)
+    )
+    for _, match, compound in sorted(matches, key=lambda entry: entry[0]):
         if len(rows) >= MAX_NUMBERS:
             break
         original = match.group(0)
-        number = match.group("number")
-        unit = re.sub(r"\s+", "", match.group("unit") or "")
-        before = text[max(0, match.start() - 75):match.start()]
-        after = text[match.end():min(len(text), match.end() + 75)]
+        if compound:
+            eok = Decimal(match.group("eok").replace(",", ""))
+            man = Decimal(match.group("man").replace(",", ""))
+            number = format(eok * 100_000_000 + man * 10_000, "f")
+            unit = "복합원"
+            won = number
+        else:
+            number = match.group("number")
+            unit = re.sub(r"\s+", "", match.group("unit") or "")
+            won = scale_value(number, unit) if unit else None
+        before = source[max(0, match.start() - 75):match.start()]
+        after = source[match.end():min(len(source), match.end() + 75)]
         context = before + original + after
         periods = [key for key, regex in COMPARISONS.items() if regex.search(context)]
         trends = [key for key, regex in SIGNS.items() if regex.search(context)]
@@ -64,11 +85,11 @@ def extract_quantities(text: str) -> list[dict[str, Any]]:
             "sourceStart": match.start(), "sourceEnd": match.end(),
             "verbatim": original, "numberText": number,
             "unit": unit or "NOT_EXPLICIT",
-            "normalizedKrw": scale_value(number, unit) if unit else None,
+            "normalizedKrw": won,
             "comparisonCandidates": periods,
             "directionWordCandidates": trends,
             "sourceContext": context,
-            "sourceSpanVerified": text[match.start():match.end()] == original,
+            "sourceSpanVerified": source[match.start():match.end()] == original,
             "economicMeaningVerified": False,
         })
     return rows
