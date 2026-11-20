@@ -12,6 +12,7 @@ from tris_market_event_intelligence.market_event_candidate_policy import (
 )
 from tris_market_event_intelligence.sec_issuer_event_acquisition_cli import (
     collect_sec_filings,
+    index_accepted_at,
     source_body,
     submission_candidates,
     verified_sec_acceptance,
@@ -58,6 +59,7 @@ def test_only_8k_earnings_and_material_contracts_with_valid_archive_url():
         "/1045810/000104581026000123/nvda-8k.htm"
     )
     assert candidates[0]["issuerReleaseTimeVerified"] is False
+    assert "acceptedAtIndexVerified" not in candidates[0]
     assert reasons["NOT_FORM_8K"] == 1
     with pytest.raises(ValueError, match="SEC_CIK_RESPONSE_MISMATCH"):
         submission_candidates(
@@ -100,6 +102,17 @@ def test_raw_filing_capture_writes_substantive_original_bytes_and_deduplicates(
         if request.url.host == "data.sec.gov":
             return httpx.Response(200, json=sec_recent())
         if request.url.host == "www.sec.gov":
+            if str(request.url).endswith("-index.htm"):
+                eastern = (
+                    "2026-08-19 14:32:10"
+                    if "0001045810-26-000123" in str(request.url)
+                    else "2026-09-01 16:00:00"
+                )
+                index_html = (
+                    '<div class="infoHead">Accepted</div>'
+                    f'<div class="info">{eastern}</div>'
+                )
+                return httpx.Response(200, text=index_html)
             return httpx.Response(200, content=text)
         raise AssertionError("Unexpected host")
 
@@ -142,6 +155,10 @@ def test_raw_filing_capture_writes_substantive_original_bytes_and_deduplicates(
     assert policy["eligible"] is True
     assert policy["eventCategory"] == "EARNINGS_OR_GUIDANCE"
     assert result["SECReceiptTimeNotFirstPublicRelease"] is True
+    assert all(
+        a["acceptedAtIndexVerified"] == a["acceptedAtSubmissionsUnverified"]
+        for a in result["issuers"][0]["candidates"]
+    )
 
 
 def test_sec_issuer_still_requires_provenance_and_will_not_create_unknown_db(
@@ -159,3 +176,15 @@ def test_sec_issuer_still_requires_provenance_and_will_not_create_unknown_db(
             since=date(2026, 5, 1), until=date(2026, 11, 18),
             user_agent="TrisMarketEventIntelligence", import_files=False,
         )
+
+
+def test_official_index_eastern_clock_corrects_shifted_submissions_utc():
+    # November is EST: 16:30 Eastern => 21:30 UTC, not 16:30 UTC.
+    html = (
+        '<div class="infoHead">Accepted</div>'
+        '<div class="info">2026-11-10 16:30:28</div>'
+    ).encode()
+    accepted = index_accepted_at(html)
+    assert accepted.isoformat() == "2026-11-10T21:30:28+00:00"
+    with pytest.raises(ValueError, match="SEC_INDEX_ACCEPTANCE_TIME_MISSING"):
+        index_accepted_at(b"<html>No SEC Accepted timestamp</html>")
