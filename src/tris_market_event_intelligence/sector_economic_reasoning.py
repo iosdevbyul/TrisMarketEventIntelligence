@@ -51,28 +51,22 @@ def review_sector_hypothesis(
         if not exposure_known:
             notes.append("PPI_LEVEL_NOT_SECTOR_MARGIN")
             revised = "UNKNOWN"
-    elif category == "BUSINESS_SENTIMENT" and direction in DIRECTIONS:
-        if ("제조업" in evidence and sector in {"MATERIALS", "CONSUMER"}
-                or "비제조업" in evidence and sector in {"CONSUMER", "MATERIALS"}):
-            # Broad manufacturing/non-manufacturing series cannot attribute
-            # the value to these specific tradable sector classifications.
+    elif category == "BUSINESS_SENTIMENT":
+        if (("비제조업" in evidence and sector in {"INDUSTRIALS", "MATERIALS", "CONSUMER"})
+                or ("제조업" in evidence and sector in {"MATERIALS", "CONSUMER"})):
             notes.append("SENTIMENT_AGGREGATE_WRONG_SECTOR")
             disposition = "EXCLUDE_SECTOR"
-        else:
-            # Direction of an industry sentiment survey is informative but not
-            # an identified earnings or equity-price shock.
-            if not any(x in evidence for x in (
-                "영업이익", "매출액", "수주", "출하", "operating profit",
-            )):
-                notes.append("SURVEY_SENTIMENT_NOT_EARNINGS")
-                revised = "UNKNOWN"
-    elif category == "GDP_AGGREGATE" and direction in DIRECTIONS:
-        if ("국내총생산" in evidence or "gdp" in evidence
-                or "국민소득" in evidence or "gni" in evidence):
-            if sector not in {"BROAD_MARKET"}:
-                notes.append("GDP_GROWTH_NOT_SPECIFIC_SECTOR_PROFIT")
-                revised = "UNKNOWN"
-            else:
+        elif direction in DIRECTIONS and not any(
+            x in evidence for x in ("영업이익", "매출액", "수주", "출하", "operating profit")
+        ):
+            notes.append("SURVEY_SENTIMENT_NOT_EARNINGS")
+            revised = "UNKNOWN"
+    elif category == "GDP_AGGREGATE":
+        if any(x in evidence for x in ("국내총생산", "gdp", "국민소득", "gni")):
+            if sector != "BROAD_MARKET":
+                notes.append("GDP_AGGREGATE_NO_SECTOR_IDENTITY")
+                disposition = "EXCLUDE_SECTOR"
+            elif direction in DIRECTIONS:
                 notes.append("GDP_GROWTH_NOT_MARKET_SURPRISE")
                 revised = "UNKNOWN"
     elif category == "MONETARY_OR_CREDIT_AGGREGATE" and direction in DIRECTIONS:
