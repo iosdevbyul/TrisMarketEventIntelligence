@@ -10,8 +10,8 @@ import hashlib
 import json
 import os
 from collections import Counter
-from itertools import pairwise
 from datetime import UTC, datetime, time
+from itertools import pairwise
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -69,7 +69,7 @@ def evaluate_sector_prices(analysis: dict, manifest: dict, series: dict) -> dict
             or analysis.get("originalPredictionsModified") is not False):
         raise ValueError("DIRECT_ANALYSIS_CONTRACT_INVALID")
     if not isinstance(analysis.get("articles"), list):
-        raise ValueError("DIRECT_ANALYSIS_ARTICLES_INVALID")
+        raise TypeError("DIRECT_ANALYSIS_ARTICLES_INVALID")
     market = manifest["market"]
     tz_name, opening = MARKET_CLOCKS[market]
     zone = ZoneInfo(tz_name)
