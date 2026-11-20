@@ -76,11 +76,11 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
 
 def check_source_quotes(sectors: list[dict], source: str) -> list[dict]:
     """Check literal evidence presence; never rewrite economic conclusions."""
-    normalized_source = re.sub(r"\\s+", "", source)
+    normalized_source = re.sub(r"\s+", "", source)
     checks = []
     for item in sectors:
         quote = item["sourceQuote"]
-        normalized_quote = re.sub(r"\\s+", "", quote)
+        normalized_quote = re.sub(r"\s+", "", quote)
         if not normalized_quote:
             status = "MISSING_QUOTE"
         elif len(normalized_quote) < 8:
