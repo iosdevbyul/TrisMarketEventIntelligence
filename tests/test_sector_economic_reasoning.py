@@ -48,10 +48,14 @@ def test_nonmanufacturing_sentiment_is_not_consumer_stocks():
 
 def test_gdp_growth_not_automatic_industrials_or_consumer_stock_upside():
     quote = "실질 국내총생산(GDP)은 전기대비 1.8% 성장, 전년동기대비 3.8% 성장"
-    for sector in ("CONSUMER", "INDUSTRIALS", "BROAD_MARKET"):
+    for sector in ("CONSUMER", "INDUSTRIALS"):
         result = review("2026년 1/4분기 국민소득(잠정)",
                         sector, "POSITIVE", quote)
-        assert result["reviewedDirection"] == "UNKNOWN"
+        assert result["disposition"] == "EXCLUDE_SECTOR"
+        assert result["reviewReasons"] == ["GDP_AGGREGATE_NO_SECTOR_IDENTITY"]
+    broad = review("2026년 1/4분기 국민소득(잠정)",
+                   "BROAD_MARKET", "POSITIVE", quote)
+    assert broad["reviewedDirection"] == "UNKNOWN"
 
 
 def test_bok_117_direct_semiconductor_boom_remains_positive_hypothesis():
@@ -75,3 +79,17 @@ def test_quantitative_statement_not_verified_as_price_accuracy():
                     "INDUSTRIALS", "NEGATIVE", "원재료 가격이 상승했다.")
     assert result["economicOutcomeIndependentlyVerified"] is False
     assert result["reviewedDirection"] == "UNKNOWN"
+
+
+def test_nonmanufacturing_sentiment_does_not_mean_industrials_even_unknown():
+    quote = "5월 중 비제조업 기업심리지수는 97.5로 전월에 비해 5.4p 상승하였고"
+    result = review("2026년 5월 기업경기조사 결과 및 경제심리지수(ESI)",
+                    "INDUSTRIALS", "UNKNOWN", quote)
+    assert result["disposition"] == "EXCLUDE_SECTOR"
+
+
+def test_gdp_only_quote_cannot_link_energy_even_as_unknown():
+    quote = "실질 국내총생산(GDP)은 전기대비 1.8% 성장"
+    result = review("2026년 1/4분기 국민소득(잠정)",
+                    "ENERGY", "UNKNOWN", quote)
+    assert result["disposition"] == "EXCLUDE_SECTOR"
