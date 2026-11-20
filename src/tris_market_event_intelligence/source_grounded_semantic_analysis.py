@@ -151,14 +151,13 @@ def issuer_provenance(article: dict[str, Any]) -> dict[str, Any]:
 def _quote_bounds(body: str, quote: Any) -> tuple[int, int] | None:
     if not isinstance(quote, str) or len(quote) < 10 or len(quote) > 400:
         return None
-    # Body and quotes use the exact same HTML-unescaping/whitespace rules.
-    norm = plain_text(quote)
-    if len(norm) < 10:
-        return None
-    offset = body.find(norm)
+    # The excerpt is already an exact literal slice of canonical body text.
+    # Do NOT call plain_text() on it again: HTML parsing can destroy genuine
+    # angle-bracketed source data and HTML entity text on a second pass.
+    offset = body.find(quote)
     if offset < 0:
         return None
-    return (offset, offset + len(norm))
+    return (offset, offset + len(quote))
 
 
 def validate_semantic_interpretation(
