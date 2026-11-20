@@ -92,3 +92,51 @@ def test_only_review_needed_frozen_articles_are_requested():
     assert output["originalPredictionsModified"] is False
     with client_for() as client, pytest.raises(ValueError, match="COHORT_IDENTITY_MISMATCH"):
         acquire([first, second], {**report, "articles": report["articles"][:1]}, client)
+
+
+def test_bok_cdn_redirect_stays_inside_approved_hosts():
+    def handler(request):
+        if request.url.host == "www.bok.or.kr":
+            return httpx.Response(302, headers={
+                "location": "https://file-cdn.bok.or.kr/portal/a/1/report.txt?token=temporary"
+            })
+        return httpx.Response(200, headers={"content-type": "text/plain"},
+                              content=b"Verified source content " * 8)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        from tris_market_event_intelligence.bok_attachment_evidence_cli import fetch
+        content, mime = fetch(
+            client, "https://www.bok.or.kr/file/download.do?id=42",
+            2000, file_url=True,
+        )
+    assert len(content) > 50
+    assert mime == "text/plain"
+
+
+def test_download_failure_is_specific_http_status():
+    def handler(request):
+        if request.url.path.endswith("view.do"):
+            return httpx.Response(
+                200, headers={"content-type": "text/html"},
+                text='<a href="/file/download.do?id=42">첨부자료 다운로드</a>',
+            )
+        return httpx.Response(403, text="access denied")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = capture(article(), client)
+    assert result["attachments"][0]["errorCode"] == "HTTP_403"
+    assert result["status"] == "ATTACHMENTS_UNVERIFIED"
+
+
+def test_external_redirect_is_still_rejected_after_fix():
+    def handler(request):
+        if request.url.path.endswith("view.do"):
+            return httpx.Response(
+                200, headers={"content-type": "text/html"},
+                text='<a href="/file/download.do?id=42">첨부자료 다운로드</a>',
+            )
+        return httpx.Response(302, headers={"location": "https://untrusted.example/evil.pdf"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = capture(article(), client)
+    assert result["attachments"][0]["errorCode"] == "UNSAFE_BOK_REDIRECT_DESTINATION"
