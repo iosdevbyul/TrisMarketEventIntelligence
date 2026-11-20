@@ -168,10 +168,13 @@ def hwpx_text(data: bytes) -> tuple[str, str]:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             sections = sorted(
-                info for info in archive.infolist()
-                if info.filename.startswith("Contents/section")
-                and info.filename.endswith(".xml")
-            , key=lambda info: info.filename)
+                [
+                    info for info in archive.infolist()
+                    if info.filename.startswith("Contents/section")
+                    and info.filename.endswith(".xml")
+                ],
+                key=lambda info: info.filename,
+            )
             if not sections or len(sections) > 250:
                 return "", "HWPX_SECTION_COUNT_INVALID"
             if sum(info.file_size for info in sections) > 20_000_000:
