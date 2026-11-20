@@ -90,3 +90,10 @@ def test_no_model_analysis_is_visible_and_not_silently_scored():
     assert result["articles"][0]["numericClaimReviews"] == []
     assert result["articles"][0]["originalEconomicDirection"] is None
     assert result["reviewStatusCounts"] == {}
+
+
+def test_percentage_point_and_basis_point_units_are_not_percentages():
+    rows = numeric_mentions("기준금리 0.25%p 인상, 국채금리 25bps 상승, 물가 2.5% 증가")
+    assert [row["unit"] for row in rows] == [
+        "PERCENT_POINT", "BASIS_POINT", "PERCENT",
+    ]
