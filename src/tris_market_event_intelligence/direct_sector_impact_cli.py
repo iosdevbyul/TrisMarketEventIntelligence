@@ -398,28 +398,6 @@ def main() -> None:
         articles = use_bok_attachments(
             articles, json.loads(p.read_text(encoding="utf-8")), frozen_hash,
         )
-    if args.sec_exhibits:
-        if args.holdout_result is None:
-            parser.error("--sec-exhibits requires --holdout-result")
-        from tris_market_event_intelligence.sec_filing_exhibit_evidence import (
-            configured_sec_agent, enrich_sec_article,
-        )
-        agent = configured_sec_agent()
-        if "@" not in agent:
-            parser.error("Set SEC_USER_AGENT with a contact email")
-        enriched_articles = []
-        with httpx.Client(timeout=20, follow_redirects=False) as client:
-            for article in articles[:args.limit]:
-                if str(article.get("source") or "").startswith("sec_8k_"):
-                    updated, evidence = enrich_sec_article(
-                        article, client=client, user_agent=agent,
-                    )
-                    if evidence.get("acquiredExhibits"):
-                        updated = {**updated, "attachedEvidenceSource": "SEC_OFFICIAL_EXHIBIT"}
-                    enriched_articles.append(updated)
-                else:
-                    enriched_articles.append(article)
-        articles = enriched_articles
     if args.article_ids:
         try:
             requested = [int(x.strip()) for x in args.article_ids.split(",")]
@@ -431,6 +409,28 @@ def main() -> None:
         if any(identifier not in article_index for identifier in requested):
             parser.error("--article-ids contains IDs outside the input cohort")
         articles = [article_index[identifier] for identifier in requested]
+    if args.sec_exhibits:
+        if args.holdout_result is None:
+            parser.error("--sec-exhibits requires --holdout-result")
+        from tris_market_event_intelligence.sec_filing_exhibit_evidence import (
+            configured_sec_agent, enrich_sec_article,
+        )
+        agent = configured_sec_agent()
+        if "@" not in agent:
+            parser.error("Set SEC_USER_AGENT with a contact email")
+        enriched_articles = []
+        with httpx.Client(timeout=20, follow_redirects=False) as client:
+            for article in (articles if args.article_ids else articles[:args.limit]):
+                if str(article.get("source") or "").startswith("sec_8k_"):
+                    updated, evidence = enrich_sec_article(
+                        article, client=client, user_agent=agent,
+                    )
+                    if evidence.get("acquiredExhibits"):
+                        updated = {**updated, "attachedEvidenceSource": "SEC_OFFICIAL_EXHIBIT"}
+                    enriched_articles.append(updated)
+                else:
+                    enriched_articles.append(article)
+        articles = enriched_articles
     runtime = build_runtime(
         replace(LLMSettings.from_environment(explicit=True), model_id=args.model),
         confirm_model=True,
