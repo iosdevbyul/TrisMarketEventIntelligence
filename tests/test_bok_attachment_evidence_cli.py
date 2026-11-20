@@ -171,7 +171,8 @@ def test_hwpx_sections_extract_actual_xml_text():
     import zipfile
 
     from tris_market_event_intelligence.bok_attachment_evidence_cli import (
-        attachment_format, extract,
+        attachment_format,
+        extract,
     )
 
     payload = io.BytesIO()
