@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
@@ -220,10 +219,10 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
                 })
                 continue
             if (str((article or {}).get("source") or "").startswith("bok_")
-                    and any(term in title for term in MACRO_STOCK_INFERENCE_TERMS)):
-                if not any(term in quote for term in (
-                    "영업이익", "매출액", "소비지출", "소매판매", "부실률",
-                )):
+                    and any(term in title for term in MACRO_STOCK_INFERENCE_TERMS)
+                    and not any(term in quote for term in (
+                        "영업이익", "매출액", "소비지출", "소매판매", "부실률",
+                    ))):
                     excluded.append({
                         "sector": sector,
                         "reasonCode": "MACRO_BALANCE_NOT_SECTOR_EARNINGS",
