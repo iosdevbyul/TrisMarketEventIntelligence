@@ -139,9 +139,9 @@ def attachment_format(data: bytes, mime: str) -> str:
     """Inspect bytes, not an unreliable download endpoint or extension."""
     if data.startswith(b"%PDF-"):
         return "PDF"
-    if data.startswith(b"\\xd0\\xcf\\x11\\xe0\\xa1\\xb1\\x1a\\xe1"):
+    if data.startswith(bytes.fromhex("d0cf11e0a1b11ae1")):
         return "HWP_OLE"
-    if data.startswith(b"PK\\x03\\x04"):
+    if data.startswith(bytes.fromhex("504b0304")):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
                 names = set(archive.namelist())
