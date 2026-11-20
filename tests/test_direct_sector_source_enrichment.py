@@ -6,7 +6,6 @@ import pytest
 from tris_market_event_intelligence.direct_sector_source_enrichment import (
     use_bok_attachments,
 )
-from tris_market_event_intelligence.direct_sector_impact_cli import analyze
 
 
 def example():
