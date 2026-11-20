@@ -164,7 +164,7 @@ def expand_evidence_ids(
     facts = answer.get("sourceStatements")
     mechanisms = answer.get("economicMechanisms")
     if not isinstance(facts, list) or not isinstance(mechanisms, list):
-        raise ValueError("SEMANTIC_EVIDENCE_SCHEMA_INVALID")
+        raise TypeError("SEMANTIC_EVIDENCE_SCHEMA_INVALID")
     expanded_facts = []
     for row in facts:
         if not isinstance(row, dict) or set(row) != {
