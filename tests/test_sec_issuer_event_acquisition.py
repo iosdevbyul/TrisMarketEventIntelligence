@@ -1,14 +1,12 @@
 """Official SEC 8-K issuer-source backfill, validation and evidence-persistence."""
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import date
 
 import httpx
 import pytest
 
-from tris_market_event_intelligence.historical_news_cohort import historical_news_cohort
 from tris_market_event_intelligence.market_event_candidate_policy import (
     research_candidate,
 )
@@ -82,7 +80,7 @@ def test_sec_archive_path_traversal_rejected():
 def test_raw_filing_capture_writes_substantive_original_bytes_and_deduplicates(
     tmp_path,
 ):
-    from datetime import UTC, datetime
+    from datetime import datetime
 
     from tris_market_event_intelligence.collector import NewsStore
 
