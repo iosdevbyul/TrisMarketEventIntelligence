@@ -10,7 +10,7 @@ import hashlib
 import json
 import os
 from collections import Counter
-from datetime import UTC, date, datetime, time
+from datetime import UTC, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -36,7 +36,13 @@ def read_manifest(path: Path) -> tuple[dict, dict]:
     sectors = obj.get("sectors")
     if not isinstance(benchmark, dict) or not isinstance(sectors, dict):
         raise ValueError("PRICE_MANIFEST_MAPPING_INVALID")
-    if len(sectors) > 20 or any(not isinstance(x, dict) for x in sectors.values()):
+    valid_sectors = {
+        "SEMICONDUCTORS", "TECH", "CLOUD", "FINANCIALS", "ENERGY",
+        "DEFENSE", "INDUSTRIALS", "CONSUMER", "TRANSPORT", "HEALTHCARE",
+        "REAL_ESTATE", "MATERIALS", "UTILITIES", "BROAD_MARKET",
+    }
+    if (len(sectors) > 20 or not set(sectors).issubset(valid_sectors)
+            or any(not isinstance(x, dict) for x in sectors.values())):
         raise ValueError("PRICE_MANIFEST_MAPPING_INVALID")
     entries = {"benchmark": benchmark, **sectors}
     series = {}
@@ -46,6 +52,8 @@ def read_manifest(path: Path) -> tuple[dict, dict]:
                 or not isinstance(name, str) or name != Path(name).name
                 or name in {"", ".", ".."} or "/" in name or "\\" in name):
             raise ValueError("PRICE_MANIFEST_SYMBOL_OR_PATH_INVALID")
+        if key != "benchmark" and symbol == benchmark.get("symbol"):
+            raise ValueError("SECTOR_AND_BENCHMARK_IDENTICAL")
         bars, digest = read_daily_prices(path.parent / name)
         series[key] = {
             "symbol": symbol, "bars": bars, "sha256": digest,
@@ -110,6 +118,16 @@ def evaluate_sector_prices(analysis: dict, manifest: dict, series: dict) -> dict
                     item["status"] = "NO_POST_RELEASE_COMMON_SESSION"
                 else:
                     before = common[first - 1]
+                    # For an intraday release, previous session close can be
+                    # after the announcement. Flag this as a delayed-start
+                    # observational window rather than event-day reaction.
+                    previous_close = datetime.combine(
+                        before, time(16, 0) if market != "XKRX" else time(15, 30),
+                        tzinfo=zone,
+                    ).astimezone(UTC)
+                    item["baselineCloseMayPostdatePublication"] = (
+                        previous_close >= released.astimezone(UTC)
+                    )
                     target_prior = target["positions"][before]
                     reference_prior = reference["positions"][before]
                     for horizon in HORIZONS:
