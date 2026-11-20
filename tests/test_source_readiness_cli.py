@@ -31,7 +31,10 @@ def test_bok_attachment_reference_blocks():
     article, row = inputs()
     article["summary"] += " 상세 통계는 붙임 자료 참조."
     row["originalSourceBodySha256"] = hashlib.sha256(article["summary"].encode()).hexdigest()
-    assert "NON_SEC_ATTACHMENT_CONTENT_UNVERIFIED" in evaluate_source(article, row)["blockingReasons"]
+    result = evaluate_source(article, row)
+    assert "NON_SEC_ATTACHMENT_REVIEW_REQUIRED" in result["blockingReasons"]
+    assert result["sourceReadiness"] == "SOURCE_REVIEW_REQUIRED"
+    assert result["attachmentEvidence"]["supportingText"]
 
 
 def test_earnings_cover_requires_verified_exhibit():
@@ -72,3 +75,22 @@ def test_cohort_and_original_predictions_unchanged():
     assert output["originalPredictionsModified"] is False
     with pytest.raises(ValueError, match="ARTICLE_SET_MISMATCH"):
         audit_sources([article], {"articles": [{**row, "articleId": 2}]})
+
+
+def test_attachment_mention_is_review_not_proven_missing():
+    article, row = inputs()
+    article["summary"] += " 이번 발표에는 지난 통계자료의 첨부파일 목록에 대한 설명도 있습니다."
+    row["originalSourceBodySha256"] = hashlib.sha256(article["summary"].encode()).hexdigest()
+    result = evaluate_source(article, row)
+    assert result["sourceReadiness"] == "SOURCE_REVIEW_REQUIRED"
+    assert result["attachmentEvidence"]["status"] == "ATTACHMENT_MENTION_NEEDS_EVIDENCE_REVIEW"
+    assert result["attachmentEvidence"]["attachmentBytesIndependentlyVerified"] is False
+
+
+def test_attachment_only_content_remains_incomplete():
+    article, row = inputs()
+    article["summary"] = "자세한 내용은 첨부파일을 참고하시기 바랍니다."
+    row["originalSourceBodySha256"] = hashlib.sha256(article["summary"].encode()).hexdigest()
+    result = evaluate_source(article, row)
+    assert result["sourceReadiness"] == "SOURCE_INCOMPLETE"
+    assert "NON_SEC_ATTACHMENT_CONTENT_UNVERIFIED" in result["blockingReasons"]
