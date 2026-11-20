@@ -254,7 +254,7 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
                 "sourceStart": 0, "sourceEnd": len(quote),
                 "economicHypothesisNotPriceFact": True,
             }]
-    market_direction = "UNKNOWN" if cover else raw["overallMarketDirection"]
+    market_direction = "UNKNOWN" if cover or (not validated and excluded) else raw["overallMarketDirection"]
     if not validated and market_direction != "UNKNOWN":
         raise ValueError("BROAD_MARKET_WITHOUT_ANY_EVIDENCE")
     return {
@@ -316,7 +316,8 @@ def analyze(article: dict, model: Any) -> dict:
                 schema=SCHEMA,
             ))
             outcome = validate(raw, payload["sourceBody"], article=article)
-            return {**result, "status": "ANALYZED", "modelAttempts": attempt + 1, **outcome}
+            return {**result, "status": "ANALYZED", "modelAttempts": attempt + 1,
+                    "effectiveModelInputChars": len(payload["sourceBody"]), **outcome}
         except (ValueError, TypeError, RuntimeError) as exc:
             error = str(exc)[:100]
             if error not in {"SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE", "SECTOR_EVIDENCE_TABLE_ONLY", "MODEL_FAILED_TO_READ_SOURCE", "MODEL_GENERATION_TRUNCATED", "SECTOR_MAPPING_OR_DIRECTION_INVALID"}:
@@ -324,6 +325,7 @@ def analyze(article: dict, model: Any) -> dict:
     return {
         **result, "status": "MODEL_RESULT_REJECTED",
         "errorCode": error, "modelAttempts": attempt + 1,
+        "effectiveModelInputChars": len(payload["sourceBody"]),
         "sectors": [], "overallMarketDirection": "UNKNOWN",
     }
 
@@ -358,6 +360,7 @@ def main() -> None:
     choice.add_argument("--article-json", type=Path)
     choice.add_argument("--holdout-result", type=Path)
     parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--article-ids", help="Comma-separated article IDs; target failures without rerunning all")
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--bok-attachments", type=Path)
     parser.add_argument("--sec-exhibits", action="store_true")
@@ -417,11 +420,22 @@ def main() -> None:
                 else:
                     enriched_articles.append(article)
         articles = enriched_articles
+    if args.article_ids:
+        try:
+            requested = [int(x.strip()) for x in args.article_ids.split(",")]
+        except ValueError:
+            parser.error("--article-ids must be comma-separated integers")
+        if len(set(requested)) != len(requested) or not requested:
+            parser.error("--article-ids must not be empty or duplicated")
+        article_index = {article["articleId"]: article for article in articles}
+        if any(identifier not in article_index for identifier in requested):
+            parser.error("--article-ids contains IDs outside the input cohort")
+        articles = [article_index[identifier] for identifier in requested]
     runtime = build_runtime(
         replace(LLMSettings.from_environment(explicit=True), model_id=args.model),
         confirm_model=True,
     )
-    report = run(articles[:args.limit], runtime, frozen_hash=frozen_hash)
+    report = run(articles if args.article_ids else articles[:args.limit], runtime, frozen_hash=frozen_hash)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as file:
         json.dump(report, file, indent=2, ensure_ascii=False)
