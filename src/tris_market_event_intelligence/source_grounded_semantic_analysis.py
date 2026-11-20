@@ -28,6 +28,7 @@ SEMANTIC_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": [
                 "MONETARY_POLICY_DECISION", "ECONOMIC_INDICATOR_RELEASE",
+                "FINANCIAL_STABILITY_REVIEW",
                 "EARNINGS_OR_GUIDANCE", "CORPORATE_ACTION_OR_CONTRACT",
                 "REGULATORY_ACTION", "NOT_A_MARKET_EVENT", "UNKNOWN",
             ],
