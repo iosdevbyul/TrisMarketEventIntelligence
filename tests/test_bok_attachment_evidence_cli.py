@@ -5,7 +5,10 @@ import httpx
 import pytest
 
 from tris_market_event_intelligence.bok_attachment_evidence_cli import (
-    acquire, allowed, attachment_links, capture,
+    acquire,
+    allowed,
+    attachment_links,
+    capture,
 )
 
 
@@ -144,9 +147,12 @@ def test_external_redirect_is_still_rejected_after_fix():
 
 def test_pdf_uses_existing_pypdf_dependency_without_fitz():
     import io
+
     from pypdf import PdfWriter
+
     from tris_market_event_intelligence.bok_attachment_evidence_cli import (
-        attachment_format, extract,
+        attachment_format,
+        extract,
     )
 
     output = io.BytesIO()
@@ -163,6 +169,7 @@ def test_pdf_uses_existing_pypdf_dependency_without_fitz():
 def test_hwpx_sections_extract_actual_xml_text():
     import io
     import zipfile
+
     from tris_market_event_intelligence.bok_attachment_evidence_cli import (
         attachment_format, extract,
     )
