@@ -113,3 +113,103 @@ def test_batch_shows_each_article_and_keeps_predictions_separate():
     assert result["originalHoldoutSha256"] == "sealed"
     assert result["originalPredictionsModified"] is False
     assert result["priceDataAccessed"] is False
+
+
+def test_alphabet_filing_cannot_create_energy_or_real_estate_impact():
+    body = (
+        "On April 29, 2026, Alphabet Inc. is issuing a press release and "
+        "holding a conference call regarding its financial results for "
+        "the quarter ended March 31, 2026."
+    )
+    invalid = {
+        "event": "Alphabet results press release notice",
+        "summary": "Results are being released without figures in this text.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [
+            {"sector": sector, "direction": "UNKNOWN", "sourceQuote": body[:110],
+             "reason": "General economic influence might extend to this industry.",
+             "uncertainty": "There is no actual earnings figure in the source."}
+            for sector in ("ENERGY", "CONSUMER", "REAL_ESTATE")
+        ],
+    }
+    article = {
+        "articleId": 20884, "source": "sec_8k_1652044",
+        "title": "Alphabet Inc. SEC 8-K Item 2.02 EARNINGS_8K",
+        "summary": body,
+    }
+    result = analyze(article, FakeModel(invalid))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"][0]["sector"] == "TECH"
+    assert result["sectors"][0]["direction"] == "UNKNOWN"
+    assert {x["sector"] for x in result["excludedSectorSuggestions"]} == {
+        "ENERGY", "CONSUMER", "REAL_ESTATE",
+    }
+    assert result["overallMarketDirection"] == "UNKNOWN"
+
+
+def test_amd_filing_primary_sector_is_semiconductors():
+    body = (
+        "Advanced Micro Devices Inc. is furnishing the accompanying "
+        "press release announcing financial results for the quarter ended "
+        "March 31, 2026 and providing information about the conference call."
+    )
+    article = {
+        "articleId": 20873, "source": "sec_8k_2488",
+        "title": "AMD SEC 8-K Item 2.02 EARNINGS_8K",
+        "summary": body,
+    }
+    result = analyze(article, FakeModel({
+        "event": "AMD earnings filing",
+        "summary": "The filing announces its earnings.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [],
+    }))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"][0]["sector"] == "SEMICONDUCTORS"
+    assert result["sectors"][0]["direction"] == "UNKNOWN"
+
+
+def test_m2_liquidity_alone_does_not_create_consumer_upside():
+    body = (
+        "M2(광의통화, 계절조정계열, 평잔)는 전월대비 0.4% 증가하며 "
+        "원계열은 전년동월대비 5.6% 증가한 것으로 발표되었다."
+    )
+    original = {
+        "event": "Broad money supply increase",
+        "summary": "Broad money increased.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [{
+            "sector": "CONSUMER", "direction": "POSITIVE",
+            "sourceQuote": "M2(광의통화, 계절조정계열, 평잔)는 전월대비 0.4% 증가",
+            "reason": "Money supply growth could theoretically support consumption.",
+            "uncertainty": "There is no evidence of consumer spending growth.",
+        }],
+    }
+    result = analyze({
+        "articleId": 210, "source": "bok_monetary",
+        "title": "2026년 3월 통화 및 유동성", "summary": body,
+    }, FakeModel(original))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"] == []
+    assert result["excludedSectorSuggestions"][0]["reasonCode"] == (
+        "MONEY_SUPPLY_NOT_PROOF_OF_CONSUMER_DEMAND"
+    )
+
+
+def test_invalid_model_quote_is_retried_once_without_faking_grounding():
+    class RecoverModel(FakeModel):
+        def generate_json(self, *, system, user, schema):
+            self.calls += 1
+            parsed = json.loads(user)
+            answer = prediction()
+            if self.calls == 1:
+                answer["sectors"][0]["sourceQuote"] = "This is not the source quote"
+            else:
+                assert "correction" in parsed
+            return json.dumps(answer, ensure_ascii=False)
+
+    model = RecoverModel(prediction())
+    result = analyze({"articleId": 1, "summary": NEWS}, model)
+    assert model.calls == 2
+    assert result["status"] == "ANALYZED"
+    assert result["modelAttempts"] == 2
