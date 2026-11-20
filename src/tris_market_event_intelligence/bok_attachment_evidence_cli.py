@@ -8,6 +8,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import io
+import zipfile
+from xml.etree import ElementTree
 from collections import Counter
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -132,25 +135,87 @@ def fetch(
             return bytes(data), response.headers.get("content-type", "").split(";")[0].lower()
     raise ValueError("REDIRECT_LIMIT_EXCEEDED")
 
-def extract(data: bytes, mime: str, url: str) -> tuple[str, str]:
+def attachment_format(data: bytes, mime: str) -> str:
+    """Inspect bytes, not an unreliable download endpoint or extension."""
     if data.startswith(b"%PDF-"):
+        return "PDF"
+    if data.startswith(b"\\xd0\\xcf\\x11\\xe0\\xa1\\xb1\\x1a\\xe1"):
+        return "HWP_OLE"
+    if data.startswith(b"PK\\x03\\x04"):
         try:
-            import fitz  # type: ignore[import-not-found]
-        except ImportError:
-            return "", "PDF_EXTRACTOR_UNAVAILABLE"
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                names = set(archive.namelist())
+            if "mimetype" in names and any(
+                n.startswith("Contents/section") and n.endswith(".xml") for n in names
+            ):
+                return "HWPX"
+            if "word/document.xml" in names:
+                return "DOCX"
+            if "xl/workbook.xml" in names:
+                return "XLSX"
+            return "ZIP_UNKNOWN"
+        except (ValueError, zipfile.BadZipFile):
+            return "ZIP_INVALID"
+    if data.lstrip().lower().startswith((b"<!doctype html", b"<html")):
+        return "HTML"
+    if mime == "text/plain":
+        return "TEXT"
+    return "UNKNOWN"
+
+
+def hwpx_text(data: bytes) -> tuple[str, str]:
+    """Read bounded HWPX section XML; never extract ZIP members onto disk."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            sections = sorted(
+                info for info in archive.infolist()
+                if info.filename.startswith("Contents/section")
+                and info.filename.endswith(".xml")
+            , key=lambda info: info.filename)
+            if not sections or len(sections) > 250:
+                return "", "HWPX_SECTION_COUNT_INVALID"
+            if sum(info.file_size for info in sections) > 20_000_000:
+                return "", "HWPX_UNCOMPRESSED_SIZE_LIMIT"
+            parts: list[str] = []
+            for info in sections:
+                if info.file_size > 2_000_000:
+                    return "", "HWPX_SECTION_SIZE_LIMIT"
+                root = ElementTree.fromstring(archive.read(info))
+                for node in root.iter():
+                    if node.tag.rsplit("}", 1)[-1] == "t" and node.text:
+                        parts.append(node.text)
+        return " ".join(parts), "HWPX_TEXT_EXTRACTED"
+    except (ValueError, zipfile.BadZipFile, ElementTree.ParseError, RuntimeError):
+        return "", "HWPX_TEXT_EXTRACTION_FAILED"
+
+
+def extract(data: bytes, mime: str, url: str) -> tuple[str, str]:
+    kind = attachment_format(data, mime)
+    if kind == "PDF":
+        from pypdf import PdfReader
+
         try:
-            with fitz.open(stream=data, filetype="pdf") as doc:
-                if len(doc) > 250:
-                    return "", "PDF_PAGE_LIMIT_EXCEEDED"
-                text = " ".join(page.get_text() for page in doc)
-        except (RuntimeError, ValueError):
+            reader = PdfReader(io.BytesIO(data), strict=True)
+            if reader.is_encrypted:
+                return "", "PDF_ENCRYPTED"
+            if len(reader.pages) > 250:
+                return "", "PDF_PAGE_LIMIT_EXCEEDED"
+            text = " ".join(page.extract_text() or "" for page in reader.pages)
+        except Exception:
+            # Parsing untrusted PDFs must fail closed, never pass corrupt bytes to the LLM.
             return "", "PDF_TEXT_EXTRACTION_FAILED"
-    elif mime == "text/plain" or urlparse(url).path.lower().endswith(".txt"):
-        text = data.decode("utf-8", errors="replace")
-    elif data.lstrip().lower().startswith((b"<!doctype html", b"<html")):
+    elif kind == "HWPX":
+        text, status = hwpx_text(data)
+        if status != "HWPX_TEXT_EXTRACTED":
+            return "", status
+    elif kind == "TEXT":
+        text = data.decode("utf-8-sig", errors="replace")
+    elif kind == "HTML":
         return "", "HTML_INSTEAD_OF_ATTACHMENT"
+    elif kind == "HWP_OLE":
+        return "", "HWP_OLE_EXTRACTOR_UNAVAILABLE"
     else:
-        return "", "UNSUPPORTED_ATTACHMENT_FORMAT"
+        return "", f"UNSUPPORTED_{kind}_FORMAT"
     text = " ".join(text.split())[:120_000]
     return text, "TEXT_EXTRACTED" if len(text) >= 50 else "NO_SUBSTANTIVE_TEXT"
 
@@ -183,6 +248,7 @@ def capture(article: dict, client: httpx.Client) -> dict:
                 item["rawSha256"] = hashlib.sha256(content).hexdigest()
                 item["rawBytes"] = len(content)
                 item["contentType"] = kind
+                item["detectedFormat"] = attachment_format(content, kind)
                 text, status = extract(content, kind, link["url"])
                 item["extractionStatus"] = status
                 if text:
@@ -223,6 +289,10 @@ def acquire(articles: list[dict], readiness: dict, client: httpx.Client) -> dict
         item.get("extractionStatus", "UNKNOWN")
         for article in evidence for item in article["attachments"]
     )
+    file_formats = Counter(
+        item.get("detectedFormat", "UNDETERMINED")
+        for article in evidence for item in article["attachments"]
+    )
     retrieval_errors = Counter(
         item["errorCode"]
         for article in evidence for item in article["attachments"]
@@ -239,6 +309,7 @@ def acquire(articles: list[dict], readiness: dict, client: httpx.Client) -> dict
         "statusCounts": {s: sum(x["status"] == s for x in evidence)
                          for s in sorted({x["status"] for x in evidence})},
         "attachmentStatusCounts": dict(sorted(attachment_states.items())),
+        "attachmentFormatCounts": dict(sorted(file_formats.items())),
         "retrievalErrorCounts": dict(sorted(retrieval_errors.items())),
         "unresolvedLinkCounts": dict(sorted(unresolved.items())),
         "pointInTimeCertified": False, "priceDataAccessed": False,
