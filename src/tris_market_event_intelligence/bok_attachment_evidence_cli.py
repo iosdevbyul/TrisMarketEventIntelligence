@@ -17,17 +17,38 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 HOSTS = {"bok.or.kr", "www.bok.or.kr"}
+FILE_HOSTS = HOSTS | {"file-cdn.bok.or.kr"}
+MAX_REDIRECTS = 3
 KEYWORDS = ("붙임", "첨부", "별첨", "download", ".pdf", ".hwp", ".hwpx", ".txt")
 ROUTES = ("download", "filedown", "atch", ".pdf", ".hwp", ".hwpx", ".txt")
 MAX_PAGE = 2_000_000
 MAX_FILE = 12_000_000
 
 
-def allowed(url: str) -> bool:
+def allowed(url: str, *, file_url: bool = False) -> bool:
     p = urlparse(url)
-    return (p.scheme == "https" and p.hostname in HOSTS
+    return (p.scheme == "https"
+            and p.hostname in (FILE_HOSTS if file_url else HOSTS)
             and p.port in (None, 443) and p.username is None
             and p.password is None and not p.fragment)
+
+
+def safe_url_label(url: str) -> str:
+    """Do not expose temporary CDN query tokens in audit reports."""
+    parsed = urlparse(url)
+    return parsed._replace(query="", fragment="").geturl()
+
+
+def failure_reason(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP_{exc.response.status_code}"
+    if isinstance(exc, httpx.TimeoutException):
+        return "DOWNLOAD_TIMEOUT"
+    if isinstance(exc, httpx.ConnectError):
+        return "DOWNLOAD_CONNECTION_ERROR"
+    if isinstance(exc, httpx.TransportError):
+        return "DOWNLOAD_TRANSPORT_ERROR"
+    return str(exc)[:120] if isinstance(exc, ValueError) else type(exc).__name__
 
 
 class Links(HTMLParser):
@@ -81,20 +102,34 @@ def attachment_links(html: str, page: str) -> tuple[list[dict], list[dict]]:
     return found, unresolved
 
 
-def fetch(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str]:
-    if not allowed(url):
-        raise ValueError("UNSAFE_BOK_URL")
-    with client.stream("GET", url, follow_redirects=False) as response:
-        if response.is_redirect:
-            raise ValueError("REDIRECT_REQUIRES_REVIEW")
-        response.raise_for_status()
-        data = bytearray()
-        for chunk in response.iter_bytes():
-            data.extend(chunk)
-            if len(data) > limit:
-                raise ValueError("MAX_DOWNLOAD_EXCEEDED")
-        return bytes(data), response.headers.get("content-type", "").split(";")[0].lower()
-
+def fetch(
+    client: httpx.Client, url: str, limit: int, *, file_url: bool = False,
+) -> tuple[bytes, str]:
+    """Allow only a small number of redirects to approved BOK domains."""
+    current = url
+    for hop in range(MAX_REDIRECTS + 1):
+        if not allowed(current, file_url=file_url):
+            raise ValueError("UNSAFE_BOK_DOWNLOAD_DESTINATION")
+        with client.stream("GET", current, follow_redirects=False) as response:
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    raise ValueError("REDIRECT_LOCATION_MISSING")
+                target = urljoin(current, location)
+                if not allowed(target, file_url=file_url):
+                    raise ValueError("UNSAFE_BOK_REDIRECT_DESTINATION")
+                if hop == MAX_REDIRECTS:
+                    raise ValueError("REDIRECT_LIMIT_EXCEEDED")
+                current = target
+                continue
+            response.raise_for_status()
+            data = bytearray()
+            for chunk in response.iter_bytes():
+                data.extend(chunk)
+                if len(data) > limit:
+                    raise ValueError("MAX_DOWNLOAD_EXCEEDED")
+            return bytes(data), response.headers.get("content-type", "").split(";")[0].lower()
+    raise ValueError("REDIRECT_LIMIT_EXCEEDED")
 
 def extract(data: bytes, mime: str, url: str) -> tuple[str, str]:
     if data.startswith(b"%PDF-"):
@@ -111,6 +146,8 @@ def extract(data: bytes, mime: str, url: str) -> tuple[str, str]:
             return "", "PDF_TEXT_EXTRACTION_FAILED"
     elif mime == "text/plain" or urlparse(url).path.lower().endswith(".txt"):
         text = data.decode("utf-8", errors="replace")
+    elif data.lstrip().lower().startswith((b"<!doctype html", b"<html")):
+        return "", "HTML_INSTEAD_OF_ATTACHMENT"
     else:
         return "", "UNSUPPORTED_ATTACHMENT_FORMAT"
     text = " ".join(text.split())[:120_000]
@@ -139,9 +176,9 @@ def capture(article: dict, client: httpx.Client) -> dict:
         result["unresolvedLinks"] = unresolved
         result["candidateCount"] = len(links)
         for link in links[:12]:
-            item: dict[str, Any] = {"sourceUrl": link["url"], "label": link["label"]}
+            item: dict[str, Any] = {"sourceUrl": safe_url_label(link["url"]), "label": link["label"]}
             try:
-                content, kind = fetch(client, link["url"], MAX_FILE)
+                content, kind = fetch(client, link["url"], MAX_FILE, file_url=True)
                 item["rawSha256"] = hashlib.sha256(content).hexdigest()
                 item["rawBytes"] = len(content)
                 item["contentType"] = kind
@@ -152,7 +189,7 @@ def capture(article: dict, client: httpx.Client) -> dict:
                     item["extractedText"] = text
             except (httpx.HTTPError, ValueError) as exc:
                 item["extractionStatus"] = "RETRIEVAL_FAILED"
-                item["errorCode"] = str(exc)[:140]
+                item["errorCode"] = failure_reason(exc)
             result["attachments"].append(item)
         if len(links) > 12:
             result["unresolvedLinks"].append({
@@ -165,7 +202,7 @@ def capture(article: dict, client: httpx.Client) -> dict:
         )
     except (httpx.HTTPError, ValueError) as exc:
         result["status"] = "PAGE_RETRIEVAL_FAILED"
-        result["errorCode"] = str(exc)[:140]
+        result["errorCode"] = failure_reason(exc)
     return result
 
 
