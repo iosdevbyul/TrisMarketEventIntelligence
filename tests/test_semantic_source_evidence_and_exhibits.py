@@ -16,6 +16,7 @@ from tris_market_event_intelligence.sec_filing_exhibit_evidence import (
 )
 from tris_market_event_intelligence.semantic_source_evidence import (
     expand_evidence_ids,
+    schema_for_excerpts,
     source_excerpts,
 )
 from tris_market_event_intelligence.source_grounded_semantic_analysis import (
@@ -281,3 +282,40 @@ def test_truncated_model_attempt_retries_with_reduced_evidence_context(
     assert lengths[1] == 12
     assert report["summary"]["quoteAndSchemaValidated"] == 1
     assert report["summary"]["statusCounts"]["COMPLETE"] == 1
+
+
+def test_evidence_is_exact_canonical_text_without_double_html_conversion():
+    # First-stage normalization is the only permitted HTML parsing operation.
+    # The canonical text may contain real <...> text or entity characters.
+    from tris_market_event_intelligence.event_evidence_policy import plain_text
+
+    original = (
+        "Company disclosed revenue < guidance and costs > forecast. "
+        "Adjusted operating profit was 12% compared with 10% last quarter. "
+        "Risk notes included conditional liabilities & guarantees."
+    )
+    canonical = plain_text(original)
+    excerpts = source_excerpts(canonical)
+    assert excerpts
+    assert all(item["text"] in canonical for item in excerpts)
+    for item in excerpts:
+        span = canonical.find(item["text"])
+        assert span >= 0
+        assert canonical[span:span + len(item["text"])] == item["text"]
+
+
+def test_schema_only_allows_current_article_source_ids():
+    excerpts = source_excerpts(
+        "Company announced a formal contract for an AI data center, "
+        "with financial obligations specified in the original filing."
+    )
+    schema = schema_for_excerpts(excerpts)
+    permitted = [row["evidenceId"] for row in excerpts]
+    for field in ("sourceStatements", "economicMechanisms"):
+        enum = schema["properties"][field]["items"]["properties"]["evidenceId"]["enum"]
+        assert enum == permitted
+        assert "E999" not in enum
+    # The constant JSON schema is not modified by per-article constraints.
+    from tris_market_event_intelligence.semantic_source_evidence import EXCERPT_SCHEMA
+    for field in ("sourceStatements", "economicMechanisms"):
+        assert "enum" not in EXCERPT_SCHEMA["properties"][field]["items"]["properties"]["evidenceId"]
