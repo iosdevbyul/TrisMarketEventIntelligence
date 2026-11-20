@@ -223,11 +223,11 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
                     and not any(term in quote for term in (
                         "영업이익", "매출액", "소비지출", "소매판매", "부실률",
                     ))):
-                    excluded.append({
-                        "sector": sector,
-                        "reasonCode": "MACRO_BALANCE_NOT_SECTOR_EARNINGS",
-                    })
-                    continue
+                excluded.append({
+                    "sector": sector,
+                    "reasonCode": "MACRO_BALANCE_NOT_SECTOR_EARNINGS",
+                })
+                continue
         sector_review = review_sector_hypothesis(
             title=str((article or {}).get("title") or ""),
             sector=sector, direction=direction,
