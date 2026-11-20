@@ -115,15 +115,15 @@ def test_official_sec_index_exhibit_urls_reject_other_ciks_and_hosts():
     base, idx = accession_archive(article)
     assert idx.endswith("0000002488-26-000072-index.htm")
     raw = (
-        "<table>"
-        '<tr><td><a href="/Archives/edgar/data/2488/000000248826000072/'
-        'amd-q1-release.htm">release</a></td><td>EX-99.1</td></tr>'
+        b"<table>"
+        b'<tr><td><a href="/Archives/edgar/data/2488/000000248826000072/'
+        b'amd-q1-release.htm">release</a></td><td>EX-99.1</td></tr>'
         '<tr><td><a href="https://evil.example.net/ex99.2.htm">'
-        'wrong</a></td><td>EX-99.2</td></tr>'
+        b'wrong</a></td><td>EX-99.2</td></tr>'
         '<tr><td><a href="/Archives/edgar/data/2488/000000248826000072/'
-        'amd-slide.htm">slides</a></td><td>EX-99.2</td></tr>'
-        "</table>"
-    ).encode()
+        b'amd-slide.htm">slides</a></td><td>EX-99.2</td></tr>'
+        b"</table>"
+    )
     links = exhibit_urls(raw, article)
     assert links == {
         "99.1": base + "amd-q1-release.htm",
@@ -139,14 +139,14 @@ def test_real_exhibit_is_added_as_source_with_verifiable_sha_not_inferred_earnin
     article = sec_article()
     base, index_url = accession_archive(article)
     index_html = (
-        "<table><tr><td><a href=\"amd-results.htm\">"
-        "Earnings press release</a></td><td>EX-99.1</td></tr></table>"
+        b"<table><tr><td><a href=\"amd-results.htm\">"
+        b"Earnings press release</a></td><td>EX-99.1</td></tr></table>"
     ).encode()
     actual_exhibit = (
-        "<html><body><h2>Quarterly Results</h2>"
-        "<p>AMD reported quarterly revenue of $8.2 billion and "
-        "net income of $1.4 billion for the quarter.</p>"
-        "</body></html>"
+        b"<html><body><h2>Quarterly Results</h2>"
+        b"<p>AMD reported quarterly revenue of $8.2 billion and "
+        b"net income of $1.4 billion for the quarter.</p>"
+        b"</body></html>"
     ).encode()
     requested = []
 
