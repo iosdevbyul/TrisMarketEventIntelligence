@@ -242,7 +242,11 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
             })
             continue
         validated.append({
-            **row, "direction": sector_review["reviewedDirection"],
+            **row,
+            "modelOriginalReason": row["reason"],
+            "modelOriginalDirection": direction,
+            "direction": sector_review["reviewedDirection"],
+            "reason": sector_review["reviewedReason"] or row["reason"],
             "economicReasoningReview": sector_review,
             "sourceQuote": quote,
             "sourceStart": quote_start,
@@ -468,7 +472,9 @@ def main() -> None:
             "status": row["status"], "event": row.get("event"),
             "sectors": [
                 {"sector": item["sector"], "direction": item["direction"],
-                 "reason": item["reason"], "sourceQuote": item["sourceQuote"]}
+                 "reason": item["reason"], "sourceQuote": item["sourceQuote"],
+                 "modelOriginalDirection": item.get("modelOriginalDirection"),
+                 "reviewReasons": item.get("economicReasoningReview", {}).get("reviewReasons", [])}
                 for item in row["sectors"]
             ],
             "overallMarketDirection": row["overallMarketDirection"],
