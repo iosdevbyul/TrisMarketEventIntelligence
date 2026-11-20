@@ -195,6 +195,7 @@ def test_hwpx_sections_extract_actual_xml_text():
 def test_legacy_hwp_and_unknown_zip_remain_unverified():
     import io
     import zipfile
+
     from tris_market_event_intelligence.bok_attachment_evidence_cli import extract
 
     text, status = extract(
