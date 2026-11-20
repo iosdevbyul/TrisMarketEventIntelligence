@@ -163,6 +163,31 @@ def audit_article(article: dict[str, Any]) -> dict[str, Any]:
             detail="Original release references an attachment, but no "
                    "missing source material is acknowledged.",
         )
+    # Facts in a reasoning paragraph must not invent specific financial
+    # figures absent from all *selected* source quotations. This flags
+    # discrepancies for review, not an automatic statement of falsehood:
+    # the figure may exist elsewhere in an omitted source excerpt.
+    cited_text = " ".join(
+        str(row.get("quote") or "") for row in facts
+    ) + " " + " ".join(
+        str(row.get("groundingQuote") or "") for row in mechanisms
+    )
+    uncited_numbers: set[str] = set()
+    for mechanism in mechanisms:
+        reasoning = str(mechanism.get("reasoning") or "")
+        for value in re.findall(r"(?<![\\w])\\d[\\d,]*(?:\\.\\d+)?%?", reasoning):
+            compact = value.rstrip(",").replace(",", "")
+            if (len(compact.replace(".", "").replace("%", "")) >= 3
+                    and compact not in {"2024", "2025", "2026", "2027"}
+                    and compact not in cited_text):
+                uncited_numbers.add(compact)
+    if uncited_numbers:
+        _flag(
+            findings, "NUMERIC_MECHANISM_NOT_IN_SELECTED_EVIDENCE",
+            detail="Numbers in reasoning absent from the selected source "
+                   "quotes (not necessarily absent from the full document): "
+                   + ", ".join(sorted(uncited_numbers)[:8]),
+        )
     # Conservative deterministic numeric/unit traps observed in the heldout
     # study. These trigger an audit, never a synthesized corrected value.
     for fact in facts:
