@@ -23,7 +23,7 @@ QUANTITY = re.compile(
 )
 COMPARISONS = {
     "QOQ": re.compile(r"전기\s*대비|전분기\s*대비|quarter.on.quarter|quarter.over.quarter|\bqoq\b", re.I),
-    "YOY": re.compile(r"전년\s*동기\s*대비|전년\s*대비|year.on.year|year.over.year|\byoy\b", re.I),
+    "YOY": re.compile(r"전년\s*동기\s*대비|전년\s*동월\s*대비|전년\s*대비|year.on.year|year.over.year|\byoy\b", re.I),
     "MOM": re.compile(r"전월\s*대비|month.on.month|month.over.month|\bmom\b", re.I),
 }
 SIGNS = {
