@@ -213,3 +213,30 @@ def test_invalid_model_quote_is_retried_once_without_faking_grounding():
     assert model.calls == 2
     assert result["status"] == "ANALYZED"
     assert result["modelAttempts"] == 2
+
+
+def test_table_numeric_sequence_does_not_count_as_sector_evidence():
+    fragment = "91.3 91.0 89.6 92.5 92.3 93.2"
+    sample = dict(prediction())
+    sample["sectors"] = [{**prediction()["sectors"][0], "sourceQuote": fragment}]
+    with pytest.raises(ValueError, match="SECTOR_EVIDENCE_TABLE_ONLY"):
+        validate(sample, NEWS + " " + fragment)
+
+
+def test_real_article_not_rejected_as_too_long_when_model_sees_compact_input():
+    from tris_market_event_intelligence.direct_sector_excerpt_selection import compact_source
+    table = " ".join(["91.3 91.0 89.6 92.5 92.3"] * 600)
+    body = NEWS + " " + table + " □ 반도체 신규투자가 전분기 대비 15% 증가했다."
+    selected = compact_source(body, "반도체 투자", max_chars=2500)
+    assert len(selected) <= 2500
+    assert "반도체 신규투자가 전분기 대비 15% 증가했다." in selected
+    assert selected.startswith(NEWS)
+
+
+def test_directional_article_count_not_equal_analyzed_count():
+    none = {"event": "알림", "summary": "추가 정보 부족", "sectors": [],
+            "overallMarketDirection": "UNKNOWN"}
+    model = FakeModel(none)
+    result = run([{"articleId": 1, "summary": NEWS}], model)
+    assert result["statusCounts"] == {"ANALYZED": 1}
+    assert result["directionalArticleCount"] == 0
