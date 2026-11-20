@@ -88,3 +88,11 @@ def test_bok_monthly_year_over_year_period_is_identified():
     rows = extract_quantities(source)
     assert any("MOM" in row["comparisonCandidates"] for row in rows)
     assert any("YOY" in row["comparisonCandidates"] for row in rows)
+
+
+def test_negative_rate_is_not_turned_into_positive_source_evidence():
+    rows = extract_quantities("문화 및 기타 서비스업 -0.3% 감소")
+    rates = [row for row in rows if row["unit"] == "%"]
+    assert len(rates) == 1
+    assert rates[0]["numberText"] == "-0.3"
+    assert rates[0]["verbatim"].strip() == "-0.3%"
