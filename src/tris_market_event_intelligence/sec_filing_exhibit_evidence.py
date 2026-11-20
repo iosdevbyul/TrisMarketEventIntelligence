@@ -82,10 +82,10 @@ def exhibit_urls(index_html: bytes, article: dict[str, Any]) -> dict[str, str]:
     parser.feed(index_html.decode("utf-8", errors="replace"))
     links: dict[str, str] = {}
     for text, hrefs in parser.rows:
-        for exhibit in ("99.1", "99.2"):
+        for exhibit in ("99.1", "99.2", "10.1"):
             # SEC official filing detail document table includes the
             # 'EX-99.1' type, or a '99.1' exhibit description.
-            if not re.search(rf"(?i)\b(?:EX-)?99[.]?{exhibit[-1]}\b", text):
+            if not re.search(rf"(?i)\b(?:EX-)?{re.escape(exhibit)}\b", text):
                 continue
             for href in hrefs:
                 resolved = urljoin(index_url, href)
@@ -136,7 +136,12 @@ def enrich_sec_article(
         audit["errorCode"] = type(exc).__name__
         return article, audit
     parts = [original[:4500]]
-    for tag in ("99.1", "99.2"):
+    preferred = (
+        ("10.1", "99.1")
+        if "item 1.01" in str(article.get("title", "")).casefold()
+        else ("99.1", "99.2")
+    )
+    for tag in preferred:
         url = links.get(tag)
         if url is None:
             audit["missingExhibits"].append(tag)
@@ -153,7 +158,7 @@ def enrich_sec_article(
                 raise ValueError("SEC_EXHIBIT_NO_SUBSTANTIVE_TEXT")
             # Keep actual numbers and disclosure content, not only the
             # cover page. The text remains clearly marked as retrospective.
-            length = 9000 if tag == "99.1" else 3500
+            length = 9000 if tag in {"99.1", "10.1"} else 3500
             parts.append(f"SEC EXHIBIT {tag} SOURCE TEXT: {excerpt[:length]}")
             audit["acquiredExhibits"].append({
                 "exhibitType": tag, "sourceUrl": url,
