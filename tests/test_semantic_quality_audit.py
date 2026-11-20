@@ -170,3 +170,26 @@ def test_read_only_audit_preserves_every_frozen_article_and_original_summary():
     assert report["findingCodeCounts"]["SEC_EARNINGS_ITEM_CATEGORY_CONFLICT"] == 1
     with pytest.raises(ValueError, match="SEMANTIC_COHORT_COUNT_MISMATCH"):
         audit_report({**source, "articleCount": 30})
+
+
+def test_invented_numerical_mechanism_figures_are_reviewed_not_rewritten():
+    article = record(
+        article_id=194, title="2026년 5월 생산자물가지수(잠정)",
+        source="bok_statistics", category="ECONOMIC_INDICATOR_RELEASE",
+        original="ECONOMIC_INDICATOR_RELEASE", direction="UNKNOWN",
+        status="COMPLETE",
+    )
+    model = article["semanticAnalysis"]["modelAnalysis"]
+    model["sourceStatements"][0]["quote"] = (
+        "공 산 품 691 480.8 서비스 109 413.4"
+    )
+    model["economicMechanisms"][0]["groundingQuote"] = (
+        "공 산 품 691 480.8 서비스 109 413.4"
+    )
+    model["economicMechanisms"][0]["reasoning"] = (
+        "The industrial category weighting was 600.486."
+    )
+    before = copy.deepcopy(article)
+    result = audit_article(article)
+    assert "NUMERIC_MECHANISM_NOT_IN_SELECTED_EVIDENCE" in codes(result)
+    assert article == before
