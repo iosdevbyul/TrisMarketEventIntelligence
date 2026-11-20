@@ -54,7 +54,7 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
         raise ValueError("MODEL_OUTPUT_STRUCTURE_INVALID")
     sectors = raw["sectors"]
     if not isinstance(sectors, list):
-        raise ValueError("MODEL_OUTPUT_STRUCTURE_INVALID")
+        raise TypeError("MODEL_OUTPUT_STRUCTURE_INVALID")
     for item in sectors:
         if (not isinstance(item, dict) or set(item) != {"sector", "direction", "reason"}
                 or not isinstance(item["sector"], str) or not item["sector"].strip()
