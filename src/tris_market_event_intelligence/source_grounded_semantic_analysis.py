@@ -33,7 +33,7 @@ SEMANTIC_SCHEMA: dict[str, Any] = {
             ],
         },
         "eventDescription": {"type": "string"},
-        "confirmedFacts": {
+        "sourceStatements": {
             "type": "array", "maxItems": 5,
             "items": {
                 "type": "object",
@@ -85,7 +85,7 @@ SEMANTIC_SCHEMA: dict[str, Any] = {
         },
     },
     "required": [
-        "eventCategory", "eventDescription", "confirmedFacts",
+        "eventCategory", "eventDescription", "sourceStatements",
         "economicMechanisms", "unverifiedAssumptions", "missingEvidence",
         "overallEconomicDirection",
     ],
@@ -174,7 +174,7 @@ def validate_semantic_interpretation(
     categories = SEMANTIC_SCHEMA["properties"]["eventCategory"]["enum"]
     if response["eventCategory"] not in categories:
         raise ValueError("SEMANTIC_EVENT_CATEGORY_INVALID")
-    fact_rows = response["confirmedFacts"]
+    fact_rows = response["sourceStatements"]
     mechanisms = response["economicMechanisms"]
     if not isinstance(fact_rows, list) or not 1 <= len(fact_rows) <= 5:
         raise ValueError("SEMANTIC_FACT_COUNT_INVALID")
@@ -230,6 +230,39 @@ def validate_semantic_interpretation(
         item["economicDirection"] == actual_dir for item in mechanisms
     ):
         raise ValueError("SEMANTIC_DIRECTION_NOT_SUPPORTED_BY_MECHANISM")
+    # The issuer binding supplies a concrete attributable target only for
+    # the SEC filing's own issuer. Macroeconomic scope is not proof of a
+    # specific company's or ETF's exposure.
+    issuer = issuer_provenance(article)
+    target_links = []
+    for item in mechanisms_out:
+        if (item["affectedScope"] == "ISSUER"
+                and issuer["status"] == "OFFICIAL_SEC_ISSUER_CIK_BINDING"):
+            target_links.append({
+                "target": issuer["symbol"], "targetType": "STOCK",
+                "linkStatus": "VERIFIED_FILING_ISSUER_ONLY",
+                "economicDirectionHypothesis": item["economicDirection"],
+                "priceDirectionUnverified": True,
+            })
+        elif item["affectedScope"] == "ISSUER":
+            target_links.append({
+                "linkStatus": "ISSUER_LINK_UNVERIFIED",
+                "economicDirectionHypothesis": item["economicDirection"],
+                "priceDirectionUnverified": True,
+            })
+        elif item["affectedScope"] in {"INDUSTRY", "BROAD_MARKET"}:
+            target_links.append({
+                "linkStatus": "SCOPE_ONLY_NO_SECURITY_MAPPING",
+                "affectedScope": item["affectedScope"],
+                "economicDirectionHypothesis": item["economicDirection"],
+                "priceDirectionUnverified": True,
+            })
+    expected_categories = research_candidate(article)["matchedCategories"]
+    category_status = (
+        "MATCHES_EVENT_SOURCE_POLICY"
+        if response["eventCategory"] in expected_categories
+        else "SEMANTIC_EVENT_CLASSIFICATION_REVIEW_REQUIRED"
+    )
     facts_policy = event_facts(article)
     if facts_policy["officialDenial"] and any(
         row["factualStatus"] == "OFFICIAL" for row in facts
@@ -244,9 +277,11 @@ def validate_semantic_interpretation(
         "sourceBodySha256": hashlib.sha256(body.encode()).hexdigest(),
         "originalPublicationPITCertified": False,
         "classification": research_candidate(article),
-        "issuerProvenance": issuer_provenance(article),
+        "semanticCategoryStatus": category_status,
+        "issuerProvenance": issuer,
+        "economicTargetLinks": target_links,
         "modelAnalysis": {
-            **response, "confirmedFacts": facts,
+            **response, "sourceStatements": facts,
             "economicMechanisms": mechanisms_out,
         },
         "factualCorrectnessBeyondExactQuoteVerified": False,
