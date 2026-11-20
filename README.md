@@ -563,3 +563,49 @@ The 30-date event gate should be applied after acquisition by rerunning
 `--selection-policy event-spread-dates` with both previous research reports
 excluded. If fewer than 30 distinct credible release dates survive, record
 that shortage rather than claiming a successful 30-event benchmark.
+
+### Source-grounded article analysis: price-blind interpretation of the existing 30 cases
+
+The most recent frozen SEC/BOK 30-date study scored 26 market-target observations:
+raw Gemma4 5/26 (19.23%), price-only 13/26 (50%), simple news-adjusted
+11/26 (42.31%), evidence-gated 13/26 (zero changed forecasts). Only
+5/26 model forecasts were directional and three articles had model errors.
+Those market results are NOT reliable measures of factual news understanding.
+
+A separate semantic analysis pipeline now interrogates exactly the same
+30 original article IDs, independent of the realized market outcome data.
+It extracts up to five sourceStatements with verbatim quoted source text,
+source offsets and explicit OFFICIAL / REPORTED / ALLEGED / DENIED labels;
+separates the model's economic impact *hypotheses* and unknown assumptions
+from source facts; and requires a second verbatim source quote supporting
+each hypothetical mechanism. This does not establish claim accuracy beyond
+quote presence, the original release's PIT availability, or price causality.
+
+SEC CIK + official archive URL can certify the issuer's identity and
+associated listed stock, but do not prove the stock's price direction.
+Classification disagreements, no-source evidence and model failures
+remain explicitly visible. The source DB and original training journal
+are read-only. The existing price study is read ONLY for its frozen IDs,
+dates, title and original report hash; price labels are never in the LLM prompt.
+
+To replay source-only analysis against the prior 30 real events, with
+Ollama gemma4:e2b already installed, run:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.source_grounded_semantic_replay_cli \
+  --holdout-result "$DATA/market-event-sec-30-results-v1.json" \
+  --model gemma4:e2b \
+  --output "$DATA/market-event-sec-30-semantic-v1.json"
+```
+
+The immutable output records individual quotes, event categories,
+affected economic scopes, uncertain assumptions, source hashes and
+exact failure codes. A COMPLETE structural result means all reported
+quotes were found in the source, not that an independent human certified
+the model's interpretation or that an event caused an asset move.
+NEEDS_CATEGORY_REVIEW indicates category disagreement. Model generation
+failures remain INVALID_MODEL_ANALYSIS, never silently counted as successes.
+
+An independently annotated semantic gold dataset is still necessary
+before declaring the news understanding stage fully validated.
