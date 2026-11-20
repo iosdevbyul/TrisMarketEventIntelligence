@@ -258,7 +258,7 @@ def test_hallucinated_no_article_message_is_not_scored_as_analyzed():
     result = analyze({"articleId": 192, "summary": NEWS + NEWS}, model)
     assert result["status"] == "MODEL_RESULT_REJECTED"
     assert result["errorCode"] == "MODEL_FAILED_TO_READ_SOURCE"
-    assert model.calls == 2
+    assert model.calls == 3
 
 
 def test_official_bok_tables_do_not_replace_relevant_announcement_prose():
@@ -273,3 +273,87 @@ def test_official_bok_tables_do_not_replace_relevant_announcement_prose():
     assert concise.startswith(prefix)
     assert "제조업 기업심리지수는 전월 대비 하락" in concise
     assert len(concise) <= 2000
+
+
+def test_financing_a_specific_company_not_entire_semiconductor_sector():
+    body = (
+        "Advanced Micro Devices, Inc. entered into a Credit Agreement with "
+        "the lenders named therein, JPMorgan Chase Bank N.A. as agent. "
+        "The Credit Agreement establishes a revolving credit facility."
+    )
+    raw = {
+        "event": "AMD financing",
+        "summary": "Company financing agreement",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [{
+            "sector": "SEMICONDUCTORS", "direction": "POSITIVE",
+            "sourceQuote": "Advanced Micro Devices, Inc. entered into a Credit Agreement",
+            "reason": "AMD has access to liquidity, but sector-wide profitability is unknown.",
+            "uncertainty": "No sector-wide earnings effect is documented.",
+        }],
+    }
+    article = {
+        "articleId": 20874, "title": "AMD SEC 8-K Item 1.01 MATERIAL_CONTRACT_8K",
+        "source": "sec_8k_2488", "summary": body,
+    }
+    result = analyze(article, FakeModel(raw))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"] == []
+    assert result["excludedSectorSuggestions"][0]["reasonCode"] == (
+        "ISSUER_FINANCING_NOT_SECTOR_DIRECTION"
+    )
+
+
+def test_monetary_balance_increase_does_not_prove_financials_upside():
+    body = (
+        "2026년 3월 통화 및 유동성 발표에 따르면 Lf(금융기관유동성)는 "
+        "전월 대비 0.5% 증가했고 M2(광의통화)도 증가했다."
+    )
+    raw = {
+        "event": "M2 growth", "summary": "Liquidity increase",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [{
+            "sector": "FINANCIALS", "direction": "POSITIVE",
+            "sourceQuote": "Lf(금융기관유동성)는 전월 대비 0.5% 증가",
+            "reason": "More liquid balances are not evidence of bank profitability.",
+            "uncertainty": "Funding costs and asset quality are not known.",
+        }],
+    }
+    result = analyze({
+        "articleId": 210, "source": "bok_monetary",
+        "title": "2026년 3월 통화 및 유동성", "summary": body,
+    }, FakeModel(raw))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"] == []
+    assert result["excludedSectorSuggestions"][0]["reasonCode"] == (
+        "MACRO_BALANCE_NOT_SECTOR_EARNINGS"
+    )
+
+
+def test_pdf_whitespace_variance_is_recovered_only_with_real_substring():
+    from tris_market_event_intelligence.direct_sector_impact_cli import (
+        locate_verbatim_quote,
+    )
+    original = "실제 보고서는 금융기관 유동성이 전월대비 0.5% 증가했다고 발표했다."
+    quote, start = locate_verbatim_quote(original, "금융기관유동성이 전월대비 0.5% 증가")
+    assert original[start:start + len(quote)] == quote
+    with pytest.raises(ValueError, match="SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE"):
+        locate_verbatim_quote(original, "금융기관 유동성이 20% 증가")
+
+
+def test_truncation_retries_with_shorter_source_and_keeps_failure_visible():
+    from tris_market_event_intelligence.llm_runtime import LLMExecutionError
+
+    class TruncatedModel(FakeModel):
+        def generate_json(self, *, system, user, schema):
+            self.calls += 1
+            if self.calls < 3:
+                raise LLMExecutionError("MODEL_GENERATION_TRUNCATED")
+            return json.dumps(prediction(), ensure_ascii=False)
+
+    long_text = NEWS + " " + ("반도체 시장 전망과 산업 정책입니다. " * 150)
+    model = TruncatedModel(prediction())
+    result = analyze({"articleId": 1, "summary": long_text}, model)
+    assert model.calls == 3
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"][0]["direction"] == "NEGATIVE"
