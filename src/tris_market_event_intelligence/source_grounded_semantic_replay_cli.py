@@ -23,9 +23,9 @@ from tris_market_event_intelligence.sec_filing_exhibit_evidence import (
     enrich_sec_article,
 )
 from tris_market_event_intelligence.semantic_source_evidence import (
-    EXCERPT_SCHEMA,
     SYSTEM,
     expand_evidence_ids,
+    schema_for_excerpts,
     source_excerpts,
 )
 from tris_market_event_intelligence.sequential_market_learning_cli import (
@@ -156,7 +156,7 @@ def semantic_replay(
                     raw = model.generate_json(
                         system=SYSTEM,
                         user=json.dumps(payload, ensure_ascii=False),
-                        schema=EXCERPT_SCHEMA,
+                        schema=schema_for_excerpts(allowed_excerpts),
                     )
                     expanded = expand_evidence_ids(
                         parse_semantic_response(raw), allowed_excerpts,
