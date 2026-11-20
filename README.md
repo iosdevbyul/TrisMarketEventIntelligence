@@ -500,3 +500,66 @@ does not receive prior feedback lessons on holdout. Economic indicators
 may still lack a reliable pre-release consensus, individual security
 exposure and independently timestamp-certified full text; the engine
 records such limits and must not claim a causal forecasting success.
+
+### Opt-in SEC company 8-K backfill for real earnings and contract events
+
+The existing 30-date event-first cohort only had **27 eligible days** after
+excluding prior studies, all from the Bank of Korea. Do not pad the sample
+with editorials or duplicated events. A new opt-in official source loader
+uses SEC issuer submission history and downloads **actual primary Form 8-K
+filing documents**, restricting events to Item 2.02 (reported earnings/
+results) and Item 1.01 (material definitive agreements).
+
+The importer uses the existing `articles` / `captures` SQLite tables,
+persists exact original filing bytes and hashes, rejects broken or missing
+documents, and deduplicates by official accession. It does not create events
+from API metadata alone. SEC submission API timestamps can disagree with
+the official filing-detail Accepted clock: before importing each filing the
+loader cross-checks the detail page's US-Eastern Accepted timestamp, then
+uses that corroborated instant for research chronology. **SEC filing acceptance
+is still not proof of the earliest issuer press release.** For market-price
+study, review first-publication evidence and distinguish the post-acceptance
+price response from a stock move that may already have happened.
+
+SEC requests must provide a real identifying User-Agent as described in
+SEC's developer guidance. Set `SEC_USER_AGENT` locally with your own
+application/contact information; never commit contact details to Git. No
+automatic crawling, background scheduler or trading is enabled.
+
+First preview real SEC candidate counts (read-only), for issuer CIKs
+NVIDIA 1045810, AMD 2488, Apple 320193, Microsoft 789019, Alphabet
+1652044 and Meta 1326801:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+export SEC_USER_AGENT="YourResearchApp real-contact@example.com"
+
+python -m tris_market_event_intelligence.sec_issuer_event_acquisition_cli \
+  --db "$DATA/news.sqlite3" \
+  --ciks 1045810,2488,320193,789019,1652044,1326801 \
+  --since 2026-04-28 --until 2026-11-18 \
+  --output "$DATA/sec-issuer-8k-preview-v1.json"
+```
+
+Inspect the candidate count, acceptance clocks and CIK/filing URL mapping.
+To opt in to importing only **real fetched primary document bytes** use
+`--import-files` and a *different* output report path, e.g.
+`$DATA/sec-issuer-8k-import-v1.json`. A missing response does not cause
+fabricated content. Import may add new articles to the **existing** news
+archive, but never alters the sealed training journal.
+
+The 100-case training journal retains its historical article-inventory cutoff.
+To select genuinely newly captured SEC articles, use the separate research
+`--inventory-as-of` option, fixed to the actual post-acquisition UTC time.
+Pass that **same cutoff value in both preview and actual evaluation**, and
+pass `--selection-manifest` to prevent changed candidates. In particular
+this is an expanded **retrospective exploratory** research sample, not the
+original untouched holdout and not automatically a certified PIT benchmark.
+Retrospective SEC filings may have been publicly available after an earlier
+issuer announcement. Never treat filing acceptance as proof of original
+market-information arrival.
+
+The 30-date event gate should be applied after acquisition by rerunning
+`--selection-policy event-spread-dates` with both previous research reports
+excluded. If fewer than 30 distinct credible release dates survive, record
+that shortage rather than claiming a successful 30-event benchmark.
