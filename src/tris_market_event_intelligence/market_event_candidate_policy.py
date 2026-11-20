@@ -85,6 +85,18 @@ def research_candidate(article: dict[str, Any]) -> dict[str, Any]:
         category for category, phrases in CATEGORIES
         if any(phrase in text for phrase in phrases)
     ]
+    # SEC 8-K item metadata is official evidence that a filing reports
+    # results (2.02) or a material agreement (1.01), but does not prove
+    # the first external announcement time or actual economic surprise.
+    if source.startswith("sec_8k_") and article.get("sourceUrl", "").startswith(
+        "https://www.sec.gov/Archives/edgar/data/"
+    ):
+        if "item 2.02" in title_lower and "EARNINGS_OR_GUIDANCE" not in matched:
+            matched.insert(0, "EARNINGS_OR_GUIDANCE")
+        elif "item 1.01" in title_lower and (
+            "CORPORATE_ACTION_OR_CONTRACT" not in matched
+        ):
+            matched.insert(0, "CORPORATE_ACTION_OR_CONTRACT")
     if not matched:
         reasons.append("NO_SPECIFIC_ECONOMIC_EVENT")
     if any(value in title_lower for value in NON_ACTION_STATEMENTS):
