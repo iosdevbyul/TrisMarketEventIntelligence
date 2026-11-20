@@ -140,3 +140,68 @@ def test_external_redirect_is_still_rejected_after_fix():
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = capture(article(), client)
     assert result["attachments"][0]["errorCode"] == "UNSAFE_BOK_REDIRECT_DESTINATION"
+
+
+def test_pdf_uses_existing_pypdf_dependency_without_fitz():
+    import io
+    from pypdf import PdfWriter
+    from tris_market_event_intelligence.bok_attachment_evidence_cli import (
+        attachment_format, extract,
+    )
+
+    output = io.BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.write(output)
+    raw = output.getvalue()
+    assert attachment_format(raw, "application/octet-stream") == "PDF"
+    text, status = extract(raw, "application/octet-stream", "https://www.bok.or.kr/file/download.do")
+    assert not text
+    assert status == "NO_SUBSTANTIVE_TEXT"
+
+
+def test_hwpx_sections_extract_actual_xml_text():
+    import io
+    import zipfile
+    from tris_market_event_intelligence.bok_attachment_evidence_cli import (
+        attachment_format, extract,
+    )
+
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("mimetype", "application/hwp+zip")
+        archive.writestr(
+            "Contents/section0.xml",
+            '<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'
+            '<hp:t>한국은행 통계 발표에서 국내총생산이 전기 대비 2.5% 증가했다는 내용입니다.</hp:t>'
+            '<hp:t> 수치의 발표 시기와 비교 기준을 따로 확인해야 합니다.</hp:t>'
+            '</hp:sec>',
+        )
+    raw = payload.getvalue()
+    assert attachment_format(raw, "application/octet-stream") == "HWPX"
+    text, status = extract(raw, "application/octet-stream", "https://www.bok.or.kr/file/download.do")
+    assert status == "TEXT_EXTRACTED"
+    assert "2.5%" in text
+
+
+def test_legacy_hwp_and_unknown_zip_remain_unverified():
+    import io
+    import zipfile
+    from tris_market_event_intelligence.bok_attachment_evidence_cli import extract
+
+    text, status = extract(
+        bytes.fromhex("d0cf11e0a1b11ae1") + b"unverified",
+        "application/octet-stream",
+        "https://www.bok.or.kr/file/download.do",
+    )
+    assert text == ""
+    assert status == "HWP_OLE_EXTRACTOR_UNAVAILABLE"
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("file.txt", "not a verified document format")
+    text, status = extract(
+        payload.getvalue(), "application/octet-stream",
+        "https://www.bok.or.kr/file/download.do",
+    )
+    assert text == ""
+    assert status == "UNSUPPORTED_ZIP_UNKNOWN_FORMAT"
