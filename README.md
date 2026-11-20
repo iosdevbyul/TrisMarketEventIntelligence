@@ -668,4 +668,44 @@ officialSECExhibitStatusCounts. A high structural completion rate would
 still NOT establish the true factual accuracy of the economic mechanism.
 Keep the historical v1 semantic JSON and prior price outcome report
 unchanged for transparent A/B comparisons. Check the new 30-case result
-before declaring the article analysis stage complete.
+before declaring the article analysis stage complete. 
+### Quote-ID regression identified in second real 30-case Gemma4 replay
+
+The user's actual v2 run on the **same 30 article IDs** was worse, not
+better: **5 COMPLETE, 10 NEEDS_CATEGORY_REVIEW, 15 INVALID_MODEL_ANALYSIS**,
+and only **15/30 quote-and-schema validated**, versus 19/30 validated in v1.
+Failure codes: 9 quote-not-in-source, 4 invalid evidence IDs, 1 truncation,
+1 unsupported direction. The SEC retrieval option did acquire original
+exhibits for 11 SEC filings (5 complete, 6 partial). The model still
+misclassified BOK economic statistics and SEC corporate actions as financial
+stability reviews, so source coverage by itself did not improve semantics.
+
+The quote-ID regression exposed two implementation defects corrected here:
+the prompt excerpts were produced by reinterpreting already-normalized source
+text as HTML *again*, while their validator reinterpreted the excerpt text
+as HTML for a third pass. That could change literal source bytes between
+the evidence roster and the comparison corpus. Both now use the original
+canonical, normalized-once text snapshot, with exact substring offsets.
+Also, a global structured-output schema used to permit the model to produce
+arbitrary IDs; the generated schema now restricts evidenceId to the exact
+IDs present in the current article's sourceExcerpts, including the shorter
+retry roster when an output was truncated. Unknown IDs still fail closed if
+a provider disregards the schema.
+
+These are test-confirmed transport/evidence fixes, **not proof of improved
+Gemma4 news understanding**. Check v3 on precisely the same sealed 30
+articles, leaving v1 and v2 immutable:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.source_grounded_semantic_replay_cli \
+  --holdout-result "$DATA/market-event-sec-30-results-v1.json" \
+  --model gemma4:e2b --sec-exhibits \
+  --output "$DATA/market-event-sec-30-semantic-v3.json"
+```
+
+For SEC attachments the previously configured authentic `SEC_USER_AGENT`
+must still be present. Compare per-article evidence, not just COMPLETE
+counts. The remaining taxonomy disagreements should be audited rather than
+automatically converted to matching classifications, and price outcomes
+remain off-limits in this semantic-only stage.
