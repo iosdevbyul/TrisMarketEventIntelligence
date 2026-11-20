@@ -35,8 +35,8 @@ SCALES = {"조원": Decimal(10)**12, "억원": Decimal(10)**8,
 MAX_TEXT = 120_000
 MAX_NUMBERS = 500
 COMPOUND_WON = re.compile(
-    r"(?<![\\w.])(?P<eok>\\d[\\d,]*)\\s*억\\s*"
-    r"(?P<man>\\d[\\d,]*)\\s*만\\s*원"
+    r"(?<![\w.])(?P<eok>\d[\d,]*)\s*억\s*"
+    r"(?P<man>\d[\d,]*)\s*만\s*원"
 )
 
 
