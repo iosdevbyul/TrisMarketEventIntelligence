@@ -14,8 +14,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from tris_market_event_intelligence.event_evidence_policy import plain_text
-
 # Do not silently treat a date, quantity, interest rate and currency as interchangeable.
 QUANTITY = re.compile(
     r"(?<![\w.])(?P<sign>[-+−]?)\s*(?P<number>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
