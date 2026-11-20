@@ -138,12 +138,20 @@ def semantic_replay(
             analysis = None
             status, error_code = "INVALID_MODEL_ANALYSIS", "NO_VALID_RESULT"
             for attempt in range(2):
+                allowed_excerpts = excerpts
                 if attempt:
+                    if "MODEL_GENERATION_TRUNCATED" in error_code:
+                        # Reduce input budget only after the provider has
+                        # explicitly reported a truncated generation.
+                        allowed_excerpts = excerpts[:12]
                     payload["correction"] = (
                         "Previous response invalid: " + error_code +
-                        ". Use only existing sourceExcerpts evidence IDs, "
-                        "never invent a source citation or numerical fact."
+                        ". Use only provided sourceExcerpts evidence IDs. "
+                        "If overallEconomicDirection is POSITIVE or NEGATIVE, "
+                        "a mechanism must have the SAME economic direction; "
+                        "otherwise use UNKNOWN or MIXED. Return compact JSON."
                     )
+                payload["sourceExcerpts"] = allowed_excerpts
                 try:
                     raw = model.generate_json(
                         system=SYSTEM,
@@ -151,7 +159,7 @@ def semantic_replay(
                         schema=EXCERPT_SCHEMA,
                     )
                     expanded = expand_evidence_ids(
-                        parse_semantic_response(raw), excerpts,
+                        parse_semantic_response(raw), allowed_excerpts,
                     )
                     analysis = validate_semantic_interpretation(
                         analysis_article, expanded,
