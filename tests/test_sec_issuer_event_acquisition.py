@@ -181,9 +181,9 @@ def test_sec_issuer_still_requires_provenance_and_will_not_create_unknown_db(
 def test_official_index_eastern_clock_corrects_shifted_submissions_utc():
     # November is EST: 16:30 Eastern => 21:30 UTC, not 16:30 UTC.
     html = (
-        '<div class="infoHead">Accepted</div>'
-        '<div class="info">2026-11-10 16:30:28</div>'
-    ).encode()
+        b'<div class="infoHead">Accepted</div>'
+        b'<div class="info">2026-11-10 16:30:28</div>'
+    )
     accepted = index_accepted_at(html)
     assert accepted.isoformat() == "2026-11-10T21:30:28+00:00"
     with pytest.raises(ValueError, match="SEC_INDEX_ACCEPTANCE_TIME_MISSING"):
