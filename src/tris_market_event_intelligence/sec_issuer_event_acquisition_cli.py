@@ -16,8 +16,8 @@ import re
 from collections import Counter
 from datetime import UTC, date, datetime
 from html.parser import HTMLParser
-from zoneinfo import ZoneInfo
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
