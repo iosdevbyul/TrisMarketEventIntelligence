@@ -452,6 +452,8 @@ def main() -> None:
             "overallMarketDirection": row["overallMarketDirection"],
             "errorCode": row.get("errorCode"),
             "evidenceSource": row.get("evidenceSource"),
+            "modelAttempts": row.get("modelAttempts"),
+            "excludedSectorSuggestions": row.get("excludedSectorSuggestions", []),
         }, ensure_ascii=False))
 
 
