@@ -97,6 +97,20 @@ def research_candidate(article: dict[str, Any]) -> dict[str, Any]:
             "CORPORATE_ACTION_OR_CONTRACT" not in matched
         ):
             matched.insert(0, "CORPORATE_ACTION_OR_CONTRACT")
+    # A board review of financial stability is NOT a monetary-policy
+    # decision. M2 and retail bank rate statistics measure conditions but
+    # do not by themselves announce a central-bank policy change.
+    if "금융안정 상황" in title_lower or "금융안정회의" in title_lower:
+        matched = ["FINANCIAL_STABILITY_REVIEW"]
+    elif any(key in title_lower for key in (
+        "통화 및 유동성", "금융기관 가중평균금리",
+    )):
+        matched = ["ECONOMIC_INDICATOR_RELEASE"]
+    elif source.startswith("sec_8k_"):
+        if "item 1.01" in title_lower:
+            matched = ["CORPORATE_ACTION_OR_CONTRACT"]
+        elif "item 2.02" in title_lower:
+            matched = ["EARNINGS_OR_GUIDANCE"]
     if not matched:
         reasons.append("NO_SPECIFIC_ECONOMIC_EVENT")
     if any(value in title_lower for value in NON_ACTION_STATEMENTS):
