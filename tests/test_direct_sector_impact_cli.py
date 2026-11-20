@@ -259,3 +259,17 @@ def test_hallucinated_no_article_message_is_not_scored_as_analyzed():
     assert result["status"] == "MODEL_RESULT_REJECTED"
     assert result["errorCode"] == "MODEL_FAILED_TO_READ_SOURCE"
     assert model.calls == 2
+
+
+def test_official_bok_tables_do_not_replace_relevant_announcement_prose():
+    from tris_market_event_intelligence.direct_sector_excerpt_selection import compact_source
+
+    title = "2026년 5월 기업경기조사 결과 및 경제심리지수"
+    prefix = "한국은행은 기업경기조사 결과를 발표했다."
+    rows = " ".join(["91.3 91.0 89.6 92.5 92.3 93.2"] * 900)
+    core = " □ 2026년 5월 제조업 기업심리지수는 전월 대비 하락했으며 비제조업도 감소했다."
+    source = prefix + " OFFICIAL BOK ATTACHMENT TEXT: " + rows + core
+    concise = compact_source(source, title, max_chars=2000)
+    assert concise.startswith(prefix)
+    assert "제조업 기업심리지수는 전월 대비 하락" in concise
+    assert len(concise) <= 2000
