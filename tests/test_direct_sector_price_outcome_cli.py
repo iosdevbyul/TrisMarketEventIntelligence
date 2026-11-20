@@ -102,3 +102,27 @@ def test_unpinned_forecast_contract_rejected(tmp_path):
     invalid["priceDataAccessed"] = True
     with pytest.raises(ValueError, match="DIRECT_ANALYSIS_CONTRACT_INVALID"):
         evaluate_sector_prices(invalid, manifest, series)
+
+
+def test_in_session_article_marks_baseline_as_after_release(tmp_path):
+    manifest, series = fixtures(tmp_path)
+    report = evaluate_sector_prices(
+        prediction(timestamp="2026-08-14T12:00:00-04:00"), manifest, series,
+    )
+    assert report["records"][0]["baselineCloseMayPostdatePublication"] is True
+
+
+def test_after_close_article_baseline_does_not_postdate_release(tmp_path):
+    manifest, series = fixtures(tmp_path)
+    report = evaluate_sector_prices(prediction(), manifest, series)
+    assert report["records"][0]["baselineCloseMayPostdatePublication"] is False
+
+
+def test_reject_unknown_market_and_fabricated_sector_mapping(tmp_path):
+    fixtures(tmp_path)
+    manifest_file = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    manifest["sectors"] = {"FANTASY": {"symbol": "FAKE", "csv": "sector.csv"}}
+    manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="PRICE_MANIFEST_MAPPING_INVALID"):
+        read_manifest(manifest_file)
