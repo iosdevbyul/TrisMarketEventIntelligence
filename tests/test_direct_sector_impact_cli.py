@@ -31,9 +31,9 @@ def test_freeform_themes_are_not_forced_into_fixed_sector_taxonomy():
     assert result["status"] == "ANALYZED"
     assert result["sectors"] == raw["sectors"]
     assert len(result["sectors"]) == 4
-    assert model.calls[0]["user"]["article"] == body
+    assert model.calls[0]["user"]["article"] == body.strip()
     assert model.calls[0]["schema"]["properties"]["sectors"]["items"]["properties"]["sector"] == {"type": "string"}
-    assert result["modelInputChars"] == len(body)
+    assert result["modelInputChars"] == len(body.strip())
     assert result["modelAttempts"] == 1
 
 
