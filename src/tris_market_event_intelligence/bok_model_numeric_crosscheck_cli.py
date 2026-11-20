@@ -20,7 +20,7 @@ UNITS = {"%": "PERCENT", "％": "PERCENT", "퍼센트": "PERCENT",
          "bp": "BASIS_POINT", "bps": "BASIS_POINT",
          "조원": "KRW_TRILLION", "억원": "KRW_HUNDRED_MILLION",
          "만원": "KRW_TEN_THOUSAND", "원": "KRW_WON",
-         "달러": "USD"}
+         "달러": "USD", "복합원": "KRW_COMPOUND_WON"}
 MAX_FINDINGS = 160
 COMPOUND_WON = re.compile(
     r"(?<![\w.])(?P<eok>\d[\d,]*)\s*억\s*"
