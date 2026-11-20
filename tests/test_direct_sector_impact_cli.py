@@ -357,3 +357,85 @@ def test_truncation_retries_with_shorter_source_and_keeps_failure_visible():
     assert model.calls == 3
     assert result["status"] == "ANALYZED"
     assert result["sectors"][0]["direction"] == "NEGATIVE"
+
+
+def test_actual_ppi_example_does_not_report_unsupported_positive_industrials():
+    quote = (
+        "공 산 품 :화학제품(1.8%), 1차금속제품(1.4%), "
+        "컴퓨터･ 전자및광학기기 (1.6%)등이올라전월대비 0.7%상승"
+    )
+    source = "한국은행은 2026년 5월 생산자물가지수 결과를 발표했다. " + quote
+    raw = {
+        "event": "Producer prices rose",
+        "summary": "Several manufactured goods producer price indices rose.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [{
+            "sector": "INDUSTRIALS", "direction": "POSITIVE",
+            "sourceQuote": quote,
+            "reason": "Rising manufactured goods costs are good for the industry.",
+            "uncertainty": "Margin effects unknown.",
+        }],
+    }
+    result = analyze({
+        "articleId": 194, "source": "bok_release",
+        "title": "2026년 5월 생산자물가지수(잠정)",
+        "summary": source,
+    }, FakeModel(raw))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"][0]["direction"] == "UNKNOWN"
+    assert result["sectors"][0]["modelOriginalDirection"] == "POSITIVE"
+    assert result["sectors"][0]["modelOriginalReason"] == raw["sectors"][0]["reason"]
+    assert "costs are good" not in result["sectors"][0]["reason"]
+    assert result["sectors"][0]["economicReasoningReview"]["reviewReasons"] == [
+        "PPI_LEVEL_NOT_SECTOR_MARGIN",
+    ]
+
+
+def test_bok_business_sentiment_cannot_assign_aggregate_to_materials_sector():
+    quote = "5월 중 제조업 기업심리지수는 100.8로 전월에 비해 1.7p 상승하였으며"
+    text = "한국은행 기업경기조사와 경제심리지수 발표: " + quote
+    raw = {
+        "event": "Manufacturing business sentiment rose",
+        "summary": "Manufacturers reported an improvement in sentiment.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [{
+            "sector": "MATERIALS", "direction": "POSITIVE",
+            "sourceQuote": quote,
+            "reason": "This supposedly establishes improving materials-company earnings.",
+            "uncertainty": "No materials-only series is given.",
+        }],
+    }
+    result = analyze({
+        "articleId": 204, "source": "bok_release",
+        "title": "2026년 5월 기업경기조사 결과 및 경제심리지수(ESI)",
+        "summary": text,
+    }, FakeModel(raw))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"] == []
+    assert result["excludedSectorSuggestions"][0]["reasonCode"] == (
+        "SENTIMENT_AGGREGATE_WRONG_SECTOR"
+    )
+
+
+def test_real_semiconductor_boom_retains_direct_positive_signal():
+    quote = "반도체 경기 호황과 파급효과 확산"
+    content = "한국은행 경제전망에는 " + quote + "을 전망하면서 경제 영향을 설명하였다."
+    raw = {
+        "event": "Semiconductor boom",
+        "summary": "Semiconductor industry conditions strengthened.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [{
+            "sector": "SEMICONDUCTORS", "direction": "POSITIVE",
+            "sourceQuote": quote,
+            "reason": "The report describes favorable conditions in the semiconductor sector.",
+            "uncertainty": "This is not a measured abnormal stock return.",
+        }],
+    }
+    result = analyze({
+        "articleId": 117, "source": "bok_release",
+        "title": "경제전망(2026년 8월)",
+        "summary": content,
+    }, FakeModel(raw))
+    assert result["status"] == "ANALYZED"
+    assert result["sectors"][0]["direction"] == "POSITIVE"
+    assert result["sectors"][0]["economicReasoningReview"]["reviewReasons"] == []
