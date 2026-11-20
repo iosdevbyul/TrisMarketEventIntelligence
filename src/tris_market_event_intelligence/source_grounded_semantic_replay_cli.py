@@ -13,6 +13,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from tris_market_event_intelligence.event_evidence_policy import plain_text
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
@@ -124,7 +126,7 @@ def semantic_replay(
                 )
                 error_code = ""
                 break
-            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            except (ValueError, TypeError, RuntimeError, httpx.HTTPError) as exc:
                 error_code = str(exc)[:150]
         records.append({
             "articleId": article["articleId"],
