@@ -20,10 +20,16 @@ NUMBER = re.compile(r"\d")
 
 def compact_source(text: str, title: str, *, max_chars: int = 6500) -> str:
     """Retain article lead plus substantive excerpts within a predictable budget."""
-    if len(text) <= max_chars:
-        return text
-    lead = text[:min(1500, max_chars // 3)]
-    remaining = text[len(lead):]
+    marker = " OFFICIAL BOK ATTACHMENT TEXT: "
+    if marker in text:
+        original, attachment = text.split(marker, 1)
+        lead = original[:min(1200, max_chars // 3)]
+        remaining = attachment
+    else:
+        if len(text) <= max_chars:
+            return text
+        lead = text[:min(1200, max_chars // 3)]
+        remaining = text[len(lead):]
     spans = STATEMENT_START.split(remaining)
     if len(spans) == 1:
         spans = re.split(r"(?<=[.!?。])\s+", remaining)
@@ -56,7 +62,7 @@ def compact_source(text: str, title: str, *, max_chars: int = 6500) -> str:
         if remaining_chars < 50:
             break
     if not selected:
-        return text[:max_chars]
+        return lead
     # Preserve selected source order for temporal/numeric context.
     order = {piece: pos for _, pos, piece in candidates}
     selected.sort(key=lambda piece: order[piece])
