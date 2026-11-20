@@ -125,6 +125,11 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
         raise ValueError("SECTOR_ANALYSIS_FIELDS_INVALID")
     if not isinstance(raw["event"], str) or not raw["event"].strip():
         raise ValueError("EVENT_DESCRIPTION_MISSING")
+    if len(source) > 200 and any(phrase in raw["event"].lower() for phrase in (
+        "no article or data was provided", "no article was provided",
+        "no source was provided", "no article or data provided",
+    )):
+        raise ValueError("MODEL_FAILED_TO_READ_SOURCE")
     if not isinstance(raw["summary"], str) or not raw["summary"].strip():
         raise ValueError("SECTOR_SUMMARY_MISSING")
     if (not isinstance(raw["sectors"], list) or len(raw["sectors"]) > 6
@@ -238,7 +243,9 @@ def analyze(article: dict, model: Any) -> dict:
             if attempt:
                 payload["correction"] = (
                     "Copy each sourceQuote as a SHORT exact contiguous substring "
-                    "of sourceBody, never a paraphrase. Do not invent source text."
+                    "of sourceBody, never a paraphrase. Do not invent source text. "
+                    "Read the supplied ARTICLE: do not claim it is absent, "
+                    "and do not infer sectors from unlabeled numeric tables."
                 )
             raw = json.loads(model.generate_json(
                 system=SYSTEM, user=json.dumps(payload, ensure_ascii=False),
@@ -248,7 +255,7 @@ def analyze(article: dict, model: Any) -> dict:
             return {**result, "status": "ANALYZED", "modelAttempts": attempt + 1, **outcome}
         except (ValueError, TypeError, RuntimeError) as exc:
             error = str(exc)[:100]
-            if error not in {"SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE", "SECTOR_EVIDENCE_TABLE_ONLY"}:
+            if error not in {"SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE", "SECTOR_EVIDENCE_TABLE_ONLY", "MODEL_FAILED_TO_READ_SOURCE"}:
                 break
     return {
         **result, "status": "MODEL_RESULT_REJECTED",
