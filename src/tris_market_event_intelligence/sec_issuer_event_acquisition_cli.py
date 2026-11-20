@@ -9,7 +9,6 @@ a substantive article candidate.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import html
 import json
 import os
@@ -67,9 +66,9 @@ def source_body(payload: bytes) -> str:
 def verified_sec_acceptance(value: str) -> datetime:
     """Only explicitly offset-aware SEC acceptance timestamps are accepted."""
     if not isinstance(value, str):
-        raise ValueError("SEC_ACCEPTANCE_CLOCK_UNVERIFIED")
+        raise TypeError("SEC_ACCEPTANCE_CLOCK_UNVERIFIED")
     try:
-        ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        ts = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("SEC_ACCEPTANCE_CLOCK_UNVERIFIED") from exc
     if ts.utcoffset() is None:
