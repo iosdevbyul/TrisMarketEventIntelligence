@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from collections import Counter
+from itertools import pairwise
 from datetime import UTC, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -35,7 +36,7 @@ def read_manifest(path: Path) -> tuple[dict, dict]:
     benchmark = obj.get("benchmark")
     sectors = obj.get("sectors")
     if not isinstance(benchmark, dict) or not isinstance(sectors, dict):
-        raise ValueError("PRICE_MANIFEST_MAPPING_INVALID")
+        raise TypeError("PRICE_MANIFEST_MAPPING_INVALID")
     valid_sectors = {
         "SEMICONDUCTORS", "TECH", "CLOUD", "FINANCIALS", "ENERGY",
         "DEFENSE", "INDUSTRIALS", "CONSUMER", "TRANSPORT", "HEALTHCARE",
@@ -51,7 +52,7 @@ def read_manifest(path: Path) -> tuple[dict, dict]:
         if (not isinstance(symbol, str) or not 1 <= len(symbol) <= 24
                 or not isinstance(name, str) or name != Path(name).name
                 or name in {"", ".", ".."} or "/" in name or "\\" in name):
-            raise ValueError("PRICE_MANIFEST_SYMBOL_OR_PATH_INVALID")
+            raise TypeError("PRICE_MANIFEST_SYMBOL_OR_PATH_INVALID")
         if key != "benchmark" and symbol == benchmark.get("symbol"):
             raise ValueError("SECTOR_AND_BENCHMARK_IDENTICAL")
         bars, digest = read_daily_prices(path.parent / name)
@@ -140,7 +141,7 @@ def evaluate_sector_prices(analysis: dict, manifest: dict, series: dict) -> dict
                         if any(
                             target["positions"][b] != target["positions"][a] + 1
                             or reference["positions"][b] != reference["positions"][a] + 1
-                            for a, b in zip(dates, dates[1:])
+                            for a, b in pairwise(dates)
                         ):
                             continue
                         t = target["bars"][target["positions"][common[finish]]]
