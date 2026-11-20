@@ -23,8 +23,8 @@ UNITS = {"%": "PERCENT", "％": "PERCENT", "퍼센트": "PERCENT",
          "달러": "USD"}
 MAX_FINDINGS = 160
 COMPOUND_WON = re.compile(
-    r"(?<![\\w.])(?P<eok>\\d[\\d,]*)\\s*억\\s*"
-    r"(?P<man>\\d[\\d,]*)\\s*만\\s*원"
+    r"(?<![\w.])(?P<eok>\d[\d,]*)\s*억\s*"
+    r"(?P<man>\d[\d,]*)\s*만\s*원"
 )
 
 
