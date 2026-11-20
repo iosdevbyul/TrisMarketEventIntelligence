@@ -20,6 +20,7 @@ from tris_market_event_intelligence.direct_sector_excerpt_selection import compa
 from tris_market_event_intelligence.event_evidence_policy import plain_text
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
+from tris_market_event_intelligence.sector_economic_reasoning import review_sector_hypothesis
 
 SECTORS = (
     "SEMICONDUCTORS", "TECH", "CLOUD", "FINANCIALS", "ENERGY",
@@ -228,8 +229,22 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
                         "reasonCode": "MACRO_BALANCE_NOT_SECTOR_EARNINGS",
                     })
                     continue
+        sector_review = review_sector_hypothesis(
+            title=str((article or {}).get("title") or ""),
+            sector=sector, direction=direction,
+            quote=quote, reason=row["reason"],
+        )
+        if sector_review["disposition"] == "EXCLUDE_SECTOR":
+            excluded.append({
+                "sector": sector,
+                "reasonCode": sector_review["reviewReasons"][0],
+                "originalDirection": direction,
+            })
+            continue
         validated.append({
-            **row, "sourceQuote": quote,
+            **row, "direction": sector_review["reviewedDirection"],
+            "economicReasoningReview": sector_review,
+            "sourceQuote": quote,
             "sourceStart": quote_start,
             "sourceEnd": quote_start + len(quote),
             "economicHypothesisNotPriceFact": True,
@@ -254,7 +269,14 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
                 "sourceStart": 0, "sourceEnd": len(quote),
                 "economicHypothesisNotPriceFact": True,
             }]
-    market_direction = "UNKNOWN" if cover or (not validated and excluded) else raw["overallMarketDirection"]
+    guardrail_review = any(
+        item.get("economicReasoningReview", {}).get("reviewReasons")
+        for item in validated
+    )
+    if guardrail_review and raw["overallMarketDirection"] in {"POSITIVE", "NEGATIVE"}:
+        market_direction = "UNKNOWN"
+    else:
+        market_direction = "UNKNOWN" if cover or (not validated and excluded) else raw["overallMarketDirection"]
     if not validated and market_direction != "UNKNOWN":
         raise ValueError("BROAD_MARKET_WITHOUT_ANY_EVIDENCE")
     return {
