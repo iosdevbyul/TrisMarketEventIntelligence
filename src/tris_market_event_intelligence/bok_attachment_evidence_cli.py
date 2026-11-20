@@ -7,16 +7,16 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import io
+import json
 import zipfile
-from xml.etree import ElementTree
 from collections import Counter
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
+from xml.etree import ElementTree
 
 import httpx
 
