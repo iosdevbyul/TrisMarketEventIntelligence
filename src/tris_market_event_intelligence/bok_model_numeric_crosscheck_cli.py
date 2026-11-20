@@ -9,6 +9,7 @@ import argparse
 import json
 import re
 from collections import Counter
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -21,26 +22,52 @@ UNITS = {"%": "PERCENT", "％": "PERCENT", "퍼센트": "PERCENT",
          "만원": "KRW_TEN_THOUSAND", "원": "KRW_WON",
          "달러": "USD"}
 MAX_FINDINGS = 160
+COMPOUND_WON = re.compile(
+    r"(?<![\\w.])(?P<eok>\\d[\\d,]*)\\s*억\\s*"
+    r"(?P<man>\\d[\\d,]*)\\s*만\\s*원"
+)
+
+
+def _money_compound_value(match: re.Match[str]) -> str:
+    eok = Decimal(match.group("eok").replace(",", ""))
+    man = Decimal(match.group("man").replace(",", ""))
+    return format(eok * 100_000_000 + man * 10_000, "f")
 
 
 def numeric_mentions(text: str) -> list[dict[str, str]]:
-    mentions: list[dict[str, str]] = []
+    """Identify full Korean compound money units; preserve negative signs."""
+    compound = list(COMPOUND_WON.finditer(text))
+    spans = [(m.start(), m.end()) for m in compound]
+    found: list[tuple[int, dict[str, str]]] = []
+    for m in compound:
+        found.append((m.start(), {
+            "value": _money_compound_value(m),
+            "unit": "KRW_COMPOUND_WON",
+            "verbatim": m.group(0),
+        }))
     for match in QUANTITY.finditer(text):
-        unit = re.sub(r"\s+", "", match.group("unit") or "")
+        if any(match.start() < end and match.end() > start for start, end in spans):
+            continue
+        unit = re.sub(r"\\s+", "", match.group("unit") or "")
         if not unit:
-            continue  # Dates and unqualified digits are not safe cross-document comparisons.
+            continue
         value = match.group("number").replace(",", "")
-        # Preserve precision and currency *scale*. Do not equate 1억 with 1만원.
-        mentions.append({"value": value, "unit": UNITS.get(unit, unit),
-                         "verbatim": match.group(0)})
-    return mentions
-
+        if match.group("sign") in {"-", "−"}:
+            value = "-" + value
+        found.append((match.start(), {
+            "value": value, "unit": UNITS.get(unit, unit),
+            "verbatim": match.group(0),
+        }))
+    return [item for _, item in sorted(found, key=lambda row: row[0])]
 
 def periods(text: str) -> set[str]:
     return {key for key, regex in COMPARISONS.items() if regex.search(text)}
 
 
-def compare_claim(text: str, quote: str, source_numbers: set[tuple[str, str]]) -> dict:
+def compare_claim(
+    text: str, quote: str, source_numbers: set[tuple[str, str]],
+    *, fact_interpretation: bool = True,
+) -> dict:
     claim = numeric_mentions(text)
     quote_numeric_mentions = numeric_mentions(quote)
     quote_mentions = {(m["value"], m["unit"]) for m in quote_numeric_mentions}
@@ -49,6 +76,9 @@ def compare_claim(text: str, quote: str, source_numbers: set[tuple[str, str]]) -
         mention for mention in quote_numeric_mentions
         if (mention["value"], mention["unit"]) not in claimed_mentions
     ]
+    distinct_source_numbers = {(m["value"], m["unit"]) for m in quote_numeric_mentions}
+    # A lengthy multi-statistic excerpt may be legitimately summarized.
+    selective_summary = len(distinct_source_numbers) > 1
     source_periods = periods(quote)
     claimed_periods = periods(text)
     # If explicit text states contradictory comparison bases, flag review.
@@ -68,7 +98,10 @@ def compare_claim(text: str, quote: str, source_numbers: set[tuple[str, str]]) -
         "numericClaims": entries,
         "sourceQuotedNumericCount": len(quote_numeric_mentions),
         "sourceQuotedNumbersNotRepeated": omitted_quote_numbers[:MAX_FINDINGS],
-        "sourceQuotedNumberOmissionReview": bool(omitted_quote_numbers),
+        "sourceQuotedNumberOmissionReview": (
+            fact_interpretation and not selective_summary and bool(omitted_quote_numbers)
+        ),
+        "sourceQuoteSelectiveSummary": selective_summary and bool(omitted_quote_numbers),
         "comparisonPeriodInQuotedEvidence": sorted(source_periods),
         "comparisonPeriodInInterpretation": sorted(claimed_periods),
         "comparisonPeriodConflict": period_contradiction,
@@ -126,14 +159,17 @@ def audit(semantic: dict[str, Any], inventory: dict[str, Any]) -> dict[str, Any]
                     str(fact.get("quote", "")), source_numbers,
                 )
                 claims.append({"location": f"sourceStatements[{i}].interpretation",
-                               "sourceQuote": fact.get("quote"), **verdict})
+                               "sourceQuote": fact.get("quote"),
+                               "modelExplanation": fact.get("interpretation"), **verdict})
             for i, mechanism in enumerate(model.get("economicMechanisms", [])):
                 verdict = compare_claim(
                     str(mechanism.get("reasoning", "")),
                     str(mechanism.get("groundingQuote", "")), source_numbers,
+                    fact_interpretation=False,
                 )
                 claims.append({"location": f"economicMechanisms[{i}].reasoning",
-                               "sourceQuote": mechanism.get("groundingQuote"), **verdict})
+                               "sourceQuote": mechanism.get("groundingQuote"),
+                               "modelExplanation": mechanism.get("reasoning"), **verdict})
         for claim in claims:
             counts[claim["reviewStatus"]] += 1
         results.append({
@@ -150,6 +186,10 @@ def audit(semantic: dict[str, Any], inventory: dict[str, Any]) -> dict[str, Any]
         "schemaVersion": "bok_model_numeric_crosscheck_v1",
         "originalHoldoutSha256": cohort, "articleCount": len(results),
         "reviewStatusCounts": dict(sorted(counts.items())),
+        "sourceQuoteSelectiveSummaryCount": sum(
+            claim["sourceQuoteSelectiveSummary"]
+            for article in results for claim in article["numericClaimReviews"]
+        ),
         "sourceQuoteNumberOmissionReviewCount": sum(
             claim["sourceQuotedNumberOmissionReview"]
             for article in results for claim in article["numericClaimReviews"]
@@ -201,6 +241,7 @@ def main() -> None:
                 "reviewStatus": claim["reviewStatus"],
                 "sourceQuotedNumbersNotRepeated": claim["sourceQuotedNumbersNotRepeated"][:8],
                 "sourceQuote": claim["sourceQuote"],
+                "modelExplanation": claim["modelExplanation"],
             }, ensure_ascii=False))
             shown += 1
 
