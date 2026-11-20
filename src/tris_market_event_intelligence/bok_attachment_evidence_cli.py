@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections import Counter
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -218,12 +219,28 @@ def acquire(articles: list[dict], readiness: dict, client: httpx.Client) -> dict
     targets = [index[x["articleId"]] for x in rows
                if x.get("sourceReadiness") == "SOURCE_REVIEW_REQUIRED"]
     evidence = [capture(x, client) for x in targets]
+    attachment_states = Counter(
+        item.get("extractionStatus", "UNKNOWN")
+        for article in evidence for item in article["attachments"]
+    )
+    retrieval_errors = Counter(
+        item["errorCode"]
+        for article in evidence for item in article["attachments"]
+        if item.get("errorCode")
+    )
+    unresolved = Counter(
+        link.get("reason", "UNKNOWN")
+        for article in evidence for link in article["unresolvedLinks"]
+    )
     return {
         "schemaVersion": "bok_attachment_evidence_v1",
         "originalHoldoutSha256": readiness.get("originalHoldoutSha256"),
         "articleCount": len(articles), "targetedCount": len(targets),
         "statusCounts": {s: sum(x["status"] == s for x in evidence)
                          for s in sorted({x["status"] for x in evidence})},
+        "attachmentStatusCounts": dict(sorted(attachment_states.items())),
+        "retrievalErrorCounts": dict(sorted(retrieval_errors.items())),
+        "unresolvedLinkCounts": dict(sorted(unresolved.items())),
         "pointInTimeCertified": False, "priceDataAccessed": False,
         "originalPredictionsModified": False, "sourceDbModified": False,
         "articles": evidence,
