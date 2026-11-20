@@ -186,7 +186,7 @@ def validate_semantic_interpretation(
                 or any(not isinstance(v, str) for v in values)):
             raise ValueError("SEMANTIC_UNCERTAINTY_SCHEMA_INVALID")
     if not isinstance(response["eventDescription"], str):
-        raise ValueError("SEMANTIC_EVENT_DESCRIPTION_INVALID")
+        raise TypeError("SEMANTIC_EVENT_DESCRIPTION_INVALID")
     allowed_status = {"REPORTED", "OFFICIAL", "ALLEGED", "DENIED"}
     facts = []
     for fact in fact_rows:
@@ -284,5 +284,5 @@ def parse_semantic_response(raw: str) -> dict[str, Any]:
     except (ValueError, TypeError) as exc:
         raise ValueError("SEMANTIC_JSON_INVALID") from exc
     if not isinstance(parsed, dict):
-        raise ValueError("SEMANTIC_JSON_NOT_OBJECT")
+        raise TypeError("SEMANTIC_JSON_NOT_OBJECT")
     return parsed
