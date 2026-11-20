@@ -74,8 +74,8 @@ def review_sector_hypothesis(
               "영업이익", "소비지출", "소매판매", "매출", "부실률",
               "net interest margin",
           ))):
-            notes.append("MONEY_STOCK_NOT_SECTOR_EARNINGS")
-            revised = "UNKNOWN"
+        notes.append("MONEY_STOCK_NOT_SECTOR_EARNINGS")
+        revised = "UNKNOWN"
 
     # Preserve model-authored reasoning separately when its conclusion was gated.
     # Explanations must not claim a positive/negative result for an UNKNOWN row.
