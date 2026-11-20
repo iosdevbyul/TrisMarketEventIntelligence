@@ -42,7 +42,13 @@ def periods(text: str) -> set[str]:
 
 def compare_claim(text: str, quote: str, source_numbers: set[tuple[str, str]]) -> dict:
     claim = numeric_mentions(text)
-    quote_mentions = {(m["value"], m["unit"]) for m in numeric_mentions(quote)}
+    quote_numeric_mentions = numeric_mentions(quote)
+    quote_mentions = {(m["value"], m["unit"]) for m in quote_numeric_mentions}
+    claimed_mentions = {(m["value"], m["unit"]) for m in claim}
+    omitted_quote_numbers = [
+        mention for mention in quote_numeric_mentions
+        if (mention["value"], mention["unit"]) not in claimed_mentions
+    ]
     source_periods = periods(quote)
     claimed_periods = periods(text)
     # If explicit text states contradictory comparison bases, flag review.
@@ -60,6 +66,9 @@ def compare_claim(text: str, quote: str, source_numbers: set[tuple[str, str]]) -
         entries.append({**mention, "evidenceStatus": state})
     return {
         "numericClaims": entries,
+        "sourceQuotedNumericCount": len(quote_numeric_mentions),
+        "sourceQuotedNumbersNotRepeated": omitted_quote_numbers[:MAX_FINDINGS],
+        "sourceQuotedNumberOmissionReview": bool(omitted_quote_numbers),
         "comparisonPeriodInQuotedEvidence": sorted(source_periods),
         "comparisonPeriodInInterpretation": sorted(claimed_periods),
         "comparisonPeriodConflict": period_contradiction,
@@ -141,6 +150,10 @@ def audit(semantic: dict[str, Any], inventory: dict[str, Any]) -> dict[str, Any]
         "schemaVersion": "bok_model_numeric_crosscheck_v1",
         "originalHoldoutSha256": cohort, "articleCount": len(results),
         "reviewStatusCounts": dict(sorted(counts.items())),
+        "sourceQuoteNumberOmissionReviewCount": sum(
+            claim["sourceQuotedNumberOmissionReview"]
+            for article in results for claim in article["numericClaimReviews"]
+        ),
         "modelWasRerun": False, "priceDataAccessed": False,
         "originalPredictionsModified": False, "pointInTimeCertified": False,
         "independentlyGoldLabeled": False,
@@ -153,7 +166,13 @@ def main() -> None:
     parser.add_argument("--semantic-report", type=Path, required=True)
     parser.add_argument("--numeric-inventory", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--examples", type=int, default=8,
+        help="Show up to N source-quote number omissions or factual-review cases",
+    )
     args = parser.parse_args()
+    if not 0 <= args.examples <= 50:
+        parser.error("--examples must be between 0 and 50")
     for path in (args.semantic_report, args.numeric_inventory):
         if not path.is_file() or path.is_symlink():
             parser.error("Missing or unsafe input")
@@ -166,6 +185,24 @@ def main() -> None:
         json.dump(result, handle, indent=2, ensure_ascii=False)
     print(json.dumps({k: v for k, v in result.items() if k != "articles"},
                      ensure_ascii=False))
+    shown = 0
+    for article in result["articles"]:
+        for claim in article["numericClaimReviews"]:
+            if shown >= args.examples:
+                return
+            if (not claim["sourceQuotedNumberOmissionReview"]
+                    and claim["reviewStatus"] not in {
+                        "PERIOD_CONFLICT_REVIEW", "NUMERIC_SOURCE_REVIEW"
+                    }):
+                continue
+            print(json.dumps({
+                "articleId": article["articleId"],
+                "location": claim["location"],
+                "reviewStatus": claim["reviewStatus"],
+                "sourceQuotedNumbersNotRepeated": claim["sourceQuotedNumbersNotRepeated"][:8],
+                "sourceQuote": claim["sourceQuote"],
+            }, ensure_ascii=False))
+            shown += 1
 
 
 if __name__ == "__main__":
