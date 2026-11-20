@@ -19,16 +19,16 @@ QUANTITY = re.compile(
     r"(?<![\w.])(?P<sign>[-+−]?)\s*(?P<number>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
     r"\s*(?P<unit>조\s*\d+(?:\.\d+)?\s*억\s*원|조\s*원|억\s*\d+(?:\.\d+)?\s*만\s*원|"
     r"억원|억\s*원|만원|만\s*원|원|달러|퍼센트포인트|%p|bps|bp|%|％|퍼센트)?",
-    re.I,
+    re.IGNORECASE,
 )
 COMPARISONS = {
-    "QOQ": re.compile(r"전기\s*대비|전분기\s*대비|quarter.on.quarter|quarter.over.quarter|\bqoq\b", re.I),
-    "YOY": re.compile(r"전년\s*동기\s*대비|전년\s*동월\s*대비|전년\s*대비|year.on.year|year.over.year|\byoy\b", re.I),
-    "MOM": re.compile(r"전월\s*대비|month.on.month|month.over.month|\bmom\b", re.I),
+    "QOQ": re.compile(r"전기\s*대비|전분기\s*대비|quarter.on.quarter|quarter.over.quarter|\bqoq\b", re.IGNORECASE),
+    "YOY": re.compile(r"전년\s*동기\s*대비|전년\s*동월\s*대비|전년\s*대비|year.on.year|year.over.year|\byoy\b", re.IGNORECASE),
+    "MOM": re.compile(r"전월\s*대비|month.on.month|month.over.month|\bmom\b", re.IGNORECASE),
 }
 SIGNS = {
-    "INCREASE": re.compile(r"증가|상승|확대|올랐|늘었", re.I),
-    "DECREASE": re.compile(r"감소|하락|축소|내렸|줄었", re.I),
+    "INCREASE": re.compile(r"증가|상승|확대|올랐|늘었", re.IGNORECASE),
+    "DECREASE": re.compile(r"감소|하락|축소|내렸|줄었", re.IGNORECASE),
 }
 SCALES = {"조원": Decimal(10)**12, "억원": Decimal(10)**8,
           "만원": Decimal(10)**4, "원": Decimal(1)}
@@ -114,7 +114,7 @@ def audit_attachment_report(report: dict[str, Any]) -> dict[str, Any]:
                 continue
             extracted = entry.get("extractedText")
             if not isinstance(extracted, str):
-                raise ValueError("MISSING_EXTRACTED_TEXT")
+                raise TypeError("MISSING_EXTRACTED_TEXT")
             digest = hashlib.sha256(extracted.encode()).hexdigest()
             if digest != entry.get("extractedTextSha256"):
                 raise ValueError("EXTRACTED_TEXT_HASH_MISMATCH")
