@@ -175,7 +175,7 @@ def audit_article(article: dict[str, Any]) -> dict[str, Any]:
     uncited_numbers: set[str] = set()
     for mechanism in mechanisms:
         reasoning = str(mechanism.get("reasoning") or "")
-        for value in re.findall(r"(?<![\\w])\\d[\\d,]*(?:\\.\\d+)?%?", reasoning):
+        for value in re.findall(r"(?<![\w])\d[\d,]*(?:\.\d+)?%?", reasoning):
             compact = value.rstrip(",").replace(",", "")
             if (len(compact.replace(".", "").replace("%", "")) >= 3
                     and compact not in {"2024", "2025", "2026", "2027"}
