@@ -12,7 +12,7 @@ import os
 import re
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin
 
 import httpx
 
