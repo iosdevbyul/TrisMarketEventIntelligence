@@ -12,7 +12,7 @@ CLAIM_VERBS = re.compile(
     r"증가|감소|상승|하락|확대|축소|개선|악화|성장|둔화|전망|기록|발표|"
     r"유지|계약|체결|판매|투자|수출|수입|인상|인하|흑자|적자|"
     r"rose|fell|grew|declined|increased|decreased|revenue|profit|loss|"
-    r"agreement|contract|signed|guidance|forecast", re.I
+    r"agreement|contract|signed|guidance|forecast", re.IGNORECASE
 )
 LETTER = re.compile(r"[가-힣A-Za-z]")
 NUMBER = re.compile(r"\d")
