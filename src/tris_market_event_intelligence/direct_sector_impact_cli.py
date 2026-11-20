@@ -144,6 +144,15 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
         if issuer is not None and sector != issuer:
             excluded.append({"sector": sector, "reasonCode": "UNRELATED_SEC_ISSUER_SECTOR"})
             continue
+        if (str((article or {}).get("source") or "").startswith("bok_")
+                and sector == "CONSUMER" and direction == "POSITIVE"
+                and ("M2" in quote or "광의통화" in quote)
+                and not any(x in quote for x in ("소비", "매출", "소매판매"))):
+            excluded.append({
+                "sector": sector,
+                "reasonCode": "MONEY_SUPPLY_NOT_PROOF_OF_CONSUMER_DEMAND",
+            })
+            continue
         validated.append({
             **row,
             "sourceStart": source.find(quote),
