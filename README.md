@@ -609,3 +609,63 @@ failures remain INVALID_MODEL_ANALYSIS, never silently counted as successes.
 
 An independently annotated semantic gold dataset is still necessary
 before declaring the news understanding stage fully validated.
+### Semantic 30-case failure root causes and evidence-ID + exhibit follow-up
+
+The first real source-only run on the frozen 30 events produced 11 COMPLETE,
+8 NEEDS_CATEGORY_REVIEW, and 11 INVALID_MODEL_ANALYSIS.
+Those 11 invalid outputs were 6 free-form quote mismatches, 3 truncated
+model generations, and 2 unsupported economic-direction assertions.
+The eight category conflicts arose when the model treated bank money
+supply and lending-rate *statistics* as monetary-policy decisions, and
+misclassified an official NVIDIA material agreement as monetary policy.
+Moreover, one bank financial-stability REVIEW had been mislabeled by
+the prior heuristic as a policy DECISION even though the model matched it.
+Thus merely raising accepted count or asserting 11/30 factual accuracy
+would be misleading.
+
+The new source-grounded semantic input protocol avoids rewriting quotes
+inside Gemma4: each document is pre-segmented deterministically into
+source-identical evidence snippets (E001, E002, etc.). Gemma4 selects
+evidence IDs for each factual source statement and each *hypothetical*
+economic transmission mechanism. The evaluator resolves IDs to exact
+source substrings with offsets, rejects unknown IDs, preserves unknown
+direction when supported, and maintains full per-article failure codes.
+One retry uses a smaller excerpt set only if generation was truncated.
+Money aggregates, reported bank interest rates and financial stability
+reviews are separate from actual central-bank policy decisions.
+
+SEC Form 8-K Item 2.02 is often a filing COVER: earnings amounts and
+forward guidance are in EX-99.1/EX-99.2; for Item 1.01 material contracts
+the details may be in EX-10.1. The optional --sec-exhibits mode fetches
+these actual SEC archived exhibits under the same verified issuer accession
+with bounded request/document size and official exhibit URL checks.
+It records original bytes' SHA256 and the content extraction hash in the
+new immutable result, without mutating existing news/learning databases.
+An inaccessible or absent exhibit is explicitly recorded, NEVER fabricated.
+SEC accepted time is still NOT necessarily the first issuer press release;
+the source contents and their historic PIT status remain unverified.
+
+Run this NEW v2 analysis once on the frozen 30 articles, with a real SEC
+identifying User-Agent (including your own contact email):
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+export SEC_USER_AGENT="TrisMarketEventIntelligence real-contact@example.com"
+
+python -m tris_market_event_intelligence.source_grounded_semantic_replay_cli \
+  --holdout-result "$DATA/market-event-sec-30-results-v1.json" \
+  --model gemma4:e2b \
+  --sec-exhibits \
+  --output "$DATA/market-event-sec-30-semantic-v2.json"
+```
+
+Replace real-contact@example.com with your genuine email; do not commit
+contact information to Git. This read-only source replay does not use or
+requery stock-price outcomes. It returns both quoteAndSchemaValidated
+and independently distinguishable COMPLETE vs NEEDS_CATEGORY_REVIEW
+counts, rejectionCodeCounts, categoryDisagreementPairs, and
+officialSECExhibitStatusCounts. A high structural completion rate would
+still NOT establish the true factual accuracy of the economic mechanism.
+Keep the historical v1 semantic JSON and prior price outcome report
+unchanged for transparent A/B comparisons. Check the new 30-case result
+before declaring the article analysis stage complete.
