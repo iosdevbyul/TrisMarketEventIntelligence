@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from tris_market_event_intelligence.event_evidence_policy import plain_text
 from tris_market_event_intelligence.source_grounded_semantic_analysis import (
     SEMANTIC_SCHEMA,
 )
@@ -70,9 +69,12 @@ Each economic mechanism is a HYPOTHESIS and must reference the evidenceId
 that supports its premise. An excerpt ID only proves quoted source presence,
 NOT economic direction or a causal effect. No invented statistics, figures,
 asset prices, consensus, market reaction or subsequent knowledge.
-A monetary policy DECISION must be an actual central bank policy action:
-M2 monetary aggregate, bank lending/deposit rates, and periodic financial
-stability reviews are NOT monetary policy decisions. Official issuer Form
+Classify by the event that actually occurred, not by words appearing in the
+source organization's name. An M2 change is ECONOMIC_INDICATOR_RELEASE.
+Observed bank lending/deposit rates are ECONOMIC_INDICATOR_RELEASE.
+A central-bank financial-stability inspection without a policy-rate action
+is FINANCIAL_STABILITY_REVIEW. MONETARY_POLICY_DECISION requires a specific
+adopted central-bank policy action, not a report or committee meeting. Official issuer Form
 8-K Item 1.01 is a corporate agreement, never monetary policy. Item 2.02
 is an earnings disclosure, but its cover does not give revenue/EPS figures;
 if the referenced Exhibit 99.1 is not available, record missingEvidence.
@@ -119,8 +121,10 @@ def source_excerpts(
     Scores are fixed and text-only. Chunks are sorted back into original
     document order. Source index order and excerpt text are immutable.
     """
-    clean = plain_text(body)
-    chunks = _chunks(clean)
+    # The caller passes a canonical text snapshot. Re-parsing it as HTML here
+    # silently deletes angle-bracketed financial text and breaks quote offsets.
+    # Evidence must be a literal slice of exactly that snapshot.
+    chunks = _chunks(body)
     if len(chunks) <= max_excerpts:
         return [
             {"evidenceId": f"E{i:03d}", "text": chunk}
@@ -151,6 +155,19 @@ def source_excerpts(
         {"evidenceId": f"E{i + 1:03d}", "text": chunks[i]}
         for i in sorted(selected)
     ]
+
+
+def schema_for_excerpts(excerpts: list[dict[str, str]]) -> dict[str, Any]:
+    """Constrain both model evidence ID fields to this article's actual IDs."""
+    import copy
+
+    ids = [item["evidenceId"] for item in excerpts]
+    if len(ids) != len(set(ids)) or not ids:
+        raise ValueError("NO_UNIQUE_SOURCE_EVIDENCE_IDS")
+    schema = copy.deepcopy(EXCERPT_SCHEMA)
+    for field in ("sourceStatements", "economicMechanisms"):
+        schema["properties"][field]["items"]["properties"]["evidenceId"]["enum"] = ids
+    return schema
 
 
 def expand_evidence_ids(
