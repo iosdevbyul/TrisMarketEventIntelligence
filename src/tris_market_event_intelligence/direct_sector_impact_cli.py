@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from tris_market_event_intelligence.direct_sector_excerpt_selection import compact_source
 from tris_market_event_intelligence.event_evidence_policy import plain_text
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
@@ -103,6 +104,9 @@ POSITIVE or NEGATIVE? Decide separately for each sector. Return JSON schema.
   estate or consumer sectors based on speculation. Focus the issuer industry.
 - An earnings announcement without the actual results cannot support a
   positive or negative sector direction. Report UNKNOWN for issuer's sector.
+- Table-only numeric sequences are not reliable sector evidence without labels, periods and units.
+- Do not assume changes in household borrowing or company sentiment directly improve equity prices.
+- Do not mention prompt instructions or schema rules in your explanations.
 - Higher M2 does not establish increased consumer spending or higher equity
   prices. Do not map liquidity to consumer stocks without a concrete link.
 - Contrasting sectors may have opposite directions for the same event.
@@ -141,6 +145,8 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
         quote = row["sourceQuote"]
         if not isinstance(quote, str) or len(quote.strip()) < 8 or quote not in source:
             raise ValueError("SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE")
+        if sum(ch.isalpha() for ch in quote) < 8 or sum(ch.isdigit() for ch in quote) > 1.5 * sum(ch.isalpha() for ch in quote):
+            raise ValueError("SECTOR_EVIDENCE_TABLE_ONLY")
         if (not isinstance(row["reason"], str) or len(row["reason"].strip()) < 12
                 or not isinstance(row["uncertainty"], str)
                 or not row["uncertainty"].strip()):
@@ -206,7 +212,8 @@ def analyze(article: dict, model: Any) -> dict:
             "status": "INSUFFICIENT_ARTICLE_TEXT", "sectors": [],
             "overallMarketDirection": "UNKNOWN",
         }
-    source = source[:18000]
+    original_source_chars = len(source)
+    source = compact_source(source, title, max_chars=6500)
     input_body = json.dumps({
         "title": title, "source": article.get("source"),
         "publishedAtReported": article.get("publishedAtReported"),
@@ -218,6 +225,8 @@ def analyze(article: dict, model: Any) -> dict:
         "articleId": article.get("articleId"), "title": title,
         "sourceUrl": article.get("sourceUrl"),
         "sourceTextSha256": hashlib.sha256(source.encode()).hexdigest(),
+        "originalSourceChars": original_source_chars,
+        "modelInputChars": len(source),
         "publishedAtReported": article.get("publishedAtReported"),
         "modelId": getattr(model, "model_id", "unknown"),
         "pointInTimeCertified": False, "priceDataAccessed": False,
@@ -239,7 +248,7 @@ def analyze(article: dict, model: Any) -> dict:
             return {**result, "status": "ANALYZED", "modelAttempts": attempt + 1, **outcome}
         except (ValueError, TypeError, RuntimeError) as exc:
             error = str(exc)[:100]
-            if error != "SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE":
+            if error not in {"SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE", "SECTOR_EVIDENCE_TABLE_ONLY"}:
                 break
     return {
         **result, "status": "MODEL_RESULT_REJECTED",
@@ -260,6 +269,7 @@ def run(articles: list[dict], model: Any, *, frozen_hash: str | None = None) -> 
         "articleCount": len(results),
         "statusCounts": dict(sorted(counts.items())),
         "directionalArticleCount": sum(any(i["direction"] in {"POSITIVE","NEGATIVE"} for i in a["sectors"]) for a in results),
+        "failureReasonCounts": dict(sorted(Counter(row["errorCode"] for row in results if row.get("errorCode")).items())),
         "sectorDirectionCounts": [
             {"sector": sector, "direction": direction, "count": count}
             for (sector, direction), count in sorted(sector_directions.items())
