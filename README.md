@@ -709,3 +709,54 @@ must still be present. Compare per-article evidence, not just COMPLETE
 counts. The remaining taxonomy disagreements should be audited rather than
 automatically converted to matching classifications, and price outcomes
 remain off-limits in this semantic-only stage.
+
+### Semantic v3 real-case interpretation audit (quality != source-schema validation)
+
+The 2026-11-20 user-provided v3 immutable result has **30/30 structurally
+quote-validated articles** but only **23 with matching policy/model categories**.
+Among seven conflicts, all were Form 8-K Item 2.02 earnings releases
+incorrectly labeled by Gemma4 as CORPORATE_ACTION_OR_CONTRACT. However,
+even many status COMPLETE results contain real semantic deficiencies:
+
+- BOK per-borrower mortgage amount **2억 2,939만원** was rendered by the model
+  as **2.2939 million KRW**, a factor-100 unit error.
+- BOK quarterly National Income / nominal GDP figures were sometimes described
+  as year-over-year when the quoted announcement said 전기대비 (quarter-on-quarter).
+- BOK producer-price methodology explanations included numbers absent from
+  the selected source quotes (e.g. 600.486 rather than the quoted category
+  weight 480.8); unquoted numbers need inspection against the full original
+  source, not automatic correction.
+- An official BOK industrial input-output-table method update was marked
+  ALLEGED and treated as an investable directional economic shock.
+- SEC issuer earnings, financing and guarantee obligations were occasionally
+  attributed to BROAD_MARKET or INDUSTRY with no company-specific exposure;
+  Nvidia's $105bn maximum guarantee obligation was described chiefly as
+  positive infrastructure growth without adequate issuer liability analysis.
+- Some SEC filing inline-XBRL element names were interpreted as newly
+  issued actual debt securities; taxonomy member identifiers are NOT
+  proof a new security was issued.
+
+Use the new independent, **zero-LLM, zero-market-data, read-only** audit to
+identify each article's issues without changing original model output or
+falsely inflating the COMPLETE percentage:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.semantic_quality_audit_cli \
+  --semantic-report "$DATA/market-event-sec-30-semantic-v3.json" \
+  --output "$DATA/market-event-sec-30-quality-audit-v1.json"
+```
+
+The result reports qualityStatusCounts, findingCodeCounts, and per-article
+findings. It distinguishes CRITICAL factual review from further
+semantic uncertainty and STRUCTURE_ONLY_NO_GOLD_VALIDATION. **Zero flags
+does not mean a fact has been independently verified.** The audit flags
+issuer mapping anomalies, SEC earnings classification disagreements,
+machine metadata, unsupported source numbers, Korean currency unit conversion,
+QoQ/YoY confusion, official-source allegation labels, unsupported cross-border
+market mappings, missing attached material, and vague uncertainty.
+These are review triggers, not a source gold standard or learning labels.
+
+Do not rerun the frozen 30-case Gemma4 experiment merely to produce this
+review. Article-understanding completion is BLOCKED pending checking numeric
+facts and economic transmission paths against the actual documents.
