@@ -43,7 +43,7 @@ def numeric_mentions(text: str) -> list[dict[str, str]]:
         found.append((m.start(), {
             "value": _money_compound_value(m),
             "unit": "KRW_COMPOUND_WON",
-            "verbatim": m.group(0),
+            "verbatim": m.group(0), "sourceStart": m.start(),
         }))
     for match in QUANTITY.finditer(text):
         if any(match.start() < end and match.end() > start for start, end in spans):
@@ -56,12 +56,28 @@ def numeric_mentions(text: str) -> list[dict[str, str]]:
             value = "-" + value
         found.append((match.start(), {
             "value": value, "unit": UNITS.get(unit, unit),
-            "verbatim": match.group(0),
+            "verbatim": match.group(0), "sourceStart": match.start(),
         }))
     return [item for _, item in sorted(found, key=lambda row: row[0])]
 
 def periods(text: str) -> set[str]:
     return {key for key, regex in COMPARISONS.items() if regex.search(text)}
+
+
+def nearby_period(text: str, mention: dict) -> str | None:
+    """Conservative nearest preceding comparison label, not paragraph-wide scope."""
+    start = mention["sourceStart"]
+    candidates = [
+        (match.end(), label)
+        for label, pattern in COMPARISONS.items()
+        for match in pattern.finditer(text)
+        if 0 <= start - match.end() <= 55
+    ]
+    if not candidates:
+        return None
+    position = max(end for end, _ in candidates)
+    closest = {label for end, label in candidates if end == position}
+    return next(iter(closest)) if len(closest) == 1 else None
 
 
 def compare_claim(
@@ -81,6 +97,24 @@ def compare_claim(
     selective_summary = len(distinct_source_numbers) > 1
     source_periods = periods(quote)
     claimed_periods = periods(text)
+    value_period_conflicts = []
+    for item in claim:
+        claim_label = nearby_period(text, item)
+        if claim_label is None:
+            continue
+        possible_sources = {
+            nearby_period(quote, source_item)
+            for source_item in quote_numeric_mentions
+            if source_item["value"] == item["value"]
+            and source_item["unit"] == item["unit"]
+        }
+        possible_sources.discard(None)
+        if len(possible_sources) == 1 and claim_label not in possible_sources:
+            value_period_conflicts.append({
+                "verbatim": item["verbatim"],
+                "claimedComparison": claim_label,
+                "sourceComparison": next(iter(possible_sources)),
+            })
     # If explicit text states contradictory comparison bases, flag review.
     period_contradiction = bool(source_periods and claimed_periods
                                 and source_periods.isdisjoint(claimed_periods))
@@ -105,8 +139,10 @@ def compare_claim(
         "comparisonPeriodInQuotedEvidence": sorted(source_periods),
         "comparisonPeriodInInterpretation": sorted(claimed_periods),
         "comparisonPeriodConflict": period_contradiction,
+        "valuePeriodConflicts": value_period_conflicts,
         "reviewStatus": (
-            "PERIOD_CONFLICT_REVIEW" if period_contradiction
+            "VALUE_PERIOD_CONFLICT_REVIEW" if value_period_conflicts
+            else "PERIOD_CONFLICT_REVIEW" if period_contradiction
             else "NUMERIC_SOURCE_REVIEW" if any(
                 n["evidenceStatus"] == "NO_EXACT_UNIT_VALUE_MATCH" for n in entries
             )
@@ -232,7 +268,8 @@ def main() -> None:
                 return
             if (not claim["sourceQuotedNumberOmissionReview"]
                     and claim["reviewStatus"] not in {
-                        "PERIOD_CONFLICT_REVIEW", "NUMERIC_SOURCE_REVIEW"
+                        "VALUE_PERIOD_CONFLICT_REVIEW", "PERIOD_CONFLICT_REVIEW",
+                        "NUMERIC_SOURCE_REVIEW"
                     }):
                 continue
             print(json.dumps({
