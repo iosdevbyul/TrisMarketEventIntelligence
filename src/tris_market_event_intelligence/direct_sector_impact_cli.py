@@ -209,17 +209,29 @@ def analyze(article: dict, model: Any) -> dict:
         "modelId": getattr(model, "model_id", "unknown"),
         "pointInTimeCertified": False, "priceDataAccessed": False,
     }
-    try:
-        raw = json.loads(model.generate_json(system=SYSTEM, user=input_body, schema=SCHEMA))
-        outcome = validate(raw, source)
-        return {**result, "status": "ANALYZED", **outcome}
-    except (ValueError, TypeError, RuntimeError) as exc:
-        return {
-            **result, "status": "MODEL_RESULT_REJECTED",
-            "errorCode": str(exc)[:100], "sectors": [],
-            "overallMarketDirection": "UNKNOWN",
-        }
-
+    for attempt in range(2):
+        try:
+            payload = json.loads(input_body)
+            if attempt:
+                payload["correction"] = (
+                    "Copy each sourceQuote as a SHORT exact contiguous substring "
+                    "of sourceBody, never a paraphrase. Do not invent source text."
+                )
+            raw = json.loads(model.generate_json(
+                system=SYSTEM, user=json.dumps(payload, ensure_ascii=False),
+                schema=SCHEMA,
+            ))
+            outcome = validate(raw, source, article=article)
+            return {**result, "status": "ANALYZED", "modelAttempts": attempt + 1, **outcome}
+        except (ValueError, TypeError, RuntimeError) as exc:
+            error = str(exc)[:100]
+            if error != "SECTOR_EVIDENCE_QUOTE_NOT_IN_ARTICLE":
+                break
+    return {
+        **result, "status": "MODEL_RESULT_REJECTED",
+        "errorCode": error, "modelAttempts": attempt + 1,
+        "sectors": [], "overallMarketDirection": "UNKNOWN",
+    }
 
 def run(articles: list[dict], model: Any, *, frozen_hash: str | None = None) -> dict:
     results = [analyze(article, model) for article in articles]
