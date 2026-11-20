@@ -97,3 +97,35 @@ def test_percentage_point_and_basis_point_units_are_not_percentages():
     assert [row["unit"] for row in rows] == [
         "PERCENT_POINT", "BASIS_POINT", "PERCENT",
     ]
+
+
+def test_quote_number_omission_is_review_not_factual_failure():
+    result = compare_claim(
+        "전기 대비 증가했다는 설명입니다.",
+        "전기 대비 2.5% 증가했습니다.",
+        {("2.5", "PERCENT")},
+    )
+    assert result["reviewStatus"] == "NO_EXPLICIT_NUMERIC_CLAIM"
+    assert result["sourceQuotedNumberOmissionReview"] is True
+    assert result["sourceQuotedNumbersNotRepeated"][0]["verbatim"].strip() == "2.5%"
+    assert result["factualCorrectnessIndependentlyVerified"] is False
+
+
+def test_quote_number_presence_does_not_create_omission_review():
+    result = compare_claim(
+        "전기 대비 2.5% 증가했습니다.",
+        "전기 대비 2.5% 증가했습니다.",
+        set(),
+    )
+    assert result["sourceQuotedNumberOmissionReview"] is False
+
+
+def test_report_exposes_omission_count_without_changing_original_direction():
+    semantic, inventory = fixtures()
+    semantic["articles"][0]["semanticAnalysis"]["modelAnalysis"]["sourceStatements"][0][
+        "interpretation"
+    ] = "전기 대비 증가했음을 설명합니다."
+    result = audit(semantic, inventory)
+    assert result["sourceQuoteNumberOmissionReviewCount"] >= 1
+    assert result["articles"][0]["originalEconomicDirection"] == "UNKNOWN"
+    assert result["originalPredictionsModified"] is False
