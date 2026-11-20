@@ -40,7 +40,7 @@ def valid() -> dict:
     return {
         "eventCategory": "EARNINGS_OR_GUIDANCE",
         "eventDescription": "Company released quarterly results",
-        "confirmedFacts": [
+        "sourceStatements": [
             {"quote": quote, "interpretation": "Revenue amount is disclosed",
              "factualStatus": "OFFICIAL"},
         ],
@@ -60,8 +60,10 @@ def test_semantic_claims_require_true_verbatim_source_quote():
     output = validate_semantic_interpretation(article(), valid())
     assert output["status"] == "SOURCE_GROUNDED_NOT_FACTUALLY_ADJUDICATED"
     assert output["issuerProvenance"]["symbol"] == "AMD"
+    assert output["economicTargetLinks"][0]["target"] == "AMD"
+    assert output["economicTargetLinks"][0]["priceDirectionUnverified"] is True
     assert output["priceDirectionPredicted"] is False
-    fact = output["modelAnalysis"]["confirmedFacts"][0]
+    fact = output["modelAnalysis"]["sourceStatements"][0]
     body = article()["summary"]
     assert body[fact["sourceStart"]:fact["sourceEnd"]] == fact["quote"]
     assert len(output["sourceBodySha256"]) == 64
@@ -69,7 +71,7 @@ def test_semantic_claims_require_true_verbatim_source_quote():
 
 def test_invented_numeric_claim_and_mechanism_are_rejected():
     result = valid()
-    result["confirmedFacts"][0]["quote"] = (
+    result["sourceStatements"][0]["quote"] = (
         "The company beat consensus EPS expectations by 45 percent."
     )
     with pytest.raises(ValueError, match="SEMANTIC_FACT_QUOTE_NOT_IN_SOURCE"):
