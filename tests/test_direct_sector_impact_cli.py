@@ -1,7 +1,7 @@
 """Core contract: full article to model, free-form themes, unchanged judgments."""
 import json
 
-from tris_market_event_intelligence.direct_sector_impact_cli import analyze, run, validate
+from tris_market_event_intelligence.direct_sector_impact_cli import SYSTEM, analyze, run, validate
 
 
 class FakeModel:
@@ -68,3 +68,10 @@ def test_report_preserves_per_article_results():
     assert report["directionalArticleCount"] == 1
     assert report["sectorDirectionCounts"][0]["sector"] == "자유로운 세부 테마"
     assert report["originalPredictionsModified"] is False
+
+
+def test_prompt_asks_for_real_industries_not_business_activities():
+    assert "기업 활동이나 사건을 별도의 섹터 이름으로 만들지 마세요" in SYSTEM
+    assert "미리 정해진 섹터 목록이나 개수 제한은 없습니다" in SYSTEM
+    assert "이름과 이유는 한국어로 작성하세요" in SYSTEM
+    assert "POSITIVE" in SYSTEM and "NEGATIVE" in SYSTEM and "NEUTRAL" in SYSTEM
