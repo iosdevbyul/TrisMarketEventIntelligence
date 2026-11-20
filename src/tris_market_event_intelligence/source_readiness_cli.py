@@ -20,7 +20,7 @@ ATTACHMENT_ONLY = re.compile(
     r"(?:자세한 내용|상세 내용|구체적인 내용|세부 내용|통계표|원문|전문)"
     r".{0,35}(?:붙임|첨부파일|첨부자료|별첨|attachment|attached)"
     r"|(?:붙임|첨부파일|첨부자료|별첨).{0,35}(?:참고|참조|확인)",
-    re.I,
+    re.IGNORECASE,
 )
 
 
@@ -48,12 +48,12 @@ def attachment_evidence(body: str, quality: dict[str, Any]) -> dict[str, Any]:
         "attachmentBytesIndependentlyVerified": False,
     }
 
-NUMBERS = re.compile(r"(?<!\w)(?:[$₩€£]\s*)?\d[\d,.]*(?:\s*(?:%|퍼센트|bp|bps|조|억|만|원|달러|USD|KRW|billion|million))?", re.I)
+NUMBERS = re.compile(r"(?<!\w)(?:[$₩€£]\s*)?\d[\d,.]*(?:\s*(?:%|퍼센트|bp|bps|조|억|만|원|달러|USD|KRW|billion|million))?", re.IGNORECASE)
 
 
 def timestamp_status(value: Any) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
         return "REPORTED_TIMESTAMP_ONLY" if parsed.tzinfo else "TIMESTAMP_TIMEZONE_MISSING"
     except (ValueError, AttributeError):
         return "INVALID_REPORTED_TIMESTAMP"
