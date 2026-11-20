@@ -118,9 +118,9 @@ def test_official_sec_index_exhibit_urls_reject_other_ciks_and_hosts():
         b"<table>"
         b'<tr><td><a href="/Archives/edgar/data/2488/000000248826000072/'
         b'amd-q1-release.htm">release</a></td><td>EX-99.1</td></tr>'
-        '<tr><td><a href="https://evil.example.net/ex99.2.htm">'
+        b'<tr><td><a href="https://evil.example.net/ex99.2.htm">'
         b'wrong</a></td><td>EX-99.2</td></tr>'
-        '<tr><td><a href="/Archives/edgar/data/2488/000000248826000072/'
+        b'<tr><td><a href="/Archives/edgar/data/2488/000000248826000072/'
         b'amd-slide.htm">slides</a></td><td>EX-99.2</td></tr>'
         b"</table>"
     )
