@@ -23,6 +23,36 @@ SECTORS = (
     "REAL_ESTATE", "MATERIALS", "UTILITIES", "BROAD_MARKET",
 )
 DIRECTIONS = ("POSITIVE", "NEGATIVE", "NEUTRAL", "UNKNOWN")
+
+SEC_ISSUER_SECTORS = {
+    "1652044": "TECH", "2488": "SEMICONDUCTORS",
+    "1045810": "SEMICONDUCTORS", "789019": "TECH",
+    "1326801": "TECH", "320193": "TECH",
+}
+
+
+def primary_issuer_sector(article: dict) -> str | None:
+    name = str(article.get("source") or "")
+    if not name.startswith("sec_8k_"):
+        return None
+    cik = name.removeprefix("sec_8k_")
+    return SEC_ISSUER_SECTORS.get(str(int(cik))) if cik.isdigit() else None
+
+
+def is_cover_only(article: dict, source: str) -> bool:
+    if primary_issuer_sector(article) is None:
+        return False
+    if "ITEM 2.02" not in str(article.get("title") or "").upper():
+        return False
+    lower = source.lower()
+    return any(x in lower for x in (
+        "issuing a press release", "holding a conference call",
+        "furnished as exhibit", "results for the quarter ended",
+    )) and not any(x in lower for x in (
+        "total revenues were", "net income was", "earnings per share were",
+        "revenue increased", "revenue decreased",
+    ))
+
 SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -65,6 +95,12 @@ POSITIVE or NEGATIVE? Decide separately for each sector. Return JSON schema.
   sourceQuote to that sector and give a concrete uncertainty, in plain language.
 - Sector identification is by economic exposure, not by article publisher.
   Do not assign every sector. Use one or more only if there is a plausible link.
+- SEC Item 2.02 is a filing about its ISSUER, not unrelated energy, real
+  estate or consumer sectors based on speculation. Focus the issuer industry.
+- An earnings announcement without the actual results cannot support a
+  positive or negative sector direction. Report UNKNOWN for issuer's sector.
+- Higher M2 does not establish increased consumer spending or higher equity
+  prices. Do not map liquidity to consumer stocks without a concrete link.
 - Contrasting sectors may have opposite directions for the same event.
 - Do not invent company names, prices, statistics, dates, or news events.
   Separate a decision that has happened from a proposed or rumored decision.
