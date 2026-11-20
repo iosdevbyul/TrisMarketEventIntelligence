@@ -72,7 +72,7 @@ def test_redirect_is_not_followed():
     )) as client:
         result = capture(article(), client)
     assert result["status"] == "PAGE_RETRIEVAL_FAILED"
-    assert "REDIRECT_REQUIRES_REVIEW" in result["errorCode"]
+    assert result["errorCode"] == "UNSAFE_BOK_REDIRECT_DESTINATION"
 
 
 def test_only_review_needed_frozen_articles_are_requested():
