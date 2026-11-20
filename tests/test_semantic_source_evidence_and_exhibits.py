@@ -141,13 +141,13 @@ def test_real_exhibit_is_added_as_source_with_verifiable_sha_not_inferred_earnin
     index_html = (
         b"<table><tr><td><a href=\"amd-results.htm\">"
         b"Earnings press release</a></td><td>EX-99.1</td></tr></table>"
-    ).encode()
+    )
     actual_exhibit = (
         b"<html><body><h2>Quarterly Results</h2>"
         b"<p>AMD reported quarterly revenue of $8.2 billion and "
         b"net income of $1.4 billion for the quarter.</p>"
         b"</body></html>"
-    ).encode()
+    )
     requested = []
 
     def handler(request: httpx.Request) -> httpx.Response:
