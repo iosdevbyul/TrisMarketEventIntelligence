@@ -240,3 +240,22 @@ def test_directional_article_count_not_equal_analyzed_count():
     result = run([{"articleId": 1, "summary": NEWS}], model)
     assert result["statusCounts"] == {"ANALYZED": 1}
     assert result["directionalArticleCount"] == 0
+
+
+def test_hallucinated_no_article_message_is_not_scored_as_analyzed():
+    answer = {
+        "event": "No article or data was provided for analysis.",
+        "summary": "There is no information.",
+        "overallMarketDirection": "UNKNOWN",
+        "sectors": [],
+    }
+    class AbsentSourceModel(FakeModel):
+        def generate_json(self, *, system, user, schema):
+            self.calls += 1
+            return json.dumps(answer)
+
+    model = AbsentSourceModel(answer)
+    result = analyze({"articleId": 192, "summary": NEWS + NEWS}, model)
+    assert result["status"] == "MODEL_RESULT_REJECTED"
+    assert result["errorCode"] == "MODEL_FAILED_TO_READ_SOURCE"
+    assert model.calls == 2
