@@ -132,11 +132,24 @@ def test_replay_preserves_original_article_set_and_does_not_pass_price_labels(
         def generate_json(self, *, system, user, schema):
             payload = json.loads(user)
             calls.append(payload)
-            assert payload["sourceBody"] == row["summary"]
+            assert payload["sourceExcerpts"][0]["evidenceId"] == "E001"
+            assert payload["sourceExcerpts"][0]["text"] in row["summary"]
+            assert "sourceBody" not in payload
             assert "market" not in payload
             assert "actualDirection" not in payload
             assert "evaluation" not in payload
-            return json.dumps(valid())
+            response = valid()
+            response["sourceStatements"] = [
+                {"evidenceId": "E001", "interpretation": "Reported result",
+                 "factualStatus": "OFFICIAL"},
+            ]
+            response["economicMechanisms"] = [
+                {"evidenceId": "E001", "affectedScope": "ISSUER",
+                 "economicDirection": "MIXED",
+                 "reasoning": "Hypothesis: results may affect earnings",
+                 "uncertainty": "Consensus unavailable"},
+            ]
+            return json.dumps(response)
 
     target = tmp_path / "semantic-review.json"
     output = semantic_replay(
