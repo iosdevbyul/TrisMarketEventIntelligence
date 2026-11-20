@@ -129,3 +129,40 @@ def test_report_exposes_omission_count_without_changing_original_direction():
     assert result["sourceQuoteNumberOmissionReviewCount"] >= 1
     assert result["articles"][0]["originalEconomicDirection"] == "UNKNOWN"
     assert result["originalPredictionsModified"] is False
+
+
+def test_real_bok_money_is_not_misread_as_only_manwon():
+    rows = numeric_mentions("차주당 신규취급액은 2억 2,939만원, 증가폭은 1,653만원")
+    assert rows[0]["verbatim"] == "2억 2,939만원"
+    assert rows[0]["value"] == "229390000"
+    assert rows[0]["unit"] == "KRW_COMPOUND_WON"
+    assert rows[1]["value"] == "1653"
+    assert rows[1]["unit"] == "KRW_TEN_THOUSAND"
+    assert len(rows) == 2
+
+
+def test_real_bok_m2_two_comparison_bases_are_not_omission_errors():
+    quote = (
+        "M2는 전월대비 0.4% 증가 [원계열, 전년동월대비 +5.6%]"
+    )
+    result = compare_claim("전월대비 0.4% 증가", quote, set())
+    assert result["sourceQuotedNumberOmissionReview"] is False
+    assert result["sourceQuoteSelectiveSummary"] is True
+    assert result["comparisonPeriodConflict"] is False
+    assert result["comparisonPeriodInQuotedEvidence"] == ["MOM", "YOY"]
+
+
+def test_negative_percentage_does_not_match_positive_rate():
+    result = compare_claim("문화 서비스는 0.3% 증가", "문화 서비스는 -0.3% 감소", set())
+    assert result["reviewStatus"] == "NUMERIC_SOURCE_REVIEW"
+    assert result["numericClaims"][0]["evidenceStatus"] == "NO_EXACT_UNIT_VALUE_MATCH"
+
+
+def test_mechanism_explanation_may_summarize_single_number_without_omission_error():
+    result = compare_claim(
+        "금융환경 변화 가능성은 불확실합니다.",
+        "전월대비 0.4% 증가",
+        set(), fact_interpretation=False,
+    )
+    assert result["sourceQuotedNumberOmissionReview"] is False
+    assert result["sourceQuotedNumbersNotRepeated"][0]["value"] == "0.4"
