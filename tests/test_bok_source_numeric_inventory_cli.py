@@ -68,3 +68,23 @@ def test_duplicate_article_ids_rejected():
     }
     with pytest.raises(ValueError, match="DUPLICATE_ARTICLE_ID"):
         audit_attachment_report(report)
+
+
+def test_actual_bok_mortgage_compound_won_amount_is_not_split():
+    source = "차주당 신규취급액은 2억 2,939만원으로 전분기대비 1,653만원 증가"
+    rows = extract_quantities(source)
+    monetary = [row for row in rows if row["unit"] != "NOT_EXPLICIT"]
+    assert monetary[0]["verbatim"] == "2억 2,939만원"
+    assert monetary[0]["unit"] == "복합원"
+    assert monetary[0]["normalizedKrw"] == "229390000"
+    assert monetary[0]["numberText"] == "229390000"
+    assert monetary[1]["unit"] == "만원"
+    assert monetary[1]["numberText"] == "1,653"
+    assert len(monetary) == 2
+
+
+def test_bok_monthly_year_over_year_period_is_identified():
+    source = "M2는 전월대비 0.4% 증가 [원계열, 전년동월대비 +5.6%]"
+    rows = extract_quantities(source)
+    assert any("MOM" in row["comparisonCandidates"] for row in rows)
+    assert any("YOY" in row["comparisonCandidates"] for row in rows)
