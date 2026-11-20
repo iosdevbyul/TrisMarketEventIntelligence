@@ -13,6 +13,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from tris_market_event_intelligence.event_evidence_policy import plain_text
 from tris_market_event_intelligence.llm_runtime import LLMSettings
 from tris_market_event_intelligence.news_llm_factory import build_runtime
@@ -276,6 +278,8 @@ def main() -> None:
     choice.add_argument("--holdout-result", type=Path)
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--model", default="gemma4:e2b")
+    parser.add_argument("--bok-attachments", type=Path)
+    parser.add_argument("--sec-exhibits", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.limit < 1 or args.limit > 100:
@@ -298,6 +302,40 @@ def main() -> None:
             articles = data
         if not isinstance(articles, list) or any(not isinstance(a, dict) for a in articles):
             parser.error("Expected one article or an array of articles")
+    if args.bok_attachments is not None:
+        if not frozen_hash:
+            parser.error("--bok-attachments requires --holdout-result")
+        p = args.bok_attachments
+        if p.is_symlink() or not p.is_file():
+            parser.error("Missing or unsafe attachment report")
+        from tris_market_event_intelligence.direct_sector_source_enrichment import (
+            use_bok_attachments,
+        )
+        articles = use_bok_attachments(
+            articles, json.loads(p.read_text(encoding="utf-8")), frozen_hash,
+        )
+    if args.sec_exhibits:
+        if args.holdout_result is None:
+            parser.error("--sec-exhibits requires --holdout-result")
+        from tris_market_event_intelligence.sec_filing_exhibit_evidence import (
+            configured_sec_agent, enrich_sec_article,
+        )
+        agent = configured_sec_agent()
+        if "@" not in agent:
+            parser.error("Set SEC_USER_AGENT with a contact email")
+        enriched_articles = []
+        with httpx.Client(timeout=20, follow_redirects=False) as client:
+            for article in articles[:args.limit]:
+                if str(article.get("source") or "").startswith("sec_8k_"):
+                    updated, evidence = enrich_sec_article(
+                        article, client=client, user_agent=agent,
+                    )
+                    if evidence.get("acquiredExhibits"):
+                        updated = {**updated, "attachedEvidenceSource": "SEC_OFFICIAL_EXHIBIT"}
+                    enriched_articles.append(updated)
+                else:
+                    enriched_articles.append(article)
+        articles = enriched_articles
     runtime = build_runtime(
         replace(LLMSettings.from_environment(explicit=True), model_id=args.model),
         confirm_model=True,
@@ -318,6 +356,7 @@ def main() -> None:
             ],
             "overallMarketDirection": row["overallMarketDirection"],
             "errorCode": row.get("errorCode"),
+            "evidenceSource": row.get("evidenceSource"),
         }, ensure_ascii=False))
 
 
