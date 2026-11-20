@@ -88,8 +88,8 @@ def index_accepted_at(raw: bytes) -> datetime:
         raise ValueError("SEC_FILING_INDEX_TOO_LARGE")
     text = raw.decode("utf-8", errors="replace")
     marker = re.search(
-        r"(?is)>\\s*Accepted\\s*</div>\\s*<div[^>]*class=[\\\"']info[\\\"'][^>]*>"
-        r"\\s*([0-9]{4}-[0-9]{2}-[0-9]{2}\\s+"
+        r"(?is)>\s*Accepted\s*</div>\s*<div[^>]*class=[\"']info[\"'][^>]*>"
+        r"\s*([0-9]{4}-[0-9]{2}-[0-9]{2}\s+"
         r"[0-9]{2}:[0-9]{2}:[0-9]{2})", text,
     )
     if not marker:
@@ -199,9 +199,8 @@ def collect_sec_filings(
                     accession = row["accession"]
                     index_url = (
                         f"https://www.sec.gov/Archives/edgar/data/{cik}/"
-                        f"{accession.replace(chr(45), chr(0))}"
+                        f"{accession.replace('-', '')}/{accession}-index.htm"
                     )
-                    index_url = index_url.replace(chr(0), "") + f"/{accession}-index.htm"
                     index = http.get(index_url, headers={
                         "User-Agent": user_agent, "Accept": "text/html",
                     })
