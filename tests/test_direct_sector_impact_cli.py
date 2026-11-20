@@ -1,7 +1,13 @@
 """Core contract: full article to model, free-form themes, unchanged judgments."""
 import json
 
-from tris_market_event_intelligence.direct_sector_impact_cli import SYSTEM, analyze, render_review, run, validate
+from tris_market_event_intelligence.direct_sector_impact_cli import (
+    SYSTEM,
+    analyze,
+    render_review,
+    run,
+    validate,
+)
 
 
 class FakeModel:
