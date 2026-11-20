@@ -74,6 +74,8 @@ def extract_quantities(text: str) -> list[dict[str, Any]]:
             won = number
         else:
             number = match.group("number")
+            if match.group("sign") in {"-", "−"}:
+                number = "-" + number
             unit = re.sub(r"\s+", "", match.group("unit") or "")
             won = scale_value(number, unit) if unit else None
         before = source[max(0, match.start() - 75):match.start()]
