@@ -117,7 +117,12 @@ def semantic_replay(
                 analysis = validate_semantic_interpretation(
                     article, parse_semantic_response(raw),
                 )
-                status, error_code = "COMPLETE", ""
+                status = (
+                    "COMPLETE"
+                    if analysis["semanticCategoryStatus"] == "MATCHES_EVENT_SOURCE_POLICY"
+                    else "NEEDS_CATEGORY_REVIEW"
+                )
+                error_code = ""
                 break
             except (ValueError, TypeError, json.JSONDecodeError) as exc:
                 error_code = str(exc)[:150]
