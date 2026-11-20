@@ -438,7 +438,8 @@ def main() -> None:
         if args.holdout_result is None:
             parser.error("--sec-exhibits requires --holdout-result")
         from tris_market_event_intelligence.sec_filing_exhibit_evidence import (
-            configured_sec_agent, enrich_sec_article,
+            configured_sec_agent,
+            enrich_sec_article,
         )
         agent = configured_sec_agent()
         if "@" not in agent:
