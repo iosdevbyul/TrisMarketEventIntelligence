@@ -18,7 +18,7 @@ from typing import Any
 QUANTITY = re.compile(
     r"(?<![\w.])(?P<sign>[-+−]?)\s*(?P<number>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
     r"\s*(?P<unit>조\s*\d+(?:\.\d+)?\s*억\s*원|조\s*원|억\s*\d+(?:\.\d+)?\s*만\s*원|"
-    r"억원|억\s*원|만원|만\s*원|원|달러|%|％|퍼센트포인트|%p|bp|bps|퍼센트)?",
+    r"억원|억\s*원|만원|만\s*원|원|달러|퍼센트포인트|%p|bps|bp|%|％|퍼센트)?",
     re.I,
 )
 COMPARISONS = {
