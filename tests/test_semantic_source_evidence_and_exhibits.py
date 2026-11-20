@@ -214,3 +214,70 @@ def test_replay_handles_invalid_model_evidence_reference_without_silent_success(
     report = json.loads(output.read_text())
     assert report["articles"][0]["errorCode"] == "SEMANTIC_EVIDENCE_ID_NOT_IN_SOURCE"
     assert report["priceDataAccessed"] is False
+
+
+def test_contract_exhibit_10_1_is_officially_selected_without_other_hosts():
+    article = {
+        **sec_article(),
+        "title": "AMD SEC 8-K Item 1.01 MATERIAL_CONTRACT_8K",
+    }
+    base, _ = accession_archive(article)
+    filing_index = (
+        b'<table><tr><td><a href="amd-agreement.htm">'
+        b'Material definitive agreement</a></td><td>EX-10.1</td></tr>'
+        b'<tr><td><a href="https://malicious.example/contract.htm">'
+        b'unknown</a></td><td>EX-99.1</td></tr></table>'
+    )
+    urls = exhibit_urls(filing_index, article)
+    assert urls == {"10.1": base + "amd-agreement.htm"}
+
+
+def test_truncated_model_attempt_retries_with_reduced_evidence_context(
+    monkeypatch, tmp_path,
+):
+    from tris_market_event_intelligence import (
+        source_grounded_semantic_replay_cli as replay,
+    )
+    article = sec_article()
+    article["summary"] = " ".join(
+        f"The company reported quarterly revenue of {i} million dollars. "
+        for i in range(130)
+    )
+    monkeypatch.setattr(replay, "source_items", lambda *_: (
+        [article], "untouched-study", {"inventoryAsOf": "2026-11-20T03:55:45+00:00"},
+    ))
+    lengths = []
+
+    class TruncatingModel:
+        def generate_json(self, *, system, user, schema):
+            content = json.loads(user)
+            lengths.append(len(content["sourceExcerpts"]))
+            if len(lengths) == 1:
+                raise RuntimeError("MODEL_GENERATION_TRUNCATED")
+            first = content["sourceExcerpts"][0]["evidenceId"]
+            return json.dumps({
+                "eventCategory": "EARNINGS_OR_GUIDANCE",
+                "eventDescription": "Official issuer quarterly disclosure",
+                "sourceStatements": [
+                    {"evidenceId": first, "factualStatus": "OFFICIAL",
+                     "interpretation": "Official quarterly revenue released"},
+                ],
+                "economicMechanisms": [
+                    {"evidenceId": first, "affectedScope": "ISSUER",
+                     "economicDirection": "UNKNOWN",
+                     "reasoning": "No revenue consensus; hypothesis only",
+                     "uncertainty": "Cannot infer price direction"},
+                ],
+                "unverifiedAssumptions": [], "missingEvidence": [],
+                "overallEconomicDirection": "UNKNOWN",
+            })
+
+    report = semantic_replay(
+        holdout_result=tmp_path / "untouched-original.json",
+        model=TruncatingModel(), output=tmp_path / "immutable-new.json",
+    )
+    assert len(lengths) == 2
+    assert lengths[0] > 12
+    assert lengths[1] == 12
+    assert report["summary"]["quoteAndSchemaValidated"] == 1
+    assert report["summary"]["statusCounts"]["COMPLETE"] == 1
