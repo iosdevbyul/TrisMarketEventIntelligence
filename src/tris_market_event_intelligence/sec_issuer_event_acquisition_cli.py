@@ -16,6 +16,7 @@ import re
 from collections import Counter
 from datetime import UTC, date, datetime
 from html.parser import HTMLParser
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import httpx
@@ -29,6 +30,7 @@ _ALLOWED = {"2.02": "EARNINGS_8K", "1.01": "MATERIAL_CONTRACT_8K"}
 _MAX_SUBMISSIONS_BYTES = 8_000_000
 _MAX_DOCUMENT_BYTES = 2_000_000
 _MAX_FILINGS_PER_CIK = 30
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 class _Text(HTMLParser):
@@ -74,6 +76,26 @@ def verified_sec_acceptance(value: str) -> datetime:
     if ts.utcoffset() is None:
         raise ValueError("SEC_ACCEPTANCE_CLOCK_UNVERIFIED")
     return ts.astimezone(UTC)
+
+
+def index_accepted_at(raw: bytes) -> datetime:
+    """Cross-check SEC filing detail accepted time, expressed in US Eastern.
+
+    Never infer the timezone of the submissions API timestamp on its own.
+    Require the filing index's explicit 'Accepted' field before ingestion.
+    """
+    if len(raw) > 1_000_000:
+        raise ValueError("SEC_FILING_INDEX_TOO_LARGE")
+    text = raw.decode("utf-8", errors="replace")
+    marker = re.search(
+        r"(?is)>\\s*Accepted\\s*</div>\\s*<div[^>]*class=[\\\"']info[\\\"'][^>]*>"
+        r"\\s*([0-9]{4}-[0-9]{2}-[0-9]{2}\\s+"
+        r"[0-9]{2}:[0-9]{2}:[0-9]{2})", text,
+    )
+    if not marker:
+        raise ValueError("SEC_INDEX_ACCEPTANCE_TIME_MISSING")
+    local = datetime.strptime(marker.group(1), "%Y-%m-%d %H:%M:%S")
+    return local.replace(tzinfo=_NEW_YORK).astimezone(UTC)
 
 
 def submission_candidates(
@@ -126,7 +148,7 @@ def submission_candidates(
             "sourceUrl": url,
             "form": "8-K", "items": eligible,
             "eventCategory": _ALLOWED[eligible[0]],
-            "acceptedAt": accepted.isoformat(),
+            "acceptedAtSubmissionsUnverified": accepted.isoformat(),
             "timeMeaning": "SEC_FILING_ACCEPTED_NOT_FIRST_ISSUER_RELEASE",
             "issuerReleaseTimeVerified": False,
         })
@@ -174,6 +196,26 @@ def collect_sec_filings(
             if store is not None:
                 source = f"sec_8k_{cik}"
                 for row in candidates:
+                    accession = row["accession"]
+                    index_url = (
+                        f"https://www.sec.gov/Archives/edgar/data/{cik}/"
+                        f"{accession.replace(chr(45), chr(0))}"
+                    )
+                    index_url = index_url.replace(chr(0), "") + f"/{accession}-index.htm"
+                    index = http.get(index_url, headers={
+                        "User-Agent": user_agent, "Accept": "text/html",
+                    })
+                    if index.status_code != 200:
+                        documents_unavailable += 1
+                        continue
+                    try:
+                        verified_clock = index_accepted_at(index.content)
+                    except ValueError:
+                        documents_unavailable += 1
+                        continue
+                    if not since <= verified_clock.date() <= until:
+                        documents_unavailable += 1
+                        continue
                     filing = http.get(row["sourceUrl"], headers={
                         "User-Agent": user_agent, "Accept": "text/html",
                     })
@@ -194,8 +236,13 @@ def collect_sec_filings(
                                f'Item {",".join(row["items"])} '
                                f'{row["eventCategory"]}'),
                         summary=body,
-                        published_at=row["acceptedAt"],
+                        published_at=verified_clock.isoformat(),
                         detected_at=fetched_at,
+                    )
+                    row["acceptedAtIndexVerified"] = verified_clock.isoformat()
+                    row["apiClockMatchesIndex"] = (
+                        row["acceptedAtSubmissionsUnverified"]
+                        == verified_clock.isoformat()
                     )
                     inserted += store.save(
                         source, row["sourceUrl"], filing.content,
