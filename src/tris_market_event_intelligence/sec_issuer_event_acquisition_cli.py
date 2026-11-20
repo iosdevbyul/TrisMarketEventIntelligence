@@ -152,7 +152,9 @@ def submission_candidates(
             "timeMeaning": "SEC_FILING_ACCEPTED_NOT_FIRST_ISSUER_RELEASE",
             "issuerReleaseTimeVerified": False,
         })
-    candidates.sort(key=lambda item: (item["acceptedAt"], item["accession"]))
+    candidates.sort(key=lambda item: (
+        item["acceptedAtSubmissionsUnverified"], item["accession"],
+    ))
     return candidates[:_MAX_FILINGS_PER_CIK], excluded
 
 
