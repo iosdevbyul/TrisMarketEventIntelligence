@@ -9,12 +9,6 @@ from __future__ import annotations
 from typing import Any
 
 DIRECTIONS = frozenset({"POSITIVE", "NEGATIVE"})
-SECTOR_SCOPE = frozenset({
-    "SEMICONDUCTORS", "TECH", "CLOUD", "FINANCIALS", "ENERGY",
-    "DEFENSE", "INDUSTRIALS", "CONSUMER", "TRANSPORT", "HEALTHCARE",
-    "REAL_ESTATE", "MATERIALS", "UTILITIES", "BROAD_MARKET",
-})
-
 
 def economic_category(title: str) -> str:
     lower = title.lower()
@@ -46,7 +40,6 @@ def review_sector_hypothesis(
     revised = direction
     disposition = "UNCHANGED"
     evidence = quote.lower()
-    rationale = reason.lower()
 
     if category == "PRODUCER_PRICES" and direction in DIRECTIONS:
         # Higher output prices for a seller can be beneficial; higher input costs
@@ -90,10 +83,29 @@ def review_sector_hypothesis(
             notes.append("MONEY_STOCK_NOT_SECTOR_EARNINGS")
             revised = "UNKNOWN"
 
-    # This check is a semantic guardrail, not a proof of correctness.
+    # Preserve model-authored reasoning separately when its conclusion was gated.
+    # Explanations must not claim a positive/negative result for an UNKNOWN row.
+    explanation = {
+        "PPI_LEVEL_NOT_SECTOR_MARGIN":
+            "The release shows producer-price changes, not whether this "
+            "sector's revenue gains exceed its higher input costs.",
+        "SURVEY_SENTIMENT_NOT_EARNINGS":
+            "A sentiment survey changed; this alone does not establish a "
+            "listed sector's earnings or price direction.",
+        "GDP_GROWTH_NOT_SPECIFIC_SECTOR_PROFIT":
+            "GDP growth is an economy-wide statistic and does not demonstrate "
+            "this particular listed sector's profitability.",
+        "GDP_GROWTH_NOT_MARKET_SURPRISE":
+            "GDP growth was reported, but a positive stock-market surprise "
+            "cannot be inferred without the market's prior expectations.",
+        "MONEY_STOCK_NOT_SECTOR_EARNINGS":
+            "Changes in money or credit aggregates do not directly demonstrate "
+            "this sector's earnings, spending or share-price direction.",
+    }
     return {
         "sector": sector, "originalDirection": direction,
         "reviewedDirection": revised, "disposition": disposition,
         "economicCategory": category, "reviewReasons": notes,
+        "reviewedReason": explanation.get(notes[0]) if notes else None,
         "economicOutcomeIndependentlyVerified": False,
     }
