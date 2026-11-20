@@ -11,7 +11,7 @@ import io
 import json
 import zipfile
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -204,7 +204,7 @@ def extract(data: bytes, mime: str, url: str) -> tuple[str, str]:
             if len(reader.pages) > 250:
                 return "", "PDF_PAGE_LIMIT_EXCEEDED"
             text = " ".join(page.extract_text() or "" for page in reader.pages)
-        except Exception:
+        except Exception:  # noqa: BLE001 - untrusted PDF parser errors fail closed
             # Parsing untrusted PDFs must fail closed, never pass corrupt bytes to the LLM.
             return "", "PDF_TEXT_EXTRACTION_FAILED"
     elif kind == "HWPX":
@@ -227,7 +227,7 @@ def capture(article: dict, client: httpx.Client) -> dict:
     url = str(article.get("sourceUrl", ""))
     result: dict[str, Any] = {
         "articleId": article.get("articleId"), "sourceUrl": url,
-        "observedAt": datetime.now(timezone.utc).isoformat(),
+        "observedAt": datetime.now(UTC).isoformat(),
         "reportedPublishedAt": article.get("publishedAtReported"),
         "firstPublicationPITCertified": False,
         "attachments": [], "unresolvedLinks": [],
