@@ -185,7 +185,7 @@ def semantic_replay(
     # Each output preserves the successful source analysis or the precise
     # failure code; no scored article is silently omitted.
     evaluation = semantic_summary([
-        {"status": row["status"], "analysis": row["semanticAnalysis"]}
+        {**row, "analysis": row["semanticAnalysis"]}
         for row in records
     ])
     result = {
