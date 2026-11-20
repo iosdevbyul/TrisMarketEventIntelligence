@@ -42,6 +42,8 @@ def primary_issuer_sector(article: dict) -> str | None:
 def is_cover_only(article: dict, source: str) -> bool:
     if primary_issuer_sector(article) is None:
         return False
+    if article.get("attachedEvidenceSource") == "SEC_OFFICIAL_EXHIBIT":
+        return False
     if "ITEM 2.02" not in str(article.get("title") or "").upper():
         return False
     lower = source.lower()
@@ -145,7 +147,7 @@ def validate(raw: Any, source: str, *, article: dict | None = None) -> dict[str,
             excluded.append({"sector": sector, "reasonCode": "UNRELATED_SEC_ISSUER_SECTOR"})
             continue
         if (str((article or {}).get("source") or "").startswith("bok_")
-                and sector == "CONSUMER" and direction == "POSITIVE"
+                and sector == "CONSUMER" and direction in {"POSITIVE", "NEUTRAL", "UNKNOWN"}
                 and ("M2" in quote or "광의통화" in quote)
                 and not any(x in quote for x in ("소비", "매출", "소매판매"))):
             excluded.append({
@@ -217,6 +219,7 @@ def analyze(article: dict, model: Any) -> dict:
         "publishedAtReported": article.get("publishedAtReported"),
         "modelId": getattr(model, "model_id", "unknown"),
         "pointInTimeCertified": False, "priceDataAccessed": False,
+        "evidenceSource": article.get("attachedEvidenceSource", "ARTICLE_BODY"),
     }
     for attempt in range(2):
         try:
@@ -254,6 +257,7 @@ def run(articles: list[dict], model: Any, *, frozen_hash: str | None = None) -> 
         "originalHoldoutSha256": frozen_hash,
         "articleCount": len(results),
         "statusCounts": dict(sorted(counts.items())),
+        "directionalArticleCount": sum(any(i["direction"] in {"POSITIVE","NEGATIVE"} for i in a["sectors"]) for a in results),
         "sectorDirectionCounts": [
             {"sector": sector, "direction": direction, "count": count}
             for (sector, direction), count in sorted(sector_directions.items())
