@@ -419,7 +419,8 @@ def test_bok_business_sentiment_cannot_assign_aggregate_to_materials_sector():
 
 def test_real_semiconductor_boom_retains_direct_positive_signal():
     quote = "반도체 경기 호황과 파급효과 확산"
-    content = "한국은행 경제전망에는 " + quote + "을 전망하면서 경제 영향을 설명하였다."
+    content = ("한국은행은 2026년 8월 경제전망에서 " + quote + "을 설명하였으며, "
+               "관련 산업의 사업 전망과 수출 수요에도 영향을 미칠 수 있다고 발표하였다.")
     raw = {
         "event": "Semiconductor boom",
         "summary": "Semiconductor industry conditions strengthened.",
