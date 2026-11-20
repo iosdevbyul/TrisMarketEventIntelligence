@@ -69,11 +69,11 @@ def review_sector_hypothesis(
             elif direction in DIRECTIONS:
                 notes.append("GDP_GROWTH_NOT_MARKET_SURPRISE")
                 revised = "UNKNOWN"
-    elif category == "MONETARY_OR_CREDIT_AGGREGATE" and direction in DIRECTIONS:
-        if not any(term in evidence for term in (
-            "영업이익", "소비지출", "소매판매", "매출", "부실률",
-            "net interest margin",
-        )):
+    elif (category == "MONETARY_OR_CREDIT_AGGREGATE" and direction in DIRECTIONS
+          and not any(term in evidence for term in (
+              "영업이익", "소비지출", "소매판매", "매출", "부실률",
+              "net interest margin",
+          ))):
             notes.append("MONEY_STOCK_NOT_SECTOR_EARNINGS")
             revised = "UNKNOWN"
 
