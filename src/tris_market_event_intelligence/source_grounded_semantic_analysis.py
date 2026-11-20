@@ -296,21 +296,46 @@ def validate_semantic_interpretation(
 
 
 def semantic_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Expose successes, disagreements, invalid outputs and evidence shortfalls."""
     reasons: Counter[str] = Counter()
+    error_codes: Counter[str] = Counter()
     categories: Counter[str] = Counter()
     directions: Counter[str] = Counter()
+    category_disagreements: Counter[str] = Counter()
+    exhibits: Counter[str] = Counter()
+    valid_structure = 0
     for row in rows:
-        reasons.update([row["status"]])
-        if row["status"] == "COMPLETE":
-            content = row["analysis"]["modelAnalysis"]
-            categories.update([content["eventCategory"]])
-            directions.update([content["overallEconomicDirection"]])
+        status = str(row["status"])
+        reasons[status] += 1
+        if row.get("errorCode"):
+            error_codes[str(row["errorCode"])] += 1
+        evidence = row.get("officialSECExhibitEvidence")
+        if isinstance(evidence, dict) and evidence.get("status") != "NOT_SEC_FILING":
+            exhibits[str(evidence["status"])] += 1
+        if status not in {"COMPLETE", "NEEDS_CATEGORY_REVIEW"}:
+            continue
+        analysis = row.get("analysis") or row.get("semanticAnalysis")
+        if not isinstance(analysis, dict):
+            continue
+        valid_structure += 1
+        content = analysis["modelAnalysis"]
+        categories[str(content["eventCategory"])] += 1
+        directions[str(content["overallEconomicDirection"])] += 1
+        if status == "NEEDS_CATEGORY_REVIEW":
+            expected = analysis["classification"]["eventCategory"]
+            actual = content["eventCategory"]
+            category_disagreements[f"{expected} -> {actual}"] += 1
     return {
         "articles": len(rows),
         "statusCounts": dict(sorted(reasons.items())),
+        "quoteAndSchemaValidated": valid_structure,
+        "rejectionCodeCounts": dict(sorted(error_codes.items())),
+        "categoryDisagreementPairs": dict(sorted(category_disagreements.items())),
+        "officialSECExhibitStatusCounts": dict(sorted(exhibits.items())),
         "eventCategoryCounts": dict(sorted(categories.items())),
         "economicDirectionCounts": dict(sorted(directions.items())),
         "economicDirectionIsNotPriceForecast": True,
+        "quoteValidatedIsNotIndependentFactValidation": True,
     }
 
 
