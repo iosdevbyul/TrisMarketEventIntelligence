@@ -16,6 +16,38 @@ from tris_market_event_intelligence.source_grounded_semantic_analysis import iss
 
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 ATTACHMENTS = ("붙임", "첨부파일", "첨부자료", "별첨", "attachment", "attached", "exhibit 99", "exhibit 10")
+ATTACHMENT_ONLY = re.compile(
+    r"(?:자세한 내용|상세 내용|구체적인 내용|세부 내용|통계표|원문|전문)"
+    r".{0,35}(?:붙임|첨부파일|첨부자료|별첨|attachment|attached)"
+    r"|(?:붙임|첨부파일|첨부자료|별첨).{0,35}(?:참고|참조|확인)",
+    re.I,
+)
+
+
+def attachment_evidence(body: str, quality: dict[str, Any]) -> dict[str, Any]:
+    """Distinguish a mention from a missing-data pointer; never certify attachments."""
+    mentions = [marker for marker in ATTACHMENTS if marker in body.casefold()]
+    pointers = list(ATTACHMENT_ONLY.finditer(body))
+    pointer = pointers[0] if pointers else None
+    excerpt = (
+        body[max(0, pointer.start() - 45): min(len(body), pointer.end() + 45)]
+        if pointer else ""
+    )
+    if quality.get("reasonCode") == "ATTACHMENT_CONTENT_MISSING":
+        kind = "SOURCE_BODY_POINTS_TO_MISSING_ATTACHMENT"
+    elif pointer:
+        kind = "ATTACHMENT_POINTER_NEEDS_EVIDENCE_REVIEW"
+    elif mentions:
+        kind = "ATTACHMENT_MENTION_NEEDS_EVIDENCE_REVIEW"
+    else:
+        kind = "NO_ATTACHMENT_REFERENCE_DETECTED"
+    return {
+        "status": kind,
+        "markers": mentions,
+        "supportingText": excerpt,
+        "attachmentBytesIndependentlyVerified": False,
+    }
+
 NUMBERS = re.compile(r"(?<!\w)(?:[$₩€£]\s*)?\d[\d,.]*(?:\s*(?:%|퍼센트|bp|bps|조|억|만|원|달러|USD|KRW|billion|million))?", re.I)
 
 
@@ -79,18 +111,27 @@ def evaluate_source(article: dict, row: dict) -> dict:
         errors.append(ts)
     exhibit_errors, exhibits = sec_exhibits(article, row)
     errors.extend(exhibit_errors)
-    references_attachment = any(marker in body.casefold() for marker in ATTACHMENTS)
+    attachment = attachment_evidence(body, quality)
+    references_attachment = bool(attachment["markers"])
     if not sec and references_attachment:
-        errors.append("NON_SEC_ATTACHMENT_CONTENT_UNVERIFIED")
+        if attachment["status"] == "SOURCE_BODY_POINTS_TO_MISSING_ATTACHMENT":
+            errors.append("NON_SEC_ATTACHMENT_CONTENT_UNVERIFIED")
+        else:
+            errors.append("NON_SEC_ATTACHMENT_REVIEW_REQUIRED")
     ready = not errors
+    needs_review = errors == ["NON_SEC_ATTACHMENT_REVIEW_REQUIRED"]
     return {
         "articleId": article["articleId"], "title": article["title"],
         "source": article["source"], "sourceUrl": article["sourceUrl"],
         "publishedAtReported": article["publishedAtReported"],
         "originalSourceBodySha256": digest, "contentQuality": quality,
-        "sourceReadiness": "SOURCE_READY" if ready else "SOURCE_INCOMPLETE",
+        "sourceReadiness": (
+            "SOURCE_READY" if ready else
+            "SOURCE_REVIEW_REQUIRED" if needs_review else "SOURCE_INCOMPLETE"
+        ),
         "blockingReasons": sorted(set(errors)), "secExhibitEvidence": exhibits,
         "attachmentReferenced": references_attachment,
+        "attachmentEvidence": attachment,
         "numericSourceTokens": len(NUMBERS.findall(body)),
         "numericValuesAndUnitsVerified": False,
         "timestampEvidenceStatus": ts,
