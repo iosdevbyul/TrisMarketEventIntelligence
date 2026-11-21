@@ -19,7 +19,6 @@ import httpx
 from pypdf import PdfReader
 
 from tris_market_event_intelligence.collector import NewsStore
-from tris_market_event_intelligence.bok_official_pdf_download_cli import find_pdf_url
 
 # Only publishers configured for operational RSS. Never fetch arbitrary hosts
 # advertised inside RSS, attachments or redirects.
@@ -100,7 +99,10 @@ class ArticleParser(HTMLParser):
         if tag in {"script", "style", "noscript", "nav", "footer"}:
             self.skipped += 1
         if tag == "a":
-            self.anchor = a.get("href") or a.get("data-url") or a.get("data-href")
+            self.anchor = (
+                a.get("href") or a.get("data-url")
+                or a.get("data-href") or a.get("data-download-url")
+            )
             self.anchor_label = []
         if self.depth:
             self.depth += 1
@@ -114,7 +116,8 @@ class ArticleParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "a" and self.anchor:
             label = " ".join(self.anchor_label)
-            if ".pdf" in (label + self.anchor).lower():
+            if (".pdf" in (label + self.anchor).lower()
+                    or re.search(r"\bpdf\b", label, re.IGNORECASE)):
                 self.links.append((self.anchor, label))
             self.anchor = None
             self.anchor_label = []
@@ -165,10 +168,7 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
 
 
 def capture(client: httpx.Client, url: str) -> dict[str, object]:
-    payload, media_type, final_url = fetch(
-        client, url, MAX_PDF_BYTES if urlsplit(url).path.lower().endswith(".pdf")
-        else MAX_HTML_BYTES,
-    )
+    payload, media_type, final_url = fetch(client, url, MAX_PDF_BYTES)
     if payload.startswith(b"%PDF-"):
         body, sparse = extract_pdf(payload)
         source_data = payload
@@ -178,12 +178,6 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
         (b"<html", b"<!doctype html")
     )):
         body, pdf_links = extract_html(payload, final_url)
-        if urlsplit(final_url).hostname in {"www.bok.or.kr", "bok.or.kr"}:
-            try:
-                official_pdf = find_pdf_url(payload.decode("utf-8", "replace"), final_url)
-                pdf_links = tuple(dict.fromkeys((*pdf_links, official_pdf)))
-            except ValueError:
-                pass
         source_data, source_url, kind, sparse = payload, final_url, "HTML", ()
         if len(body) < MIN_TEXT_LENGTH:
             for pdf_url in pdf_links:
