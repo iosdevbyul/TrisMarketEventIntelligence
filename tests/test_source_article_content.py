@@ -6,7 +6,10 @@ import httpx
 from tris_market_event_intelligence.collector import Article, NewsStore
 from tris_market_event_intelligence.operations import run_cycle
 from tris_market_event_intelligence.source_article_content import (
-    allowed, capture, collect_full_text, extract_html,
+    allowed,
+    capture,
+    collect_full_text,
+    extract_html,
 )
 
 
@@ -120,11 +123,11 @@ def test_untrusted_url_never_contacts_network(tmp_path: Path) -> None:
 
 def test_operational_collection_degraded_if_article_body_missing(tmp_path: Path) -> None:
     feed = (
-        '<rss><channel><item><title>Economic event</title>'
-        '<link>https://www.bbc.com/news/articles/unavailable</link>'
-        '<guid>test-event</guid><description>Summary only</description>'
-        '</item></channel></rss>'
-    ).encode()
+        b'<rss><channel><item><title>Economic event</title>'
+        b'<link>https://www.bbc.com/news/articles/unavailable</link>'
+        b'<guid>test-event</guid><description>Summary only</description>'
+        b'</item></channel></rss>'
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "feeds.bbci.co.uk" in str(request.url):
