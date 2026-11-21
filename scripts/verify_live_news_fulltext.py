@@ -86,26 +86,43 @@ def verify(source_db: Path) -> dict:
                     "rawAndTextHashesVerified": verified,
                 })
     present = {item["source"] for item in results}
+    missing = sorted(set(OPERATIONAL_SOURCES) - present)
+    collected = [
+        r for r in results if r["status"] in ("COMPLETE", "REVIEW_REQUIRED")
+    ]
+    failures = [
+        r for r in results if r["status"] not in (
+            "COMPLETE", "REVIEW_REQUIRED", "NON_ARTICLE"
+        ) or (r["status"] in ("COMPLETE", "REVIEW_REQUIRED")
+              and not r.get("rawAndTextHashesVerified"))
+    ]
+    reviews = [r for r in results if r["status"] == "REVIEW_REQUIRED"]
+    if missing or failures:
+        verdict = "INCOMPLETE"
+    elif reviews:
+        verdict = "REVIEW_REQUIRED"
+    else:
+        verdict = "PASS"
     return {
-        "schemaVersion": "fulltext_live_verification_v1",
+        "schemaVersion": "fulltext_live_verification_v2",
         "sourcesExpected": len(OPERATIONAL_SOURCES),
         "sourcesTested": len(results),
-        "missingSources": sorted(set(OPERATIONAL_SOURCES) - present),
+        "missingSources": missing,
         "bodyCompleteCount": sum(
             r["status"] == "COMPLETE" and r.get("rawAndTextHashesVerified")
             for r in results
         ),
-        "status": (
-            "PASS" if len(results) == len(OPERATIONAL_SOURCES) and all(
-                r["status"] == "COMPLETE" and r.get("rawAndTextHashesVerified")
-                for r in results
-            ) else "INCOMPLETE"
+        "verifiedRawBodyCount": sum(
+            bool(r.get("rawAndTextHashesVerified")) for r in collected
         ),
+        "nonArticleCount": sum(r["status"] == "NON_ARTICLE" for r in results),
+        "needsReviewCount": len(reviews),
+        "failedCount": len(failures),
+        "status": verdict,
         "collectionStats": stats,
         "results": results,
         "productionDatabaseModified": False,
     }
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
