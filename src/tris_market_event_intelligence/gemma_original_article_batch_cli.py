@@ -75,17 +75,17 @@ def validate_answer(raw: str, evidence: str) -> dict:
         raise ValueError("RESPONSE_TOO_LARGE")
     result = json.loads(raw)
     if not isinstance(result, dict):
-        raise ValueError("RESPONSE_SHAPE")
+        raise TypeError("RESPONSE_SHAPE")
     if not isinstance(result.get("summary"), str):
-        raise ValueError("SUMMARY_MISSING")
+        raise TypeError("SUMMARY_MISSING")
     if not isinstance(result.get("limitations"), str):
-        raise ValueError("LIMITATIONS_MISSING")
+        raise TypeError("LIMITATIONS_MISSING")
     impacts = result.get("impacts")
     if not isinstance(impacts, list) or len(impacts) > 12:
         raise ValueError("IMPACTS_SHAPE")
     for impact in impacts:
         if not isinstance(impact, dict):
-            raise ValueError("IMPACT_SHAPE")
+            raise TypeError("IMPACT_SHAPE")
         for field in ("target", "direction", "reason", "evidence_quote"):
             if not isinstance(impact.get(field), str) or not impact[field].strip():
                 raise ValueError("IMPACT_FIELD_INVALID")
