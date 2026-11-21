@@ -258,6 +258,13 @@ def main() -> None:
         if any(identifier not in article_index for identifier in requested):
             parser.error("--article-ids contains IDs outside the input cohort")
         articles = [article_index[identifier] for identifier in requested]
+    if args.holdout_result is not None and any(
+        str(row.get("source") or "").startswith("bok_") for row in articles
+    ):
+        parser.error(
+            "Legacy BOK holdout records are invalidated. Supply freshly "
+            "inspected official PDF articles using --article-json."
+        )
     if args.sec_exhibits:
         if args.holdout_result is None:
             parser.error("--sec-exhibits requires --holdout-result")
