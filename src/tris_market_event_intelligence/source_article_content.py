@@ -19,6 +19,7 @@ import httpx
 from pypdf import PdfReader
 
 from tris_market_event_intelligence.collector import NewsStore
+from tris_market_event_intelligence.bok_official_pdf_download_cli import find_pdf_url
 
 # Only publishers configured for operational RSS. Never fetch arbitrary hosts
 # advertised inside RSS, attachments or redirects.
@@ -164,7 +165,10 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
 
 
 def capture(client: httpx.Client, url: str) -> dict[str, object]:
-    payload, media_type, final_url = fetch(client, url, MAX_HTML_BYTES)
+    payload, media_type, final_url = fetch(
+        client, url, MAX_PDF_BYTES if urlsplit(url).path.lower().endswith(".pdf")
+        else MAX_HTML_BYTES,
+    )
     if payload.startswith(b"%PDF-"):
         body, sparse = extract_pdf(payload)
         source_data = payload
@@ -174,6 +178,12 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
         (b"<html", b"<!doctype html")
     )):
         body, pdf_links = extract_html(payload, final_url)
+        if urlsplit(final_url).hostname in {"www.bok.or.kr", "bok.or.kr"}:
+            try:
+                official_pdf = find_pdf_url(payload.decode("utf-8", "replace"), final_url)
+                pdf_links = tuple(dict.fromkeys((*pdf_links, official_pdf)))
+            except ValueError:
+                pass
         source_data, source_url, kind, sparse = payload, final_url, "HTML", ()
         if len(body) < MIN_TEXT_LENGTH:
             for pdf_url in pdf_links:
