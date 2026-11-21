@@ -64,7 +64,7 @@ def verify(source_db: Path) -> dict:
             "status": "INCOMPLETE", "attempted": 0,
         }
         with scratch.connect() as db:
-            for source, url, *_ in rows:
+            for source, url, title, *_ in rows:
                 item = db.execute("""
                     SELECT f.status, LENGTH(f.body), f.format, f.error_code,
                            f.body, f.body_sha256, f.raw_sha256, f.raw_payload
@@ -72,14 +72,16 @@ def verify(source_db: Path) -> dict:
                     WHERE a.source=? AND a.url=?
                 """, (source, url)).fetchone()
                 if item is None:
-                    results.append({"source": source, "status": "NOT_ATTEMPTED"})
+                    results.append({"source": source, "title": title, "url": url,
+                                    "status": "NOT_ATTEMPTED"})
                     continue
                 status, count, fmt, error, body, body_sha, raw_sha, payload = item
                 verified = bool(body and payload and
                     hashlib.sha256(body.encode()).hexdigest() == body_sha and
                     hashlib.sha256(payload).hexdigest() == raw_sha)
                 results.append({
-                    "source": source, "status": status, "bodyCharacters": count or 0,
+                    "source": source, "title": title, "url": url,
+                    "status": status, "bodyCharacters": count or 0,
                     "format": fmt, "errorCode": error,
                     "rawAndTextHashesVerified": verified,
                 })
