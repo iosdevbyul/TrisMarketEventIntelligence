@@ -77,6 +77,49 @@ def test_priority_prefers_article_over_website_main_navigation() -> None:
     assert "Irrelevant content" not in body
 
 
+def test_release_page_prioritizes_longer_linked_pdf(monkeypatch: object) -> None:
+    from tris_market_event_intelligence import source_article_content as fulltext
+
+    html = (
+        "<html><article>" + CONTENT +
+        '<a href="/files/release.pdf">Full release PDF</a></article></html>'
+    ).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".pdf"):
+            return httpx.Response(200, content=b"%PDF-1.4 fixture")
+        return httpx.Response(
+            200, content=html, headers={"Content-Type": "text/html"},
+        )
+
+    monkeypatch.setattr(
+        fulltext, "extract_pdf",
+        lambda payload: ("The complete release. " * 160, ()),
+    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = fulltext.capture(
+            client, "https://www.federalreserve.gov/press/release"
+        )
+    assert result["status"] == "COMPLETE"
+    assert result["format"] == "PDF"
+    assert result["source_url"].endswith(".pdf")
+    assert len(result["body"]) > len(CONTENT)
+
+
+def test_bbc_video_page_is_not_a_news_article() -> None:
+    from tris_market_event_intelligence.source_article_content import ContentError
+
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: (_ for _ in ()).throw(AssertionError("Must not fetch video")),
+    )) as client:
+        try:
+            capture(client, "https://www.bbc.co.uk/iplayer/episode/m0034tjc")
+        except ContentError as exc:
+            assert str(exc) == "NON_ARTICLE_MEDIA_PAGE"
+        else:
+            raise AssertionError("iPlayer page should not pass as article")
+
+
 def test_complete_body_is_durable_and_original_rss_untouched(tmp_path: Path) -> None:
     store = NewsStore(tmp_path / "news.sqlite3")
     url = "https://www.bbc.com/news/articles/same-item"
