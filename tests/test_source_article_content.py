@@ -250,3 +250,111 @@ def test_redirect_to_other_host_rejected() -> None:
             assert str(exc) == "UNTRUSTED_URL"
         else:
             raise AssertionError("Redirect should have been refused")
+
+def test_market_impact_model_receives_verified_body_not_rss_only(
+    tmp_path: Path,
+) -> None:
+    from tris_market_event_intelligence.event_store import EventProcessor
+    from tris_market_event_intelligence.impact import ImpactResult
+    from tris_market_event_intelligence.impact_store import ImpactProcessor
+    from tris_market_event_intelligence.source_article_content import initialize
+
+    store = NewsStore(tmp_path / "events.sqlite3")
+    seed(
+        store, "bbc_business", "https://www.bbc.com/news/articles/market-impact",
+        "impact-verified",
+    )
+    initialize(store)
+    processor = EventProcessor(store.path)
+    processor.initialize()
+    with store.connect() as db:
+        db.execute("""
+            INSERT INTO economic_events (
+                article_id, extractor_version, classification, status,
+                direction, change_basis_points, evidence, source,
+                source_url, published_at, detected_at, processed_at,
+                capture_sha256
+            ) VALUES (
+                1, 'test', 'CORPORATE_EVENT', 'CANDIDATE', NULL, NULL,
+                'Brief RSS metadata', 'bbc_business',
+                'https://www.bbc.com/news/articles/market-impact', NULL,
+                '2026-11-21T00:00:00+00:00', '2026-11-21T00:00:00+00:00',
+                'sha'
+            )
+        """)
+        db.execute("""
+            INSERT INTO event_metadata (
+                event_id, claim_kind, tags_json, verification_note
+            ) VALUES (1, 'REPORTED', '[]', 'test')
+        """)
+        import hashlib
+
+        db.execute("""
+            INSERT INTO article_full_text (
+                article_id, status, observed_at, content_url, body_sha256,
+                raw_sha256, raw_payload, body, format, sparse_pages
+            ) VALUES (1, 'COMPLETE', '2026-11-21T00:00:00+00:00',
+                      'https://www.bbc.com/news/articles/market-impact',
+                      ?, 'rawsha', X'4142', ?, 'HTML', '[]')
+        """, (hashlib.sha256(CONTENT.encode()).hexdigest(), CONTENT))
+
+    class Recorder:
+        model_id = "verified-body-fixture"
+
+        def __init__(self) -> None:
+            self.evidence = ""
+
+        def analyze(self, event: object) -> ImpactResult:
+            self.evidence = event.evidence
+            return ImpactResult(impacts=[])
+
+    provider = Recorder()
+    counts = ImpactProcessor(store.path, provider).process_pending()
+    assert counts.processed == 1
+    assert "[ORIGINAL_SOURCE_DOCUMENT]" in provider.evidence
+    assert "companies and markets" in provider.evidence
+    assert "Brief RSS metadata" in provider.evidence
+
+
+def test_unreviewed_pdf_document_is_not_sent_to_model(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.impact import ImpactResult
+    from tris_market_event_intelligence.impact_store import ImpactProcessor
+    from tris_market_event_intelligence.source_article_content import initialize
+
+    store = NewsStore(tmp_path / "pdf.sqlite3")
+    seed(store, "bok_statistics", "https://www.bok.or.kr/portal/article", "pdf")
+    initialize(store)
+    with store.connect() as db:
+        db.execute("""
+            INSERT INTO economic_events (
+                article_id, extractor_version, classification, status,
+                evidence, source, source_url, detected_at,
+                processed_at, capture_sha256
+            ) VALUES (1,'test','ECONOMIC_INDICATOR','CANDIDATE',
+                      'Economic release','bok_statistics',
+                      'https://www.bok.or.kr/portal/article',
+                      '2026-11-21T00:00:00+00:00',
+                      '2026-11-21T00:00:00+00:00', 'sha')
+        """)
+        db.execute("""
+            INSERT INTO event_metadata (event_id,claim_kind,tags_json,verification_note)
+            VALUES (1,'REPORTED','[]','test')
+        """)
+        db.execute("""
+            INSERT INTO article_full_text (
+                article_id,status,observed_at,body,body_sha256,sparse_pages
+            ) VALUES (1,'REVIEW_REQUIRED','2026-11-21T00:00:00+00:00',
+                      ?, 'sha','[2]')
+        """, (CONTENT,))
+
+    class ForbiddenProvider:
+        model_id = "pdf-review-fixture"
+
+        def analyze(self, event: object) -> ImpactResult:
+            raise AssertionError("Unreviewed numbers should not reach model")
+
+    result = ImpactProcessor(store.path, ForbiddenProvider()).process_pending()
+    assert result.deferred == 1
+    assert result.processed == 0
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM impact_runs").fetchone()[0] == 0
