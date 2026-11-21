@@ -81,14 +81,16 @@ def test_predictions_join_to_prices_and_preserve_unmapped(tmp_path):
     assert unmapped["status"] == "UNMAPPED"
 
 
-def test_mapping_not_verified_at_publication_is_not_evaluated(tmp_path):
+def test_later_verified_mapping_is_explicitly_retrospective(tmp_path):
     folder, mappings, prices = _fixture(tmp_path)
     _csv(mappings, ["target", "market", "symbol", "benchmark", "verified_at"], [
         ["Example Corp", "XNAS", "EXMP", "SPY", "2026-02-01T00:00:00+00:00"],
     ])
     result = evaluate(folder, mappings, prices, price_source_description="fixture")
-    assert result["items"][0]["status"] == "MAPPING_NOT_POINT_IN_TIME"
-    assert result["metrics"]["1d"]["accuracy"] is None
+    assert result["items"][0]["status"] == "COMPLETED"
+    assert result["items"][0]["mappingPointInTime"] is False
+    assert result["items"][0]["evaluationClass"] == "RETROSPECTIVE_POST_EVENT_MAPPING"
+    assert result["metrics"]["1d"]["accuracy"] == 1.0
 
 
 def test_prices_must_be_provenanced_and_positive(tmp_path):
