@@ -73,70 +73,109 @@ def fetch(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str, str]:
 
 
 class ArticleParser(HTMLParser):
-    """Extract only marked article-body regions and collect PDF links."""
+    """Capture semantic article regions without confusing nested closing tags.
+
+    Multiple candidates are retained because sites often put the story inside
+    a generic <main> element or a publisher-specific content container.
+    """
 
     BODY_IDS = frozenset({
         "article-body", "articleBodyContents", "article-content", "dic_area",
         "bodyContent", "article_view", "main-content", "harmonyContainer",
+        "content", "article", "story", "main", "news-article",
     })
     BODY_CLASSES = frozenset({
         "article-body", "article__body", "article-content", "story-body",
-        "news-article", "article_view", "articleCont",
+        "news-article", "article_view", "articleCont", "story",
+        "article__content", "articleBody", "article", "body",
         "ssrcss-11r1m41-RichTextComponentWrapper",
+    })
+    VOID_TAGS = frozenset({
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    })
+    IGNORED_TAGS = frozenset({
+        "script", "style", "noscript", "nav", "footer", "aside",
     })
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.depth = 0
-        self.skipped = 0
-        self.body: list[str] = []
+        self.frames: list[tuple[str, int | None, bool]] = []
+        self.regions: list[tuple[int, list[str]]] = []
         self.links: list[tuple[str, str]] = []
-        self.anchor: str | None = None
-        self.anchor_label: list[str] = []
+        self.anchors: list[tuple[str | None, list[str]]] = []
+        self.ignored = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        a = dict(attrs)
-        if tag in {"script", "style", "noscript", "nav", "footer"}:
-            self.skipped += 1
+        attributes = dict(attrs)
         if tag == "a":
-            self.anchor = (
-                a.get("href") or a.get("data-url")
-                or a.get("data-href") or a.get("data-download-url")
-            )
-            self.anchor_label = []
-            if not self.anchor:
+            href = (attributes.get("href") or attributes.get("data-url")
+                    or attributes.get("data-href")
+                    or attributes.get("data-download-url"))
+            if not href:
                 matches = re.findall(
                     r"""['"]((?:https://|/)[^'"]+)['"]""",
-                    a.get("onclick") or "",
+                    attributes.get("onclick") or "",
                 )
-                self.anchor = matches[0] if matches else None
-        if self.depth:
-            self.depth += 1
-        elif (not self.skipped and (
-            tag == "article"
-            or (a.get("id") or "") in self.BODY_IDS
-            or bool(set((a.get("class") or "").split()) & self.BODY_CLASSES)
-        )):
-            self.depth = 1
+                href = matches[0] if matches else None
+            self.anchors.append((href, []))
+        excluded = tag in self.IGNORED_TAGS
+        if excluded:
+            self.ignored += 1
+        region: int | None = None
+        if not self.ignored:
+            classes = set((attributes.get("class") or "").split())
+            identifier = attributes.get("id") or ""
+            role = attributes.get("role") or ""
+            if tag == "article":
+                priority = 4
+            elif identifier in self.BODY_IDS or bool(classes & self.BODY_CLASSES):
+                priority = 3
+            elif tag == "main" or role == "main":
+                priority = 2
+            else:
+                priority = 0
+            if priority:
+                region = len(self.regions)
+                self.regions.append((priority, []))
+        if tag not in self.VOID_TAGS:
+            self.frames.append((tag, region, excluded))
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID_TAGS:
+            self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag == "a" and self.anchor:
-            label = " ".join(self.anchor_label)
-            if (".pdf" in (label + self.anchor).lower()
-                    or re.search(r"\bpdf\b", label, re.IGNORECASE)):
-                self.links.append((self.anchor, label))
-            self.anchor = None
-            self.anchor_label = []
-        if self.depth:
-            self.depth -= 1
-        if tag in {"script", "style", "noscript", "nav", "footer"} and self.skipped:
-            self.skipped -= 1
+        # Close through the matching element (HTML often omits optional closes).
+        match = next(
+            (idx for idx in range(len(self.frames) - 1, -1, -1)
+             if self.frames[idx][0] == tag),
+            None,
+        )
+        if match is not None:
+            removed = self.frames[match:]
+            del self.frames[match:]
+            self.ignored = max(
+                0, self.ignored - sum(int(frame[2]) for frame in removed)
+            )
+        if tag == "a" and self.anchors:
+            href, words = self.anchors.pop()
+            label = " ".join(words)
+            if href and (
+                ".pdf" in (label + href).lower()
+                or re.search(r"\bpdf\b", label, re.IGNORECASE)
+            ):
+                self.links.append((href, label))
 
     def handle_data(self, data: str) -> None:
-        if self.anchor is not None:
-            self.anchor_label.append(data)
-        if self.depth and not self.skipped and data.strip():
-            self.body.append(data.strip())
+        if self.anchors:
+            self.anchors[-1][1].append(data)
+        if self.ignored or not data.strip():
+            return
+        active = {region for _, region, _ in self.frames if region is not None}
+        for region in active:
+            self.regions[region][1].append(data.strip())
 
 
 def extract_html(payload: bytes, page_url: str) -> tuple[str, tuple[str, ...]]:
@@ -144,7 +183,17 @@ def extract_html(payload: bytes, page_url: str) -> tuple[str, tuple[str, ...]]:
         raise ContentError("HTML_TOO_LARGE")
     parser = ArticleParser()
     parser.feed(payload.decode("utf-8-sig", errors="replace"))
-    body = re.sub(r"\s+", " ", " ".join(parser.body)).strip()
+    candidates = [
+        (priority, re.sub(r"\s+", " ", " ".join(parts)).strip())
+        for priority, parts in parser.regions
+    ]
+    candidates.sort(key=lambda item: (item[0], len(item[1])), reverse=True)
+    # Prefer a specific article region, but allow the general main container
+    # when the publisher does not mark its body explicitly.
+    body = next(
+        (text for _, text in candidates if len(text) >= MIN_TEXT_LENGTH),
+        candidates[0][1] if candidates else "",
+    )
     links = tuple(dict.fromkeys(
         target for href, _ in parser.links
         if allowed(target := urljoin(page_url, href))
