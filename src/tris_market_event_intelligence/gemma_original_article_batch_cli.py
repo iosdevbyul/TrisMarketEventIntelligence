@@ -32,6 +32,111 @@ first became public. Do not use future information. Respond with one JSON object
 Do not output Markdown or any trading instructions."""
 
 
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "summary": {"type": "string"},
+        "limitations": {"type": "string"},
+        "impacts": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "target": {"type": "string"},
+                    "direction": {
+                        "type": "string",
+                        "enum": ["UP", "DOWN", "NEUTRAL", "UNCERTAIN"],
+                    },
+                    "reason": {"type": "string"},
+                    "evidence_quote": {"type": "string"},
+                },
+                "required": [
+                    "target", "direction", "reason", "evidence_quote",
+                ],
+            },
+        },
+    },
+    "required": ["summary", "impacts", "limitations"],
+}
+
+
+class AnswerError(ValueError):
+    """Stable diagnosis for model-only failures; never persist generated raw text."""
+
+
+def result_error(exc: Exception) -> str:
+    if isinstance(exc, AnswerError):
+        return str(exc)
+    if isinstance(exc, json.JSONDecodeError):
+        return "MODEL_JSON_INVALID"
+    if isinstance(exc, httpx.TimeoutException):
+        return "OLLAMA_TIMEOUT"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return "OLLAMA_HTTP_ERROR"
+    if isinstance(exc, httpx.HTTPError):
+        return "OLLAMA_TRANSPORT_ERROR"
+    if isinstance(exc, (KeyError, TypeError)):
+        return "MODEL_RESPONSE_SHAPE"
+    return "MODEL_RESPONSE_INVALID"
+
+
+def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
+    source = request["body"]
+    base_messages = [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
+    ]
+    last_error = "MODEL_RESPONSE_INVALID"
+    # Bounded recovery: one retry for malformed/ungrounded model output.
+    # The model receives only the original source and stable error category,
+    # never its own invalid answer.
+    for attempt in range(2):
+        messages = list(base_messages)
+        if attempt:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "Previous answer failed verification: " + last_error
+                    + ". Return only one valid JSON object matching the schema. "
+                    "Never paraphrase a source quote: copy an exact short span. "
+                    "If uncertain, return an empty impacts array. "
+                    "Do not add explanations outside JSON."
+                ),
+            })
+        response = client.post(
+            "http://127.0.0.1:11434/api/chat",
+            json={
+                "model": model, "stream": False, "format": OUTPUT_SCHEMA,
+                "options": {"temperature": 0},
+                "messages": messages,
+            },
+        )
+        if response.status_code in {400, 422}:
+            # Older Ollama backends can reject JSON Schema grammar.
+            response = client.post(
+                "http://127.0.0.1:11434/api/chat",
+                json={
+                    "model": model, "stream": False, "format": "json",
+                    "options": {"temperature": 0},
+                    "messages": messages,
+                },
+            )
+        response.raise_for_status()
+        try:
+            data = response.json()
+            content = data["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise AnswerError("MODEL_CONTENT_EMPTY")
+            return validate_answer(content, source)
+        except (ValueError, KeyError, TypeError) as exc:
+            last_error = result_error(exc)
+    raise AnswerError(last_error)
+
+
+
 def verified_articles(db_path: Path, limit: int) -> tuple[list[dict], dict]:
     if not db_path.is_file() or db_path.is_symlink():
         raise ValueError("Existing non-symlink source DB required")
@@ -72,27 +177,27 @@ def verified_articles(db_path: Path, limit: int) -> tuple[list[dict], dict]:
 
 def validate_answer(raw: str, evidence: str) -> dict:
     if len(raw) > 30000:
-        raise ValueError("RESPONSE_TOO_LARGE")
+        raise AnswerError("RESPONSE_TOO_LARGE")
     result = json.loads(raw)
     if not isinstance(result, dict):
-        raise TypeError("RESPONSE_SHAPE")
+        raise AnswerError("RESPONSE_SHAPE")
     if not isinstance(result.get("summary"), str):
-        raise TypeError("SUMMARY_MISSING")
+        raise AnswerError("SUMMARY_MISSING")
     if not isinstance(result.get("limitations"), str):
-        raise TypeError("LIMITATIONS_MISSING")
+        raise AnswerError("LIMITATIONS_MISSING")
     impacts = result.get("impacts")
     if not isinstance(impacts, list) or len(impacts) > 12:
-        raise ValueError("IMPACTS_SHAPE")
+        raise AnswerError("IMPACTS_SHAPE")
     for impact in impacts:
         if not isinstance(impact, dict):
-            raise TypeError("IMPACT_SHAPE")
+            raise AnswerError("IMPACT_SHAPE")
         for field in ("target", "direction", "reason", "evidence_quote"):
             if not isinstance(impact.get(field), str) or not impact[field].strip():
-                raise ValueError("IMPACT_FIELD_INVALID")
+                raise AnswerError("IMPACT_FIELD_INVALID")
         if impact["direction"] not in {"UP", "DOWN", "NEUTRAL", "UNCERTAIN"}:
-            raise ValueError("DIRECTION_INVALID")
+            raise AnswerError("DIRECTION_INVALID")
         if impact["evidence_quote"] not in evidence:
-            raise ValueError("QUOTE_NOT_IN_SOURCE")
+            raise AnswerError("QUOTE_NOT_IN_SOURCE")
     return result
 
 
@@ -132,24 +237,10 @@ def analyze(
                 "warning": "Do not infer results from post-publication price movements",
             }
             try:
-                response = client.post(
-                    "http://127.0.0.1:11434/api/chat",
-                    json={
-                        "model": model, "stream": False, "format": "json",
-                        "options": {"temperature": 0},
-                        "messages": [
-                            {"role": "system", "content": SYSTEM},
-                            {"role": "user", "content": json.dumps(
-                                request, ensure_ascii=False,
-                            )},
-                        ],
-                    },
-                )
-                response.raise_for_status()
-                answer = validate_answer(response.json()["message"]["content"], excerpt)
+                answer = ask_gemma(client, model, request)
             except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
                 failed += 1
-                reason = type(exc).__name__
+                reason = result_error(exc)
                 failure_codes[reason] = failure_codes.get(reason, 0) + 1
                 print(json.dumps({
                     "articleId": article["articleId"], "status": "ERROR",
