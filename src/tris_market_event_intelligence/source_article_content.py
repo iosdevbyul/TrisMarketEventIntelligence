@@ -223,6 +223,10 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
 
 
 def capture(client: httpx.Client, url: str) -> dict[str, object]:
+    # RSS can link to programmes, galleries and index pages rather than a
+    # written article. Do not mislabel their template text as article content.
+    if urlsplit(url).path.startswith("/iplayer/"):
+        raise ContentError("NON_ARTICLE_MEDIA_PAGE")
     payload, media_type, final_url = fetch(client, url, MAX_PDF_BYTES)
     if payload.startswith(b"%PDF-"):
         body, sparse = extract_pdf(payload)
@@ -234,17 +238,23 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
     )):
         body, pdf_links = extract_html(payload, final_url)
         source_data, source_url, kind, sparse = payload, final_url, "HTML", ()
-        if len(body) < MIN_TEXT_LENGTH:
-            for pdf_url in pdf_links:
-                try:
-                    candidate, _, resolved = fetch(client, pdf_url, MAX_PDF_BYTES)
-                    extracted, candidate_sparse = extract_pdf(candidate)
-                    if len(extracted.strip()) >= MIN_TEXT_LENGTH:
-                        body, sparse = extracted, candidate_sparse
-                        source_data, source_url, kind = candidate, resolved, "PDF"
-                        break
-                except (httpx.HTTPError, ContentError):
-                    continue
+        # Publisher release pages may contain only a short introduction. The
+        # complete economic release or FOMC minutes can be in an official PDF.
+        # Inspect explicitly linked, same-trust-boundary PDFs even if the HTML
+        # exceeds MIN_TEXT_LENGTH; do not mistake a teaser for the full report.
+        for pdf_url in pdf_links:
+            try:
+                candidate, _, resolved = fetch(client, pdf_url, MAX_PDF_BYTES)
+                extracted, candidate_sparse = extract_pdf(candidate)
+                if len(extracted.strip()) >= max(
+                    1000, int(len(body.strip()) * 1.5)
+                ):
+                    body, sparse = extracted, candidate_sparse
+                    source_data, source_url, kind = candidate, resolved, "PDF"
+                    # Prefer the largest validated attachment, not an arbitrary
+                    # minor table/appendix or the first PDF on the page.
+            except (httpx.HTTPError, ContentError):
+                continue
     else:
         raise ContentError("UNSUPPORTED_MEDIA_TYPE")
     if len(body.strip()) < MIN_TEXT_LENGTH:
