@@ -101,7 +101,10 @@ def run_cycle(
                     break
             ok = sum(x["status"] in {"ok", "not_modified"} for x in results.values())
             status = "failed" if ok == 0 else "healthy" if ok == len(results) else "degraded"
-            if fulltext is not None and fulltext["status"] != "COMPLETE" and status == "healthy":
+            # An existing backlog or review-only PDF is not a failed cycle.
+            # Preserve per-cycle acquisition progress while keeping transient
+            # fetch failures visible as degraded.
+            if fulltext is not None and fulltext["incomplete"] and status == "healthy":
                 status = "degraded"
             outcome: dict[str, object] = {
                 "status": status,
