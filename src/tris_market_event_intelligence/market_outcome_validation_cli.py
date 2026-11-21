@@ -9,7 +9,7 @@ import argparse
 import csv
 import hashlib
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 from math import isfinite
 from pathlib import Path
@@ -32,7 +32,7 @@ def _load_json(path: Path) -> dict:
         raise ValueError(f"Expected existing regular JSON file: {path}")
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
-        raise ValueError(f"Expected JSON object: {path}")
+        raise TypeError(f"Expected JSON object: {path}")
     return value
 
 
@@ -51,7 +51,7 @@ def _csv(path: Path, required: set[str]) -> list[dict[str, str]]:
 
 
 def _timestamp(text: str) -> datetime:
-    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(text)
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("Publication and processing timestamps must be timezone-aware")
     return parsed
