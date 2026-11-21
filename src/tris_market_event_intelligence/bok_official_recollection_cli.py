@@ -89,8 +89,13 @@ def inspect_pdf(path: Path, record: dict) -> tuple[dict, dict]:
     }
     if not page_audit or len(normalized) < 300:
         audit["status"] = "INSUFFICIENT_PDF_TEXT"
-    elif empty_pages or missing:
+    elif missing:
         audit["status"] = "NEEDS_MANUAL_PDF_INSPECTION"
+    # A sparse page may be a blank divider, illustration, or an unextracted table.
+    # Keep it flagged for visual review without discarding all other PDF pages.
+    if empty_pages:
+        audit["manualVisualReviewRequiredPages"] = empty_pages
+        audit["warningCodes"] = ["SPARSE_PAGE_REQUIRES_VISUAL_REVIEW"]
     article = {
         "title": record["title"],
         "sourceUrl": record["officialUrl"],
@@ -120,6 +125,9 @@ def build_cohort(pdf_dir: Path) -> tuple[dict, dict]:
         "status": "AWAITING_MANUAL_TABLE_REVIEW" if valid else "BLOCKED_INVALID_SOURCE",
         "candidateCount": len(RELEASES),
         "structurallyExtractedCount": len(articles),
+        "manualVisualReviewRequired": any(
+            row.get("manualVisualReviewRequiredPages") for row in reviews
+        ),
         "note": (
             "Page text has been extracted without clipping. Human must inspect PDF "
             "tables, numerical columns, units and release dates before approving."
