@@ -99,7 +99,9 @@ def check_source_quotes(sectors: list[dict], source: str) -> list[dict]:
 
 def analyze(article: dict, model: Any) -> dict:
     # Prefer full body; summaries are a fallback only when the complete body is missing.
-    source = plain_text(article.get("body") or article.get("summary") or "")
+    raw_body = article.get("body") or article.get("summary") or ""
+    source = (str(raw_body).strip() if article.get("bodyFormat") == "PDF_LAYOUT"
+              else plain_text(raw_body))
     title = str(article.get("title") or "").strip()
     result = {
         "articleId": article.get("articleId"), "title": title,
@@ -241,6 +243,7 @@ def main() -> None:
         if not isinstance(articles, list) or any(not isinstance(a, dict) for a in articles):
             parser.error("Expected one article or an array of articles")
     if args.bok_attachments is not None:
+        parser.error("Legacy BOK attachments are discarded. Recollect official PDFs with bok_official_recollection_cli.")
         if not frozen_hash:
             parser.error("--bok-attachments requires --holdout-result")
         p = args.bok_attachments
