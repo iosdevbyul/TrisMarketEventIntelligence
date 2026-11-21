@@ -138,6 +138,7 @@ def main() -> None:
         args.db.expanduser(), status_path=args.status.expanduser(),
         selected_sources=sources, model=provider,
         enable_local_analysis=args.enable_local_analysis,
+        enable_fulltext=True,
         live_freshness_seconds=args.live_freshness_minutes * 60,
         source_success_seconds=args.source_success_minutes * 60,
         max_event_extraction=args.max_extraction,
