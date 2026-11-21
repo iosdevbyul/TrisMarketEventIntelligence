@@ -154,6 +154,8 @@ def evaluate(
             mapping = mappings.get(target)
             if mapping is None:
                 item["status"] = "UNMAPPED"
+                for horizon in HORIZONS:
+                    summaries[f"{horizon}d:UNAVAILABLE"] += 1
             else:
                 mapping_is_pit = _timestamp(mapping["verifiedAt"]) <= published
                 item["mapping"] = mapping
@@ -185,6 +187,15 @@ def evaluate(
                         "CORRECT" if observed == predicted else
                         "INCORRECT" if observed else "UNAVAILABLE"
                     )
+                    relative_direction = (
+                        _direction(label.excess_return)
+                        if label.status == "COMPLETED" and label.excess_return is not None else None
+                    )
+                    relative_verdict = (
+                        "ABSTAINED" if predicted == "UNCERTAIN" and relative_direction else
+                        "CORRECT" if relative_direction == predicted else
+                        "INCORRECT" if relative_direction else "UNAVAILABLE"
+                    )
                     item["horizons"].append({
                         "sessions": label.horizon_sessions,
                         "exitDay": label.exit_day,
@@ -193,21 +204,39 @@ def evaluate(
                         "excessReturn": label.excess_return,
                         "actualDirection": observed,
                         "verdict": verdict,
+                        "relativeActualDirection": relative_direction,
+                        "relativeVerdict": relative_verdict,
                         "dataStatus": label.status,
                     })
                     summaries[f"{label.horizon_sessions}d:{verdict}"] += 1
+                    summaries[f"{label.horizon_sessions}d:relative:{relative_verdict}"] += 1
             summaries[item["status"]] += 1
             detail.append(item)
     metrics = {}
     for horizon in HORIZONS:
         correct = summaries[f"{horizon}d:CORRECT"]
         wrong = summaries[f"{horizon}d:INCORRECT"]
+        relative_correct = summaries[f"{horizon}d:relative:CORRECT"]
+        relative_wrong = summaries[f"{horizon}d:relative:INCORRECT"]
         metrics[f"{horizon}d"] = {
             "correct": correct, "incorrect": wrong,
             "abstained": summaries[f"{horizon}d:ABSTAINED"],
             "unavailable": summaries[f"{horizon}d:UNAVAILABLE"],
             "accuracy": correct / (correct + wrong) if correct + wrong else None,
             "denominator": correct + wrong,
+            "totalImpacts": len(detail),
+            "coverage": (correct + wrong) / len(detail) if detail else None,
+            "relative": {
+                "correct": relative_correct,
+                "incorrect": relative_wrong,
+                "abstained": summaries[f"{horizon}d:relative:ABSTAINED"],
+                "unavailable": summaries[f"{horizon}d:relative:UNAVAILABLE"],
+                "accuracy": (
+                    relative_correct / (relative_correct + relative_wrong)
+                    if relative_correct + relative_wrong else None
+                ),
+                "denominator": relative_correct + relative_wrong,
+            },
         }
     return {
         "schemaVersion": "market_outcome_validation_v1",
