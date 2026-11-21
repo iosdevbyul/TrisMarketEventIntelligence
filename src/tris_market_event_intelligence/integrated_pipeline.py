@@ -82,6 +82,7 @@ def run_integrated_pass(
     client: httpx.Client | None = None,
     model: ImpactProvider | None = None,
     enable_local_analysis: bool = False,
+    enable_fulltext: bool = False,
     live_freshness_seconds: int = 900,
     source_success_seconds: int = 900,
     max_event_extraction: int = MAX_EVENT_EXTRACTION,
@@ -179,6 +180,7 @@ def run_integrated_pass(
         # Let the original collector own its status/history checkpoint.
         collector = run_cycle(
             db_path, selected_sources=selected_sources, client=client,
+            enable_fulltext=enable_fulltext,
         )
         report: dict[str, object] = {
             "schema_version": "integrated_news_pass_v1",

@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -175,14 +175,26 @@ class ImpactProcessor:
             if event_ids is not None else ""
         )
         with self.store.store.connect() as db:
+            fulltext_available = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='article_full_text'"
+            ).fetchone() is not None
+            fulltext_columns = (
+                ", f.status, f.body, f.body_sha256, f.sparse_pages"
+                if fulltext_available else ", NULL, NULL, NULL, NULL"
+            )
+            fulltext_join = (
+                " LEFT JOIN article_full_text f ON f.article_id = e.article_id "
+                if fulltext_available else ""
+            )
             rows = db.execute(
                 f"""
                 SELECT e.id, e.classification, e.status, e.direction,
                        e.change_basis_points, e.evidence, e.source, e.source_url,
                        e.detected_at, m.claim_kind, m.verification_note, m.tags_json,
-                       e.published_at
+                       e.published_at {fulltext_columns}
                 FROM economic_events e
                 LEFT JOIN event_metadata m ON m.event_id = e.id
+                {fulltext_join}
                 WHERE e.classification IN (
                     'MONETARY_POLICY', 'ECONOMIC_INDICATOR', 'EARNINGS',
                     'CORPORATE_EVENT', 'REGULATION', 'GEOPOLITICAL', 'SUPPLY_CHAIN',
@@ -227,6 +239,35 @@ class ImpactProcessor:
                 tuple(json.loads(record[11])) if record[11] else (),
             )
             if not is_eligible(event):
+                continue
+            # Only validated original body material may enter the model's
+            # evidence context. Never silently treat incomplete PDF tables,
+            # non-articles or failed downloads as complete market evidence.
+            source_state, source_body, source_hash, sparse_pages = record[13:17]
+            if source_state == "NON_ARTICLE":
+                deferred += 1
+                continue
+            if source_state == "COMPLETE" and source_body:
+                import hashlib
+
+                if (hashlib.sha256(source_body.encode()).hexdigest() != source_hash
+                        or sparse_pages not in (None, "[]")):
+                    deferred += 1
+                    continue
+                # Keep the original event excerpt for strict quote validation.
+                # Bound context for local Mac model memory, using a visible
+                # truncation marker rather than implying the full PDF was read.
+                max_source_chars = 12000
+                excerpt = source_body[:max_source_chars]
+                if len(source_body) > max_source_chars:
+                    excerpt += "\\n[DOCUMENT_EXCERPT_TRUNCATED]"
+                event = replace(
+                    event,
+                    evidence=event.evidence + "\\n[ORIGINAL_SOURCE_DOCUMENT]\\n" + excerpt,
+                )
+            elif source_state == "REVIEW_REQUIRED":
+                # PDF page/table completeness not proven; no model checkpoint.
+                deferred += 1
                 continue
             if live_freshness_seconds is not None:
                 # Every model request gets its OWN current-clock check.

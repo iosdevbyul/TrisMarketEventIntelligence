@@ -5,12 +5,15 @@ import os
 from pathlib import Path
 
 from tris_market_event_intelligence.collector import run_collector
+from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES
 from tris_market_event_intelligence.source_catalog import load_feeds
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect financial news from RSS feeds")
     parser.add_argument("--once", action="store_true", help="Fetch selected feeds once")
+    parser.add_argument("--fulltext", action="store_true",
+                        help="Also retrieve normalized original bodies of operational feeds")
     parser.add_argument("--list-sources", action="store_true", help="Show configured feed sources")
     parser.add_argument("--feeds-file", type=Path, help="Optional local JSON with additional RSS feeds")
     parser.add_argument("--only", help="Comma-separated IDs of feeds to collect")
@@ -29,7 +32,10 @@ def main() -> None:
         for source, url in feeds.items():
             print(f"{source}\t{url}")
         return
-    run_collector(args.db, args.interval, args.once, feeds=feeds)
+    if args.fulltext and set(feeds) - set(OPERATIONAL_SOURCES):
+        parser.error("--fulltext currently supports operational publisher feeds only")
+    run_collector(args.db, args.interval, args.once, feeds=feeds,
+                  enable_fulltext=args.fulltext)
 
 
 if __name__ == "__main__":

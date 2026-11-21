@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, replace
@@ -160,12 +161,24 @@ class EventProcessor:
                     except ValueError:
                         key = (f"invalid:{existing_id}", "")
                     representative.setdefault(key, existing_id)
+            fulltext_exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='article_full_text'"
+            ).fetchone() is not None
+            fulltext_select = (
+                ", f.status, f.body, f.body_sha256, f.sparse_pages"
+                if fulltext_exists else ", NULL, NULL, NULL, NULL"
+            )
+            fulltext_join = (
+                "LEFT JOIN article_full_text f ON f.article_id=a.id"
+                if fulltext_exists else ""
+            )
             rows = db.execute(
-                """
+                f"""
                 SELECT a.id, a.source, a.url, a.title, a.summary, a.published_at,
-                       a.detected_at, c.sha256
+                       a.detected_at, c.sha256 {fulltext_select}
                 FROM articles a
                 JOIN captures c ON a.capture_id = c.id
+                {fulltext_join}
                 WHERE NOT EXISTS (
                     SELECT 1 FROM extraction_runs r
                     WHERE r.article_id = a.id
@@ -194,7 +207,26 @@ class EventProcessor:
                     batch_size,
                 ),
             ).fetchall()
-            for article_id, source, url, title, summary, published, detected, sha in rows:
+            for row in rows:
+                (article_id, source, url, title, summary, published, detected,
+                 sha, fulltext_status, fulltext_body, fulltext_sha, sparse_pages) = row
+                if fulltext_status == "NON_ARTICLE":
+                    # The RSS publication is not a written market-news story.
+                    with db:
+                        db.execute(
+                            "INSERT OR IGNORE INTO extraction_runs VALUES (?, ?, ?)",
+                            (article_id, extractor_version, utc_now()),
+                        )
+                    processed += 1
+                    continue
+                # The established deterministic extractor still controls event
+                # classification; provide verified document context rather than
+                # relying on the abbreviated RSS description.
+                if (fulltext_status == "COMPLETE" and fulltext_body
+                        and sparse_pages in (None, "[]")
+                        and hashlib.sha256(fulltext_body.encode()).hexdigest()
+                        == fulltext_sha):
+                    summary = (summary or "") + "\\n" + fulltext_body[:4000]
                 if extractor_version == V3_PRODUCTION_VERSION:
                     try:
                         key = (canonical_url(url), title.strip().casefold())
