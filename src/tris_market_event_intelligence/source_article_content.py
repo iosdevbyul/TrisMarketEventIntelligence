@@ -104,6 +104,12 @@ class ArticleParser(HTMLParser):
                 or a.get("data-href") or a.get("data-download-url")
             )
             self.anchor_label = []
+            if not self.anchor:
+                matches = re.findall(
+                    r"""['"]((?:https://|/)[^'"]+)['"]""",
+                    a.get("onclick") or "",
+                )
+                self.anchor = matches[0] if matches else None
         if self.depth:
             self.depth += 1
         elif (not self.skipped and (
