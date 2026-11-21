@@ -30,6 +30,44 @@ The direction deadband is ±0.1% of *absolute adjusted return*; benchmark-relati
 
 The existing article batch explicitly sets `predictionSealedBeforeOutcome=false`. These outputs remain **RETROSPECTIVE_UNSEALED**, regardless of whether subsequent label directions happen to match. Hashing them today proves integrity from today forward, not that a historical prediction existed at publication time. They must never be represented as prospective historical forecasting accuracy or a causal effect of news.
 
-Target mappings with `verified_at` later than the publication date are excluded as `MAPPING_NOT_POINT_IN_TIME`. Unmapped targets are separately reported. The daily study is descriptive and does not remove market confounders beyond the simple benchmark comparison. A stronger validation requires a point-in-time historical replay, proper external test period, independent source availability audit, and comparison against naive market baselines.
+Target mappings with `verified_at` later than publication are explicitly marked `RETROSPECTIVE_POST_EVENT_MAPPING` and remain research-only comparisons; they must never be counted as point-in-time prospectively verified forecasts. Unmapped targets are separately reported. The daily study is descriptive and does not remove market confounders beyond the simple benchmark comparison. A stronger validation requires a point-in-time historical replay, proper external test period, independent source availability audit, and comparison against naive market baselines.
 
 This module does **not** provide a new market-data subscription or downloader. Price observations must first be obtained from a licensed/reliable provider and exported in the required format. There are **no measured accuracy results** until that real dataset is supplied and the command is actually executed.
+
+## Real observed daily prices: optional Yahoo research adapter
+
+Install `python -m pip install yfinance` only if using Yahoo Finance. `yfinance` is a third-party unofficial research interface, not a licensed institutional feed. It may reject requests or revise adjusted prices; such failure means missing data, never zero return. Source: https://ranaroussi.github.io/yfinance/reference/yfinance.price_history.html
+
+Create a source-verified, intentionally small pilot target map for the one unambiguous publicly traded company in this batch. The Bank of Nova Scotia was listed on NYSE under **BNS** before the article date, as documented in 2026 SEC disclosures: https://www.sec.gov/Archives/edgar/data/9631/000119312526364091/d143422dex991.htm . SPY is a broad US market comparison benchmark, not a representation of BNS's sector. Here `verified_at` is the **date when the analyst confirmed the mapping**, NOT a fabricated historical date. This is still an **unsealed retrospective evaluation**.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python - "$DATA/stage6-verified-target-map.csv" <<'PY'
+import csv, sys
+from datetime import UTC, datetime
+from pathlib import Path
+path = Path(sys.argv[1])
+if path.exists():
+    raise SystemExit("Mapping file already exists; refusing overwrite")
+with path.open("x", newline="", encoding="utf-8") as output:
+    writer = csv.writer(output)
+    writer.writerow(["target", "market", "symbol", "benchmark", "verified_at"])
+    writer.writerow(["The Bank of Nova Scotia (BNS)", "XNYS", "BNS", "SPY", datetime.now(UTC).isoformat()])
+print(path)
+PY
+
+python -m pip install yfinance
+python -m tris_market_event_intelligence.market_price_collection_cli \\
+  --mappings "$DATA/stage6-verified-target-map.csv" \\
+  --start 2026-10-27 --end 2026-11-13 \\
+  --output "$DATA/stage6-actual-adjusted-daily.csv"
+
+python -m tris_market_event_intelligence.market_outcome_validation_cli \\
+  --gemma-dir "$DATA/main-validation-gemma" \\
+  --mappings "$DATA/stage6-verified-target-map.csv" \\
+  --prices "$DATA/stage6-actual-adjusted-daily.csv" \\
+  --price-source "Yahoo Finance via yfinance, sourced Nov 2026 adjusted daily history" \\
+  --output "$DATA/stage6-outcomes-v1.json"
+```
+
+This pilot only evaluates the exact BNS target string. Other target strings remain `UNMAPPED`; that is intentional. Even if all returned price rows are real, a directional match does **not** identify the Fed article as the cause. The command output gives the path to a per-impact report; inspect the BNS item and the coverage first. For later pilots, add only unambiguously identified securities or **explicitly labeled** sector ETF proxies with documentary provenance and state their semantic mismatch. Do not turn inflation, GDP, Treasury yield levels, or mixed multi-entity targets into one equity symbol.
