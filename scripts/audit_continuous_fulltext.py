@@ -26,7 +26,7 @@ def stamp(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
     return parsed.astimezone(UTC) if parsed.tzinfo else None
@@ -44,8 +44,8 @@ def audit(db_path: Path, status_path: Path, interval: int = 900) -> dict:
         try:
             last_cycle = json.loads(status_path.read_text(encoding="utf-8"))
             if not isinstance(last_cycle, dict):
-                raise ValueError
-        except (OSError, ValueError):
+                raise TypeError("Invalid status JSON root")
+        except (OSError, ValueError, TypeError):
             last_cycle = {}
             errors.append("STATUS_FILE_INVALID")
     completed = stamp(last_cycle.get("finished_at"))
