@@ -97,3 +97,31 @@ def test_no_unverified_pdf_is_silently_added(tmp_path):
     assert report["status"] == "BLOCKED_INVALID_SOURCE"
     assert report["candidateCount"] == 4
     assert cohort["articles"] == []
+
+
+def test_sparse_visual_page_flags_warning_without_blocking_other_pages(
+    monkeypatch, tmp_path
+):
+    from tris_market_event_intelligence import bok_official_recollection_cli as subject
+
+    class SparsePDF:
+        is_encrypted = False
+
+        def __init__(self, _path, *, strict):
+            assert strict
+            self.pages = [
+                LayoutPage("경제전망 2026\\n" + "성장률 및 물가 전망.\\n" * 20),
+                LayoutPage("  "),
+                LayoutPage("경제전망 2026\\n" + "반도체 및 수출 업황.\\n" * 20),
+            ]
+
+    monkeypatch.setattr(subject, "PdfReader", SparsePDF)
+    path = tmp_path / "117.pdf"
+    path.write_bytes(b"%PDF-1.5\\nmock")
+    article, audit = inspect_pdf(path, RELEASES[117])
+    assert audit["status"] == "READY_FOR_MANUAL_TABLE_REVIEW"
+    assert audit["emptyOrSparsePages"] == [2]
+    assert audit["manualVisualReviewRequiredPages"] == [2]
+    assert "SPARSE_PAGE_REQUIRES_VISUAL_REVIEW" in audit["warningCodes"]
+    assert "[PDF_PAGE_2]" in article["body"]
+    assert "[PDF_PAGE_3]" in article["body"]
