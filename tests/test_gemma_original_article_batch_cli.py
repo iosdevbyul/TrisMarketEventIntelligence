@@ -68,7 +68,7 @@ def test_model_gets_original_and_creates_resumable_json(tmp_path: Path) -> None:
         assert request.url.host == "127.0.0.1"
         payload = json.loads(request.content)
         inputs.append(payload)
-        assert BODY in payload["messages"][1]["content"]
+        assert "regional market and company activity" in payload["messages"][1]["content"]
         assert payload["model"] == "gemma4:e2b"
         return httpx.Response(
             200,
@@ -78,7 +78,7 @@ def test_model_gets_original_and_creates_resumable_json(tmp_path: Path) -> None:
                     "target": "FINANCIALS",
                     "direction": "UNCERTAIN",
                     "reason": "The report is broad and no prices are provided.",
-                    "evidence_quote": "regional market and company activity",
+                    "evidence_id": "E1",
                 }],
                 "limitations": "No market reaction observed",
             })}},
@@ -96,6 +96,8 @@ def test_model_gets_original_and_creates_resumable_json(tmp_path: Path) -> None:
     saved = json.loads(reports[0].read_text(encoding="utf-8"))
     assert saved["article"]["bodySha256"] == hashlib.sha256(BODY.encode()).hexdigest()
     assert saved["analysis"]["impacts"][0]["direction"] == "UNCERTAIN"
+    assert saved["analysis"]["impacts"][0]["evidence_quote"] in BODY
+    assert saved["analysis"]["impacts"][0]["evidence_id"] == "E1"
     assert saved["priceReturnsEvaluated"] is False
     assert saved["predictionSealedBeforeOutcome"] is False
     with sqlite3.connect(db) as connection:
@@ -109,7 +111,7 @@ def test_invalid_quote_cannot_be_saved(tmp_path: Path) -> None:
             "summary": "Report", "limitations": "None",
             "impacts": [{
                 "target": "TECH", "direction": "UP", "reason": "Hypothesis",
-                "evidence_quote": "not in article at all",
+                "evidence_id": "E999",
             }],
         })}})
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
@@ -125,14 +127,14 @@ def test_reject_corrupt_body_and_nonsource_quotes(tmp_path: Path) -> None:
     selected, coverage = verified_articles(db, 20)
     assert not selected
     assert coverage["invalidRowsExcluded"] == 1
-    with pytest.raises(ValueError, match="QUOTE_NOT_IN_SOURCE"):
+    with pytest.raises(ValueError, match="EVIDENCE_ID_NOT_IN_SOURCE"):
         validate_answer(json.dumps({
             "summary": "", "limitations": "",
             "impacts": [{
                 "target": "TECH", "direction": "UP", "reason": "Justification",
-                "evidence_quote": "fake",
+                "evidence_id": "E999",
             }],
-        }), BODY)
+        }), {"E1": BODY})
 
 
 def test_invalid_first_response_repairs_with_same_source(tmp_path: Path) -> None:
@@ -153,7 +155,7 @@ def test_invalid_first_response_repairs_with_same_source(tmp_path: Path) -> None
                 "impacts": [{
                     "target": "FINANCIALS", "direction": "UNCERTAIN",
                     "reason": "No evidence about future returns",
-                    "evidence_quote": "regional market and company activity",
+                    "evidence_id": "E1",
                 }],
             })}},
         )
@@ -163,8 +165,8 @@ def test_invalid_first_response_repairs_with_same_source(tmp_path: Path) -> None
     assert result["completed"] == 1 and result["failed"] == 0
     assert len(attempts) == 2
     assert all(payload["format"]["type"] == "object" for payload in attempts)
-    assert BODY in attempts[0]["messages"][1]["content"]
-    assert BODY in attempts[1]["messages"][1]["content"]
+    assert "regional market and company activity" in attempts[0]["messages"][1]["content"]
+    assert "regional market and company activity" in attempts[1]["messages"][1]["content"]
 
 
 def test_failed_twice_has_specific_diagnostic(tmp_path: Path, capsys: object) -> None:
@@ -205,3 +207,36 @@ def test_ollama_schema_fallback(tmp_path: Path) -> None:
         result = analyze(db, tmp_path / "reviews", client=client)
     assert result["completed"] == 1
     assert formats[1] == "json"
+
+
+def test_source_quote_is_attached_by_python_not_generated_by_gemma() -> None:
+    from tris_market_event_intelligence.gemma_original_article_batch_cli import (
+        evidence_passages,
+    )
+
+    source = ("US central bank announced a policy decision. "
+              "The report does not provide realized stock returns.")
+    passages = evidence_passages(source)
+    assert passages[0]["id"] == "E1"
+    assert passages[0]["text"] in source
+    answer = validate_answer(json.dumps({
+        "summary": "Policy decision", "limitations": "No prices",
+        "impacts": [{
+            "target": "US_MARKET", "direction": "UNCERTAIN",
+            "reason": "The report lacks forward price data",
+            "evidence_id": "E1",
+        }],
+    }), {item["id"]: item["text"] for item in passages})
+    assert answer["impacts"][0]["evidence_quote"] == passages[0]["text"]
+
+
+def test_oversized_source_has_bounded_deterministic_passages() -> None:
+    from tris_market_event_intelligence.gemma_original_article_batch_cli import (
+        evidence_passages,
+    )
+
+    source = "Financial markets face uncertainty. " * 1000
+    first = evidence_passages(source)
+    assert first == evidence_passages(source)
+    assert 1 <= len(first) <= 24
+    assert all(item["text"] in source[:12000] for item in first)
