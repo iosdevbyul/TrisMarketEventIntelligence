@@ -10,7 +10,7 @@ import argparse
 import csv
 import importlib
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from math import isfinite
 from pathlib import Path
 
@@ -40,7 +40,7 @@ def collect_prices(
                 interval="1d", auto_adjust=True, actions=False,
                 raise_errors=True,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - third-party provider exception boundary
             # Do not substitute values from a different ticker or provider.
             missing.append(symbol)
             print(json.dumps({
@@ -52,7 +52,7 @@ def collect_prices(
             missing.append(symbol)
             continue
         for timestamp, close in frame["Close"].items():
-            day = timestamp.date().isoformat()
+            day = (timestamp.date() if isinstance(timestamp, datetime) else timestamp).isoformat()
             if not start.isoformat() <= day < end.isoformat():
                 continue
             price = float(close)
@@ -70,7 +70,7 @@ def collect_prices(
     manifest = {
         "schemaVersion": "market_price_collection_v1",
         "provider": "Yahoo Finance via yfinance",
-        "retrievedAt": datetime.now(timezone.utc).isoformat(),
+        "retrievedAt": datetime.now(UTC).isoformat(),
         "adjustment": "yfinance history(auto_adjust=True) Close",
         "periodStartInclusive": start.isoformat(),
         "periodEndExclusive": end.isoformat(),
