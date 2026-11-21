@@ -303,19 +303,47 @@ def collect_full_text(
     store = NewsStore(db_path)
     initialize(store)
     now = datetime.now(UTC).isoformat()
+    # Divide each finite cycle between newest discoveries and oldest missing
+    # articles. A busy news feed must never starve the historical catch-up.
+    # Due retries use their own queue after new discoveries.
+    newest_slots = (limit + 1) // 2
+    oldest_slots = limit - newest_slots
     with store.connect() as db:
-        rows = db.execute("""
+        query = """
             SELECT a.id, a.url
             FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE (f.article_id IS NULL OR
-                   (f.status='INCOMPLETE' AND f.retry_after <= ?))
+            WHERE f.article_id IS NULL
               AND a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
               )
-            ORDER BY a.id DESC LIMIT ?
-        """, (now, limit)).fetchall()
+            ORDER BY a.id {order} LIMIT ?
+        """
+        newest = db.execute(query.format(order="DESC"), (newest_slots,)).fetchall()
+        oldest = db.execute(query.format(order="ASC"), (oldest_slots,)).fetchall()
+        chosen = {row[0]: row for row in (*newest, *oldest)}
+        if len(chosen) < limit:
+            # Fill remaining slots with overdue retries, oldest first.
+            retries = db.execute("""
+                SELECT a.id, a.url FROM articles a
+                JOIN article_full_text f ON f.article_id=a.id
+                WHERE f.status='INCOMPLETE' AND f.retry_after <= ?
+                  AND a.source IN (
+                    'fed_monetary','fed_all','bok_all','bok_statistics',
+                    'bok_corrections','bbc_business','bbc_technology','bbc_world'
+                  )
+                ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
+            """, (now, limit - len(chosen))).fetchall()
+            chosen.update({row[0]: row for row in retries})
+        if len(chosen) < limit:
+            # The newest/oldest slices can overlap in a nearly empty queue.
+            more = db.execute(query.format(order="ASC"), (limit,)).fetchall()
+            for row in more:
+                if len(chosen) >= limit:
+                    break
+                chosen[row[0]] = row
+        rows = list(chosen.values())
     owned = client is None
     client = client or httpx.Client(
         trust_env=False, follow_redirects=False,
@@ -387,7 +415,21 @@ def collect_full_text(
                 'bok_corrections','bbc_business','bbc_technology','bbc_world')
               AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED'))
         """).fetchone()[0]
+    with store.connect() as db:
+        review_pending = db.execute("""
+            SELECT COUNT(*) FROM articles a JOIN article_full_text f
+            ON f.article_id=a.id WHERE f.status='REVIEW_REQUIRED'
+              AND a.source IN (
+                'fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections','bbc_business','bbc_technology','bbc_world'
+              )
+        """).fetchone()[0]
+        missing_or_failed = pending - review_pending
     return {
-        "status": "COMPLETE" if pending == 0 else "INCOMPLETE",
-        "attempted": len(rows), **counts, "pending_or_unverified": pending,
+        "status": ("CATCHING_UP" if missing_or_failed else
+                   "REVIEW_REQUIRED" if review_pending else "COMPLETE"),
+        "attempted": len(rows), **counts,
+        "pending_or_unverified": pending,
+        "missing_or_failed": missing_or_failed,
+        "review_pending": review_pending,
     }
