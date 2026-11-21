@@ -426,3 +426,77 @@ def test_manual_collector_reuses_normalized_fulltext_queue(
     report = json.loads(capsys.readouterr().out)
     assert report["rss"]["bbc_world"]["status"] == "ok"
     assert report["fulltext"]["status"] == "COMPLETE"
+
+
+def test_due_retry_not_starved_by_busy_new_article_feed(tmp_path: Path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    store = NewsStore(tmp_path / "retry.sqlite3")
+    seed(store, "bbc_world", "https://www.bbc.com/news/articles/retry", "old-retry")
+    for index in range(24):
+        seed(
+            store, "bbc_world",
+            f"https://www.bbc.com/news/articles/other-{index}",
+            f"other-{index}",
+        )
+    from tris_market_event_intelligence.source_article_content import initialize
+
+    initialize(store)
+    with store.connect() as db:
+        db.execute("""
+            INSERT INTO article_full_text (
+                article_id, status, observed_at, error_code, retry_after
+            ) VALUES (1, 'INCOMPLETE', ?, 'HTTP_503', ?)
+        """, (
+            datetime.now(UTC).isoformat(),
+            (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+        ))
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(
+            200, headers={"Content-Type": "text/html"},
+            content=("<html><article>" + CONTENT + "</article></html>").encode(),
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        first = collect_full_text(store.path, client=client, limit=12)
+    assert first["attempted"] == 12
+    assert any(item.endswith("/retry") for item in seen)
+    with store.connect() as db:
+        assert db.execute(
+            "SELECT status FROM article_full_text WHERE article_id=1"
+        ).fetchone()[0] == "COMPLETE"
+
+
+def test_backlog_is_reported_separately_from_cycle_failure(
+    tmp_path: Path, monkeypatch: object,
+) -> None:
+    from tris_market_event_intelligence import operations
+
+    class FakeRSS:
+        def __init__(self, store: object, client: object, feeds: object) -> None:
+            pass
+
+        def collect_once(self) -> dict:
+            return {"bbc_world": {"status": "ok", "inserted": 0}}
+
+    monkeypatch.setattr(operations, "OfficialNewsCollector", FakeRSS)
+    monkeypatch.setattr(
+        operations, "collect_full_text",
+        lambda path, client=None: {
+            "status": "INCOMPLETE",
+            "attempted": 12,
+            "complete": 12,
+            "incomplete": 0,
+            "missing_or_failed": 776,
+            "pending_or_unverified": 776,
+        },
+    )
+    result = operations.run_cycle(
+        tmp_path / "cycle.sqlite3",
+        selected_sources=("bbc_world",), enable_fulltext=True,
+    )
+    assert result["status"] == "healthy"
+    assert result["article_fulltext"]["missing_or_failed"] == 776
