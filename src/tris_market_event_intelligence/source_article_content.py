@@ -426,7 +426,7 @@ def collect_full_text(
         """).fetchone()[0]
         missing_or_failed = pending - review_pending
     return {
-        "status": ("CATCHING_UP" if missing_or_failed else
+        "status": ("INCOMPLETE" if missing_or_failed else
                    "REVIEW_REQUIRED" if review_pending else "COMPLETE"),
         "attempted": len(rows), **counts,
         "pending_or_unverified": pending,
