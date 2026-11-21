@@ -38,6 +38,8 @@ def test_market_relative_verdict_and_unmapped_denominator(tmp_path: Path) -> Non
     assert report["metrics"]["1d"]["incorrect"] == 1
     assert report["metrics"]["1d"]["relative"]["correct"] == 1
     assert report["metrics"]["1d"]["unavailable"] == 1
+    assert report["metrics"]["1d"]["relative"]["unavailable"] == 1
+    assert report["metrics"]["5d"]["relative"]["unavailable"] == 1
     assert report["metrics"]["1d"]["totalImpacts"] == 2
     assert report["metrics"]["1d"]["coverage"] == pytest.approx(0.5)
 
