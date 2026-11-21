@@ -303,15 +303,14 @@ def collect_full_text(
     store = NewsStore(db_path)
     initialize(store)
     now = datetime.now(UTC).isoformat()
-    # Divide each finite cycle between newest discoveries and oldest missing
-    # articles. A busy news feed must never starve the historical catch-up.
-    # Due retries use their own queue after new discoveries.
-    newest_slots = (limit + 1) // 2
-    oldest_slots = limit - newest_slots
+    # Preserve capacity for three queues: new stories, historical catch-up,
+    # and due retries. A high-volume feed must not starve retries forever.
+    newest_slots = (limit + 2) // 3
+    oldest_slots = (limit + 1) // 3
+    retry_slots = limit - newest_slots - oldest_slots
     with store.connect() as db:
-        query = """
-            SELECT a.id, a.url
-            FROM articles a
+        base = """
+            SELECT a.id, a.url FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
             WHERE f.article_id IS NULL
               AND a.source IN (
@@ -320,29 +319,33 @@ def collect_full_text(
               )
             ORDER BY a.id {order} LIMIT ?
         """
-        newest = db.execute(query.format(order="DESC"), (newest_slots,)).fetchall()
-        oldest = db.execute(query.format(order="ASC"), (oldest_slots,)).fetchall()
-        chosen = {row[0]: row for row in (*newest, *oldest)}
+        newest = db.execute(base.format(order="DESC"), (newest_slots,)).fetchall()
+        oldest = db.execute(base.format(order="ASC"), (oldest_slots,)).fetchall()
+        retry_query = """
+            SELECT a.id, a.url FROM articles a
+            JOIN article_full_text f ON f.article_id=a.id
+            WHERE f.status='INCOMPLETE' AND f.retry_after <= ?
+              AND a.source IN (
+                'fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections','bbc_business','bbc_technology','bbc_world'
+              )
+            ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
+        """
+        retries = db.execute(retry_query, (now, retry_slots)).fetchall()
+        chosen = {row[0]: row for row in (*newest, *oldest, *retries)}
         if len(chosen) < limit:
-            # Fill remaining slots with overdue retries, oldest first.
-            retries = db.execute("""
-                SELECT a.id, a.url FROM articles a
-                JOIN article_full_text f ON f.article_id=a.id
-                WHERE f.status='INCOMPLETE' AND f.retry_after <= ?
-                  AND a.source IN (
-                    'fed_monetary','fed_all','bok_all','bok_statistics',
-                    'bok_corrections','bbc_business','bbc_technology','bbc_world'
-                  )
-                ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
-            """, (now, limit - len(chosen))).fetchall()
-            chosen.update({row[0]: row for row in retries})
-        if len(chosen) < limit:
-            # The newest/oldest slices can overlap in a nearly empty queue.
-            more = db.execute(query.format(order="ASC"), (limit,)).fetchall()
-            for row in more:
+            # Refill unused retries or overlapping newest/oldest slots.
+            for query, args in (
+                (base.format(order="DESC"), (limit,)),
+                (base.format(order="ASC"), (limit,)),
+                (retry_query, (now, limit)),
+            ):
+                for row in db.execute(query, args).fetchall():
+                    if len(chosen) >= limit:
+                        break
+                    chosen[row[0]] = row
                 if len(chosen) >= limit:
                     break
-                chosen[row[0]] = row
         rows = list(chosen.values())
     owned = client is None
     client = client or httpx.Client(
