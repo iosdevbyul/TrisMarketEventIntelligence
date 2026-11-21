@@ -360,3 +360,69 @@ def test_unreviewed_pdf_document_is_not_sent_to_model(tmp_path: Path) -> None:
     assert result.processed == 0
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM impact_runs").fetchone()[0] == 0
+
+
+def test_continuous_backlog_catches_old_and_new_articles(
+    tmp_path: Path,
+) -> None:
+    store = NewsStore(tmp_path / "continuous.sqlite3")
+    for index in range(18):
+        seed(
+            store, "bbc_world",
+            f"https://www.bbc.com/news/articles/continuous-{index}",
+            f"continuous-{index}",
+        )
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html"},
+            content=("<html><article>" + CONTENT + "</article></html>").encode(),
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        first = collect_full_text(store.path, client=client, limit=12)
+        second = collect_full_text(store.path, client=client, limit=12)
+        third = collect_full_text(store.path, client=client, limit=12)
+    assert first["attempted"] == 12
+    assert first["missing_or_failed"] == 6
+    assert first["status"] == "INCOMPLETE"
+    assert second["attempted"] == 6
+    assert second["missing_or_failed"] == 0
+    assert second["status"] == "COMPLETE"
+    assert third["attempted"] == 0
+    assert len(seen) == 18
+    assert len(set(seen)) == 18
+    assert any("continuous-0" in url for url in seen[:12])
+    assert any("continuous-17" in url for url in seen[:12])
+
+
+def test_manual_collector_reuses_normalized_fulltext_queue(
+    tmp_path: Path, monkeypatch: object, capsys: object,
+) -> None:
+    import json
+
+    from tris_market_event_intelligence import collector, source_article_content
+
+    recorded: list[Path] = []
+    monkeypatch.setattr(
+        collector.OfficialNewsCollector,
+        "collect_once",
+        lambda self: {"bbc_world": {"status": "ok", "inserted": 0}},
+    )
+    monkeypatch.setattr(
+        source_article_content, "collect_full_text",
+        lambda path: recorded.append(path) or {"status": "COMPLETE", "attempted": 0},
+    )
+    database = tmp_path / "manual.sqlite3"
+    collector.run_collector(
+        database, 300, True,
+        feeds={"bbc_world": "https://feeds.bbci.co.uk/news/world/rss.xml"},
+        enable_fulltext=True,
+    )
+    assert recorded == [database]
+    report = json.loads(capsys.readouterr().out)
+    assert report["rss"]["bbc_world"]["status"] == "ok"
+    assert report["fulltext"]["status"] == "COMPLETE"
