@@ -165,6 +165,7 @@ def evaluate(
                 item["status"] = "UNMAPPED"
                 for horizon in HORIZONS:
                     summaries[f"{horizon}d:UNAVAILABLE"] += 1
+                    summaries[f"{horizon}d:relative:UNAVAILABLE"] += 1
             else:
                 mapping_is_pit = _timestamp(mapping["verifiedAt"]) <= published
                 item["mapping"] = mapping
