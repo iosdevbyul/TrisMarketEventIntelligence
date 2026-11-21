@@ -123,6 +123,8 @@ def evaluate(
         report = _load_json(source_file)
         if report.get("schemaVersion") != "gemma_original_article_review_v2":
             raise ValueError(f"Unexpected Gemma source schema: {source_file}")
+        if report.get("predictionSealedBeforeOutcome") is not False:
+            raise ValueError("Original Gemma batch must be explicitly retrospective-unsealed")
         article = report["article"]
         article_id = article["articleId"]
         if type(article_id) is not int or article_id < 1 or article_id in seen_articles:
@@ -146,19 +148,20 @@ def evaluate(
                 "processedAt": processed.isoformat(),
                 "model": report["model"], "predictionSourceSha256": _sha(source_file),
                 "predictionSealedBeforeOutcome": bool(report.get("predictionSealedBeforeOutcome")),
-                "evaluationClass": "PROSPECTIVE_SEALED"
-                if report.get("predictionSealedBeforeOutcome") else "RETROSPECTIVE_UNSEALED",
+                "evaluationClass": "RETROSPECTIVE_UNSEALED",
                 "horizons": [],
             }
             mapping = mappings.get(target)
             if mapping is None:
                 item["status"] = "UNMAPPED"
-            elif _timestamp(mapping["verifiedAt"]) > published:
-                # Post-event mappings can support retrospective research, but not PIT evidence.
-                item["status"] = "MAPPING_NOT_POINT_IN_TIME"
-                item["mapping"] = mapping
             else:
+                mapping_is_pit = _timestamp(mapping["verifiedAt"]) <= published
                 item["mapping"] = mapping
+                item["mappingPointInTime"] = mapping_is_pit
+                if not mapping_is_pit:
+                    # A documented retrospective linkage can be studied but never
+                    # promoted to a prediction available at publication time.
+                    item["evaluationClass"] = "RETROSPECTIVE_POST_EVENT_MAPPING"
                 # event_study uses Seoul dates; convert to exchange-local civil time
                 # before passing the localized timestamp to its daily entry policy.
                 local_published = published.astimezone(ZoneInfo(ZONES[mapping["market"]]))
