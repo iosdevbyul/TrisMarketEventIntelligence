@@ -12,7 +12,6 @@ from tris_market_event_intelligence.source_article_content import (
     extract_html,
 )
 
-
 CONTENT = (
     "The official article explains the economic event, its broader context, "
     "the latest developments and their implications for companies and markets. "
