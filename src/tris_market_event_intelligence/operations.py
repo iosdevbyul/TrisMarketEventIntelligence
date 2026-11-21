@@ -17,6 +17,7 @@ from tris_market_event_intelligence.collector import NewsStore, OfficialNewsColl
 from tris_market_event_intelligence.operational_history import history_path_for, record_cycle
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS
 from tris_market_event_intelligence.story_index import StoryIndex
+from tris_market_event_intelligence.source_article_content import collect_full_text
 
 # Every default was successfully requested by the bounded public network probe.
 # Exclude known HTTP 403 BLS and rate-limited GDELT from automatic operation.
@@ -47,6 +48,7 @@ def run_cycle(
     db_path: Path, *, status_path: Path | None = None,
     selected_sources: tuple[str, ...] = OPERATIONAL_SOURCES,
     client: httpx.Client | None = None,
+    enable_fulltext: bool = False,
 ) -> dict[str, object]:
     """One finite cycle. Reject overlapping invocations before any network calls.
 
@@ -80,6 +82,10 @@ def run_cycle(
                 store, client=client,
                 feeds={name: DEFAULT_FEEDS[name] for name in selected_sources},
             ).collect_once()
+            fulltext = (
+                collect_full_text(db_path, client=client)
+                if enable_fulltext else None
+            )
             claims = ClaimProcessor(db_path)
             stories = StoryIndex(db_path)
             claim_total = grouped_total = 0
@@ -95,11 +101,14 @@ def run_cycle(
                     break
             ok = sum(x["status"] in {"ok", "not_modified"} for x in results.values())
             status = "failed" if ok == 0 else "healthy" if ok == len(results) else "degraded"
+            if fulltext is not None and fulltext["status"] != "COMPLETE" and status == "healthy":
+                status = "degraded"
             outcome: dict[str, object] = {
                 "status": status,
                 "started_at": started_at,
                 "finished_at": utc_now(),
                 "source_results": results,
+                "article_fulltext": fulltext,
                 "successful_sources": ok,
                 "total_sources": len(results),
                 "new_articles": store.stats()["articles"] - before,
@@ -110,6 +119,7 @@ def run_cycle(
                 "mac_runtime_verified": False,
                 "ai_used": False,
                 "scraping_used": False,
+                "fulltext_acquisition_enabled": enable_fulltext,
             }
     
         except Exception as exc:  # noqa: BLE001 - record uncaught cycle failures safely
