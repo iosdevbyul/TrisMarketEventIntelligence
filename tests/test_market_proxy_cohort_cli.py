@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from test_market_outcome_validation_cli import _fixture
 
 from tris_market_event_intelligence.market_outcome_validation_cli import evaluate
