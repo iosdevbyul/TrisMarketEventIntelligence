@@ -317,6 +317,7 @@ def test_market_impact_model_receives_verified_body_not_rss_only(
 
 
 def test_unreviewed_pdf_document_is_not_sent_to_model(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.event_store import EventProcessor
     from tris_market_event_intelligence.impact import ImpactResult
     from tris_market_event_intelligence.impact_store import ImpactProcessor
     from tris_market_event_intelligence.source_article_content import initialize
@@ -324,6 +325,7 @@ def test_unreviewed_pdf_document_is_not_sent_to_model(tmp_path: Path) -> None:
     store = NewsStore(tmp_path / "pdf.sqlite3")
     seed(store, "bok_statistics", "https://www.bok.or.kr/portal/article", "pdf")
     initialize(store)
+    EventProcessor(store.path).initialize()
     with store.connect() as db:
         db.execute("""
             INSERT INTO economic_events (
