@@ -243,17 +243,9 @@ def main() -> None:
         if not isinstance(articles, list) or any(not isinstance(a, dict) for a in articles):
             parser.error("Expected one article or an array of articles")
     if args.bok_attachments is not None:
-        parser.error("Legacy BOK attachments are discarded. Recollect official PDFs with bok_official_recollection_cli.")
-        if not frozen_hash:
-            parser.error("--bok-attachments requires --holdout-result")
-        p = args.bok_attachments
-        if p.is_symlink() or not p.is_file():
-            parser.error("Missing or unsafe attachment report")
-        from tris_market_event_intelligence.direct_sector_source_enrichment import (
-            use_bok_attachments,
-        )
-        articles = use_bok_attachments(
-            articles, json.loads(p.read_text(encoding="utf-8")), frozen_hash,
+        parser.error(
+            "Legacy BOK attachments were discarded. Use fresh official PDFs "
+            "via bok_official_recollection_cli."
         )
     if args.article_ids:
         try:
