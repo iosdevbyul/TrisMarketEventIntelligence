@@ -38,7 +38,6 @@ def collect_prices(
             frame = client.Ticker(symbol).history(
                 start=start.isoformat(), end=end.isoformat(),
                 interval="1d", auto_adjust=True, actions=False,
-                raise_errors=True,
             )
         except Exception as exc:  # noqa: BLE001 - third-party provider exception boundary
             # Do not substitute values from a different ticker or provider.
