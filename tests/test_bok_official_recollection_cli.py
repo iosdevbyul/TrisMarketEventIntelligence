@@ -1,6 +1,5 @@
 """Fresh official BOK evidence must be reviewed before model replay."""
 import hashlib
-from pathlib import Path
 
 from tris_market_event_intelligence.bok_official_recollection_cli import (
     RELEASES,
