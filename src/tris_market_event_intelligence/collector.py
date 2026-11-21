@@ -371,13 +371,26 @@ class OfficialNewsCollector:
 
 
 def run_collector(
-    db_path: Path, interval_seconds: int, once: bool, feeds: dict[str, str] | None = None
+    db_path: Path, interval_seconds: int, once: bool,
+    feeds: dict[str, str] | None = None, *,
+    enable_fulltext: bool = False,
 ) -> None:
     if interval_seconds < 30:
         raise ValueError("interval_seconds must be at least 30")
     collector = OfficialNewsCollector(NewsStore(db_path), feeds=feeds)
     while True:
-        print(json.dumps(collector.collect_once(), ensure_ascii=False), flush=True)
+        collection = collector.collect_once()
+        if enable_fulltext:
+            # Both manual and scheduled ingestion use the SAME normalized
+            # article_full_text store and retry/backlog mechanism.
+            from tris_market_event_intelligence.source_article_content import (
+                collect_full_text,
+            )
+
+            result = {"rss": collection, "fulltext": collect_full_text(db_path)}
+        else:
+            result = collection
+        print(json.dumps(result, ensure_ascii=False), flush=True)
         if once:
             return
         time.sleep(interval_seconds)
