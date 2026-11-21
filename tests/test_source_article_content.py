@@ -55,6 +55,28 @@ def test_html_parser_preserves_article_and_discards_navigation() -> None:
     assert attachments == ()
 
 
+def test_nested_main_and_article_blocks_are_not_prematurely_closed() -> None:
+    payload = (
+        "<html><main><div><div><span>Intro</span></div>"
+        "<section><p>" + CONTENT + "</p><p>Conclusion.</p></section>"
+        "</div></main></html>"
+    ).encode()
+    body, _ = extract_html(payload, "https://www.federalreserve.gov/a")
+    assert "companies and markets" in body
+    assert "Conclusion." in body
+
+
+def test_priority_prefers_article_over_website_main_navigation() -> None:
+    payload = (
+        "<html><main><div>Irrelevant content " + CONTENT + "</div>"
+        "<article><p>Only the report: " + CONTENT + "</p></article>"
+        "</main></html>"
+    ).encode()
+    body, _ = extract_html(payload, "https://www.bbc.com/news/article/1")
+    assert body.startswith("Only the report:")
+    assert "Irrelevant content" not in body
+
+
 def test_complete_body_is_durable_and_original_rss_untouched(tmp_path: Path) -> None:
     store = NewsStore(tmp_path / "news.sqlite3")
     url = "https://www.bbc.com/news/articles/same-item"
