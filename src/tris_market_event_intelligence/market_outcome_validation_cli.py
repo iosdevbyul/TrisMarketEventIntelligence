@@ -69,9 +69,18 @@ def _mappings(path: Path) -> dict[str, dict]:
         if (not target or market not in ZONES or not symbol or not benchmark
                 or symbol == benchmark or target in result):
             raise ValueError("Ambiguous or invalid target mapping")
+        kind = (row.get("mapping_kind") or "DIRECT_EQUITY").strip()
+        limitation = (row.get("proxy_limitation") or "").strip()
+        evidence_url = (row.get("evidence_url") or "").strip()
+        if kind not in {"DIRECT_EQUITY", "SECTOR_ETF_PROXY"}:
+            raise ValueError("Unsupported mapping kind")
+        if kind == "SECTOR_ETF_PROXY" and (not limitation or not evidence_url):
+            raise ValueError("Sector ETF proxy requires limitation and source evidence")
         result[target] = {
             "market": market, "symbol": symbol, "benchmark": benchmark,
             "verifiedAt": verified_at.isoformat(),
+            "mappingKind": kind, "proxyLimitation": limitation,
+            "evidenceUrl": evidence_url,
         }
     return result
 
