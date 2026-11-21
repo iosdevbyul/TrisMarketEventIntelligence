@@ -133,3 +133,75 @@ def test_reject_corrupt_body_and_nonsource_quotes(tmp_path: Path) -> None:
                 "evidence_quote": "fake",
             }],
         }), BODY)
+
+
+def test_invalid_first_response_repairs_with_same_source(tmp_path: Path) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    attempts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        attempts.append(payload)
+        if len(attempts) == 1:
+            return httpx.Response(
+                200, json={"message": {"content": '{"summary":'}}
+            )
+        return httpx.Response(
+            200, json={"message": {"content": json.dumps({
+                "summary": "Source-based review",
+                "limitations": "No observed price returns",
+                "impacts": [{
+                    "target": "FINANCIALS", "direction": "UNCERTAIN",
+                    "reason": "No evidence about future returns",
+                    "evidence_quote": "regional market and company activity",
+                }],
+            })}},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze(db, tmp_path / "reviews", client=client)
+    assert result["completed"] == 1 and result["failed"] == 0
+    assert len(attempts) == 2
+    assert all(payload["format"]["type"] == "object" for payload in attempts)
+    assert BODY in attempts[0]["messages"][1]["content"]
+    assert BODY in attempts[1]["messages"][1]["content"]
+
+
+def test_failed_twice_has_specific_diagnostic(tmp_path: Path, capsys: object) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"message": {"content": "{}"}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze(db, tmp_path / "reviews", client=client)
+    assert result["completed"] == 0 and result["failed"] == 1
+    assert result["failureCodes"] == {"SUMMARY_MISSING": 1}
+    assert calls == 2
+    assert '"errorCode": "SUMMARY_MISSING"' in capsys.readouterr().out
+
+
+def test_ollama_schema_fallback(tmp_path: Path) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    formats: list[object] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        formats.append(payload["format"])
+        if isinstance(payload["format"], dict):
+            return httpx.Response(422)
+        return httpx.Response(
+            200, json={"message": {"content": json.dumps({
+                "summary": "Financial overview",
+                "limitations": "No observed returns",
+                "impacts": [],
+            })}},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze(db, tmp_path / "reviews", client=client)
+    assert result["completed"] == 1
+    assert formats[1] == "json"
