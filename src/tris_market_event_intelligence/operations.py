@@ -15,9 +15,9 @@ import httpx
 from tris_market_event_intelligence.claim_store import ClaimProcessor
 from tris_market_event_intelligence.collector import NewsStore, OfficialNewsCollector, utc_now
 from tris_market_event_intelligence.operational_history import history_path_for, record_cycle
+from tris_market_event_intelligence.source_article_content import collect_full_text
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS
 from tris_market_event_intelligence.story_index import StoryIndex
-from tris_market_event_intelligence.source_article_content import collect_full_text
 
 # Every default was successfully requested by the bounded public network probe.
 # Exclude known HTTP 403 BLS and rate-limited GDELT from automatic operation.
