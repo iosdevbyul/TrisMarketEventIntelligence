@@ -278,7 +278,7 @@ def initialize(store: NewsStore) -> None:
             CREATE TABLE IF NOT EXISTS article_full_text (
                 article_id INTEGER PRIMARY KEY REFERENCES articles(id),
                 status TEXT NOT NULL CHECK(status IN
-                    ('COMPLETE','REVIEW_REQUIRED','INCOMPLETE')),
+                    ('COMPLETE','REVIEW_REQUIRED','INCOMPLETE','NON_ARTICLE')),
                 observed_at TEXT NOT NULL,
                 content_url TEXT,
                 body_sha256 TEXT,
@@ -321,7 +321,8 @@ def collect_full_text(
         trust_env=False, follow_redirects=False,
         headers={"User-Agent": USER_AGENT},
     )
-    counts = {"complete": 0, "review_required": 0, "incomplete": 0, "reused": 0}
+    counts = {"complete": 0, "review_required": 0, "incomplete": 0,
+              "non_article": 0, "reused": 0}
     try:
         for article_id, url in rows:
             observed = datetime.now(UTC).isoformat()
@@ -345,8 +346,10 @@ def collect_full_text(
                     row = capture(client, url)
             except (ContentError, httpx.HTTPError, OSError) as exc:
                 error = str(exc) if isinstance(exc, ContentError) else type(exc).__name__
+                state = ("NON_ARTICLE" if error == "NON_ARTICLE_MEDIA_PAGE"
+                         else "INCOMPLETE")
                 row = {
-                    "status": "INCOMPLETE", "source_url": None,
+                    "status": state, "source_url": None,
                     "body_sha256": None, "raw_sha256": None,
                     "raw_payload": None, "body": None, "format": None,
                     "sparse_pages": "[]",
@@ -382,7 +385,7 @@ def collect_full_text(
             WHERE a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world')
-              AND (f.article_id IS NULL OR f.status!='COMPLETE')
+              AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED'))
         """).fetchone()[0]
     return {
         "status": "COMPLETE" if pending == 0 else "INCOMPLETE",
