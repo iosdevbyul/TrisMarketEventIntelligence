@@ -120,6 +120,30 @@ def test_bbc_video_page_is_not_a_news_article() -> None:
             raise AssertionError("iPlayer page should not pass as article")
 
 
+def test_non_article_media_is_terminal_not_a_retriable_failure(
+    tmp_path: Path,
+) -> None:
+    store = NewsStore(tmp_path / "news.sqlite3")
+    seed(
+        store, "bbc_technology",
+        "https://www.bbc.co.uk/iplayer/episode/m0034tjc",
+        "non-article",
+    )
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: (_ for _ in ()).throw(AssertionError("Must not fetch video")),
+    )) as client:
+        first = collect_full_text(store.path, client=client, limit=2)
+        second = collect_full_text(store.path, client=client, limit=2)
+    assert first["non_article"] == 1
+    assert first["incomplete"] == 0
+    assert first["pending_or_unverified"] == 0
+    assert second["attempted"] == 0
+    with store.connect() as db:
+        assert db.execute(
+            "SELECT status,error_code,retry_after FROM article_full_text"
+        ).fetchone() == ("NON_ARTICLE", "NON_ARTICLE_MEDIA_PAGE", None)
+
+
 def test_complete_body_is_durable_and_original_rss_untouched(tmp_path: Path) -> None:
     store = NewsStore(tmp_path / "news.sqlite3")
     url = "https://www.bbc.com/news/articles/same-item"
