@@ -32,7 +32,7 @@ The existing article batch explicitly sets `predictionSealedBeforeOutcome=false`
 
 Target mappings with `verified_at` later than publication are explicitly marked `RETROSPECTIVE_POST_EVENT_MAPPING` and remain research-only comparisons; they must never be counted as point-in-time prospectively verified forecasts. Unmapped targets are separately reported. The daily study is descriptive and does not remove market confounders beyond the simple benchmark comparison. A stronger validation requires a point-in-time historical replay, proper external test period, independent source availability audit, and comparison against naive market baselines.
 
-This module does **not** provide a new market-data subscription or downloader. Price observations must first be obtained from a licensed/reliable provider and exported in the required format. There are **no measured accuracy results** until that real dataset is supplied and the command is actually executed.
+An optional Yahoo Finance research adapter is available below. It is not an institutional subscription or a point-in-time archive. The 2026-11-21 BNS pilot retrieved 26 BNS/SPY historical daily price observations and produced one matched direction: BNS +0.33% (SPY -0.48%) after one session, and BNS -2.21% (SPY -2.70%) after five sessions. Absolute directional verdicts were CORRECT then INCORRECT, while relative returns were positive at both horizons. This is one retrospectively generated, unsealed sample, **not** a prospective accuracy measurement.
 
 ## Real observed daily prices: optional Yahoo research adapter
 
@@ -71,3 +71,30 @@ python -m tris_market_event_intelligence.market_outcome_validation_cli \\
 ```
 
 This pilot only evaluates the exact BNS target string. Other target strings remain `UNMAPPED`; that is intentional. Even if all returned price rows are real, a directional match does **not** identify the Fed article as the cause. The command output gives the path to a per-impact report; inspect the BNS item and the coverage first. For later pilots, add only unambiguously identified securities or **explicitly labeled** sector ETF proxies with documentary provenance and state their semantic mismatch. Do not turn inflation, GDP, Treasury yield levels, or mixed multi-entity targets into one equity symbol.
+
+## Reproducible, explicitly qualified sector proxy cohort
+
+The exact-target allowlist contains the directly identifiable BNS equity and **qualified** US sector ETF proxies: XLK for Technology, XLE for Energy, XLF for Banking (not banks-only), IYG for US Financial Services, and IPAY for digital Payment Services. Source identification: [State Street Select Sector ETFs](https://www.ssga.com/us/en/individual/capabilities/equities/sector-investing/select-sector-etfs), [iShares IYG](https://www.ishares.com/us/products/239509/ishares-us-financial-services-etf), [Amplify IPAY](https://amplifyetfs.com/ipay/). The proxy catalog is explicit and exact-string only, not an open-ended symbol inference. Unclear macro targets such as inflation, GDP, yields, global markets, composites or private organizations stay **unmapped**. A proxy is an imperfect sector representation, never the exact economic claim made by the model.
+
+The following commands create new, versioned files only. They do not modify earlier BNS pilot data:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.market_proxy_cohort_cli \\
+  --gemma-dir "$DATA/main-validation-gemma" \\
+  --output "$DATA/stage6-sector-target-map-v2.csv"
+
+python -m tris_market_event_intelligence.market_price_collection_cli \\
+  --mappings "$DATA/stage6-sector-target-map-v2.csv" \\
+  --start 2026-05-20 --end 2026-11-20 \\
+  --output "$DATA/stage6-sector-prices-v2.csv"
+
+python -m tris_market_event_intelligence.market_outcome_validation_cli \\
+  --gemma-dir "$DATA/main-validation-gemma" \\
+  --mappings "$DATA/stage6-sector-target-map-v2.csv" \\
+  --prices "$DATA/stage6-sector-prices-v2.csv" \\
+  --price-source "Yahoo Finance via yfinance, adjusted daily research observations" \\
+  --output "$DATA/stage6-sector-outcomes-v2.json"
+```
+
+Inspect `stage6-sector-target-map-v2.csv.mapping-review.json` for every omitted target. Outcome items now provide `relativeActualDirection` and `relativeVerdict` independently from original absolute `actualDirection` and `verdict`, and `metrics[1d|5d].coverage` divides scored impacts by the **full impact count**, not just mapped impacts. Count accuracy and coverage separately. Missing provider prices do not become zero-return outcomes. These mappings are retrospectively verified on generation date and cannot establish point-in-time investability or causation.
