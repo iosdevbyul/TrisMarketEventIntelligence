@@ -71,7 +71,7 @@ def inspect_pdf(path: Path, record: dict) -> tuple[dict, dict]:
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return {}, {"status": "PDF_EXTRACTION_ERROR", "reason": type(exc).__name__}
     text = "\n\n".join(pages)
-    normalized = re.sub(r"\\s+", "", text)
+    normalized = re.sub(r"\s+", "", text)
     missing = [term for term in record["searchTerms"] if term not in normalized]
     empty_pages = [row["page"] for row in page_audit if row["textChars"] < 50]
     audit = {
