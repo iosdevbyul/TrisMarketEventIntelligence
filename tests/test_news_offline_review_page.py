@@ -52,8 +52,10 @@ def test_escaping_cannot_inject_article_html_or_script(tmp_path: Path):
         (headline + "\n" + (article["summary"] or "")).encode()
     ).hexdigest()
     cohort.write_text(json.dumps(original))
+    # Include all articles: hashed stratified sampling of five can exclude
+    # the mutated article, in which case the escaping assertion tests nothing.
     sample.write_text(json.dumps(
-        prepare_news_review_sample(cohort_path=cohort, max_selected=5)
+        prepare_news_review_sample(cohort_path=cohort, max_selected=12)
     ))
     result = render_offline_review(cohort_path=cohort, sample_path=sample)
     assert headline not in result
