@@ -98,3 +98,46 @@ python -m tris_market_event_intelligence.market_outcome_validation_cli \\
 ```
 
 Inspect `stage6-sector-target-map-v2.csv.mapping-review.json` for every omitted target. Outcome items now provide `relativeActualDirection` and `relativeVerdict` independently from original absolute `actualDirection` and `verdict`, and `metrics[1d|5d].coverage` divides scored impacts by the **full impact count**, not just mapped impacts. Count accuracy and coverage separately. Missing provider prices do not become zero-return outcomes. These mappings are retrospectively verified on generation date and cannot establish point-in-time investability or causation.
+
+## Intermittent data-provider outage: reproducible missing-symbol recovery
+
+On 2026-11-22, a second Yahoo Finance fetch used an extended end-exclusive date
+`2026-11-22` and returned **774 rows** for six instruments but flagged
+`missingSymbols=["BNS"]`. Yahoo's generic "possibly delisted" diagnostic is
+**not confirmation of an exchange delisting**. The prior v2 source file had
+**896 rows** and included previously observed BNS quotes. Accordingly, v2
+and v3 directional accuracy are **not directly comparable**: one previously
+correct BNS impact vanished from the v3 sample; the five-session horizon
+became available for some later November publications.
+
+Do not re-request or overwrite the original immutable files. Recover missing
+BNS instrument observations from the preserved v2 export, using the latest
+v3 export for all instruments that v3 successfully retrieved. The recovery
+will **never** mix primary/fallback datasets within the same symbol, fabricate
+missing trading sessions, or claim the merged output was one provider snapshot.
+Its manifest lists SHA256 hashes of every source, selected source per symbol,
+row counts, and incomplete-date-coverage disclaimer.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+
+python -m tris_market_event_intelligence.market_price_recovery_cli \\
+  --primary "$DATA/stage6-sector-prices-v3.csv" \\
+  --fallback "$DATA/stage6-sector-prices-v2.csv" \\
+  --mappings "$DATA/stage6-sector-target-map-v2.csv" \\
+  --output "$DATA/stage6-sector-prices-v4-recovered.csv"
+
+python -m tris_market_event_intelligence.market_outcome_validation_cli \\
+  --gemma-dir "$DATA/main-validation-gemma" \\
+  --mappings "$DATA/stage6-sector-target-map-v2.csv" \\
+  --prices "$DATA/stage6-sector-prices-v4-recovered.csv" \\
+  --price-source "Yahoo Finance via yfinance; v3 primary and BNS v2 recovery, per-symbol lineage manifest" \\
+  --output "$DATA/stage6-sector-outcomes-v4.json"
+```
+
+Inspect `stage6-sector-prices-v4-recovered.csv.manifest.json` for
+`recoveredSymbols=["BNS"]`, `completeInstrumentCoverage=true`, and
+`completeDateCoverageGuaranteed=false`. The last flag means an instrument
+might still lack sessions near the end. Do not claim full-horizon accuracy
+without verifying each per-impact `dataStatus`. This operation does not
+change Gemma predictions or prove market impact causality.
