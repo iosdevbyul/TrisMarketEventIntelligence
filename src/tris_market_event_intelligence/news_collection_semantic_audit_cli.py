@@ -59,10 +59,10 @@ def _load_run(folder: Path) -> dict[int, dict]:
         if type(article_id) is not int or article_id < 1 or article_id in result:
             raise ValueError("Invalid or duplicate article ID in review run")
         if not isinstance(article.get("bodySha256"), str):
-            raise ValueError("Missing original body hash")
+            raise TypeError("Missing original body hash")
         impacts = report["analysis"]["impacts"]
         if not isinstance(impacts, list):
-            raise ValueError("Invalid impact list")
+            raise TypeError("Invalid impact list")
         for impact in impacts:
             if (not impact["target"].strip()
                     or impact["direction"] not in DIRECTIONS
