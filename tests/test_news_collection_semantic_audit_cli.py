@@ -70,6 +70,14 @@ def test_collection_audit_is_read_only_and_reports_source_integrity(tmp_path: Pa
     }
     assert report["completeBodyIntegrity"]["validCompleteRows"] == 1
     assert report["duplicateUrls"] == 0
+    assert report["duplicateExtraArticleRows"] == 0
+    assert report["duplicateUrlExamples"] == []
+    assert report["articlesWithoutFullTextStatus"] == 0
+    assert report["missingStatusArticles"] == []
+    assert len(report["reviewRequiredExamples"]) == 1
+    assert report["fullTextStatusBySource"]["bbc_business"] == {
+        "COMPLETE": 1, "NON_ARTICLE": 1, "REVIEW_REQUIRED": 1,
+    }
 
 
 def test_repeatability_identifies_divergent_direction(tmp_path: Path) -> None:
