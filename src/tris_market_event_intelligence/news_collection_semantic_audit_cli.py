@@ -6,10 +6,8 @@ This checks mechanical integrity and consistency, not economic correctness.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sqlite3
-from collections import Counter, defaultdict
 from pathlib import Path
 
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
