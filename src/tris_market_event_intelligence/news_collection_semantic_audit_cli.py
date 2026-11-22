@@ -28,16 +28,65 @@ def collection_audit(db_path: Path) -> dict:
         statuses = dict(db.execute(
             "SELECT status, COUNT(*) FROM article_full_text GROUP BY status ORDER BY status"
         ).fetchall())
+        duplicated = db.execute(
+            "SELECT url, COUNT(*) AS copies, "
+            "COUNT(DISTINCT source) AS source_count "
+            "FROM articles WHERE url IS NOT NULL AND url != '' "
+            "GROUP BY url HAVING COUNT(*) > 1 "
+            "ORDER BY copies DESC, url LIMIT 100"
+        ).fetchall()
         duplicate_urls = db.execute(
             "SELECT COUNT(*) FROM (SELECT url FROM articles "
             "WHERE url IS NOT NULL AND url != '' GROUP BY url HAVING COUNT(*) > 1)"
         ).fetchone()[0]
+        duplicate_extra_rows = db.execute(
+            "SELECT COALESCE(SUM(copies - 1), 0) FROM ("
+            "SELECT COUNT(*) AS copies FROM articles "
+            "WHERE url IS NOT NULL AND url != '' "
+            "GROUP BY url HAVING COUNT(*) > 1)"
+        ).fetchone()[0]
+        without_status = db.execute(
+            "SELECT a.id, a.source, a.title, a.url FROM articles a "
+            "LEFT JOIN article_full_text f ON f.article_id = a.id "
+            "WHERE f.article_id IS NULL ORDER BY a.id"
+        ).fetchall()
+        review_samples = db.execute(
+            "SELECT a.id, a.source, a.title, f.status "
+            "FROM article_full_text f JOIN articles a ON a.id = f.article_id "
+            "WHERE f.status = 'REVIEW_REQUIRED' ORDER BY a.id LIMIT 100"
+        ).fetchall()
+        source_statuses = db.execute(
+            "SELECT a.source, COALESCE(f.status, 'MISSING_STATUS'), COUNT(*) "
+            "FROM articles a LEFT JOIN article_full_text f ON f.article_id = a.id "
+            "GROUP BY a.source, COALESCE(f.status, 'MISSING_STATUS') "
+            "ORDER BY a.source, COALESCE(f.status, 'MISSING_STATUS')"
+        ).fetchall()
     _, valid = verified_articles(db_path, 1000)
     return {
         "totalArticles": sum(sources.values()),
         "bySource": sources,
         "fullTextStatuses": statuses,
         "duplicateUrls": duplicate_urls,
+        "duplicateExtraArticleRows": duplicate_extra_rows,
+        "duplicateUrlExamples": [
+            {"url": url, "articleCount": count, "sourceCount": source_count}
+            for url, count, source_count in duplicated
+        ],
+        "duplicateUrlExamplesLimit": 100,
+        "articlesWithoutFullTextStatus": len(without_status),
+        "missingStatusArticles": [
+            {"articleId": article_id, "source": source, "title": title, "url": url}
+            for article_id, source, title, url in without_status
+        ],
+        "reviewRequiredExamples": [
+            {"articleId": article_id, "source": source, "title": title, "status": status}
+            for article_id, source, title, status in review_samples
+        ],
+        "reviewRequiredExamplesLimit": 100,
+        "fullTextStatusBySource": {
+            source: {state: count for src, state, count in source_statuses if src == source}
+            for source in sources
+        },
         "completeBodyIntegrity": valid,
         "completeBodySampleLimit": 1000,
         "limitations": "Body integrity counts inspect all COMPLETE rows; selected sample is limited",
@@ -168,6 +217,8 @@ def main() -> None:
             "totalArticles": collection["totalArticles"],
             "fullTextStatuses": collection["fullTextStatuses"],
             "duplicateUrls": collection["duplicateUrls"],
+            "duplicateExtraArticleRows": collection["duplicateExtraArticleRows"],
+            "articlesWithoutFullTextStatus": collection["articlesWithoutFullTextStatus"],
             "integrity": collection["completeBodyIntegrity"],
             "repeatability": (
                 {key: report["repeatability"][key]
