@@ -146,8 +146,10 @@ def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
                 family_seen[story] = article_id
             if story is None:
                 reasons.append("STORY_GROUP_UNAVAILABLE")
-            if not record["completed_models"]:
+            if has_automatic and not record["completed_models"]:
                 reasons.append("NO_COMPLETED_AUTOMATIC_GEMMA_ANALYSIS")
+            # Missing optional automatic ledger is a pipeline visibility gap,
+            # not evidence that separate historical Gemma research never ran.
             # Derived readiness is strictly diagnostic, not permission to
             # construct a fake PIT clock from article metadata.
             if reasons:
@@ -163,7 +165,13 @@ def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
                 ),
                 "storyCandidateId": story,
                 "storyCandidateMatchReason": record["match_reason"],
-                "completedModelRows": record["completed_models"] or 0,
+                "completedModelRows": (
+                    record["completed_models"] or 0 if has_automatic else None
+                ),
+                "automaticAnalysisLedgerAvailable": has_automatic,
+                "automaticAnalysisCoverage": (
+                    "COMPLETED" if record["completed_models"] else "NO_COMPLETED_ROW"
+                ) if has_automatic else "LEDGER_NOT_PRESENT",
                 "sourceIntegrityReviewed": not any(
                     x in reasons for x in (
                         "FEED_CAPTURE_INTEGRITY_FAILED",
@@ -185,12 +193,24 @@ def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
         "blockerCounts": dict(sorted(counts.items())),
         "rows": output,
         "verifiedFirstPublicArticleCount": 0,
+        "automaticAnalysisLedgerAvailable": has_automatic,
+        "automaticAnalysisLedgerCoverage": (
+            "TABLE_PRESENT" if has_automatic else "TABLE_NOT_PRESENT"
+        ),
+        "contentCompleteCount": sum(
+            "ORIGINAL_BODY_INCOMPLETE" not in row["blockers"] for row in output
+        ),
+        "articlesWithoutListedBlockers": sum(
+            not row["blockers"] for row in output
+        ),
         "independentlyVerifiedMarketOutcomeCount": 0,
         "learningEligibleCount": 0,
         "note": (
             "Publisher publication times, RSS fetch times and story groups "
             "are observable evidence, but do not independently prove the "
-            "earliest public event time or causal market response."
+            "earliest public event time or causal market response. "
+            "The optional automatic analysis ledger is not a census of "
+            "separate historical Gemma JSON experiments."
         ),
     }
 
