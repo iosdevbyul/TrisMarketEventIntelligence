@@ -206,7 +206,7 @@ def observe(
     if target_exit is None:
         return unavailable("MISSING_EXIT_PRICE")
     forecast_base = _nearest_at_or_before(
-        prices, forecast.target, prediction_at, anchor_time - timedelta(microseconds=1)
+        prices, forecast.target, prediction_at, prediction_at - max_anchor_age - timedelta(microseconds=1)
     )
     if forecast_base is None:
         return unavailable("MISSING_FORECAST_BASE")
@@ -219,7 +219,7 @@ def observe(
     benchmark_base = _nearest_before(prices, forecast.benchmark, anchor_time)
     benchmark_exit = _nearest_at_or_before(prices, forecast.benchmark, cutoff, prediction_at)
     benchmark_forecast_base = _nearest_at_or_before(
-        prices, forecast.benchmark, prediction_at, anchor_time - timedelta(microseconds=1)
+        prices, forecast.benchmark, prediction_at, prediction_at - max_anchor_age - timedelta(microseconds=1)
     )
     if benchmark_base is None or benchmark_exit is None or benchmark_forecast_base is None:
         return unavailable("MISSING_BENCHMARK")
