@@ -13,6 +13,7 @@ from pathlib import Path
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     verified_articles,
 )
+from tris_market_event_intelligence.news_impact_target_policy import target_key
 
 DIRECTIONS = {"UP", "DOWN", "NEUTRAL", "UNCERTAIN"}
 
@@ -135,6 +136,7 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
     consistent = 0
     same_counts = 0
     same_targets = 0
+    alias_equivalent_target_directions = 0
     same_common_directions = 0
     no_shared_target_articles = 0
     changed_direction_articles = 0
@@ -172,6 +174,12 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             signatures.append(signature)
             summaries.append(report["analysis"]["summary"].strip())
         stable = all(signature == signatures[0] for signature in signatures[1:])
+        alias_signatures = [
+            sorted((target_key(target), direction) for target, direction in signature)
+            for signature in signatures
+        ]
+        alias_equivalent = all(signature == alias_signatures[0]
+                               for signature in alias_signatures[1:])
         count_stable = all(len(signature) == len(signatures[0])
                            for signature in signatures[1:])
         target_sets = [{target for target, _direction in signature}
@@ -201,6 +209,8 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             changed_direction_articles += 1
         if stable:
             consistent += 1
+        if alias_equivalent:
+            alias_equivalent_target_directions += 1
         if count_stable:
             same_counts += 1
         if targets_stable:
@@ -212,6 +222,7 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             "status": "STABLE_TARGET_DIRECTIONS" if stable else "DIVERGENT_TARGET_DIRECTIONS",
             "impactCountsStable": count_stable,
             "targetSetsIdentical": targets_stable,
+            "limitedAliasTargetDirectionsIdentical": alias_equivalent,
             "sharedTargetDirectionsIdentical": common_directions_stable,
             "sharedTargets": sorted(shared),
             "targetJaccard": jaccard,
@@ -251,6 +262,7 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         "agreement": consistent / matched if matched else None,
         "sameImpactCountArticles": same_counts,
         "sameTargetSetArticles": same_targets,
+        "limitedAliasTargetDirectionArticles": alias_equivalent_target_directions,
         "sameSharedTargetDirectionArticles": same_common_directions,
         "noSharedTargetArticles": no_shared_target_articles,
         "changedDirectionArticles": changed_direction_articles,
@@ -305,6 +317,7 @@ def main() -> None:
                  for key in (
                     "articleIdsSeen", "comparableArticles", "stableArticles",
                     "agreement", "sameImpactCountArticles", "sameTargetSetArticles",
+                    "limitedAliasTargetDirectionArticles",
                     "noSharedTargetArticles", "changedDirectionArticles",
                     "sharedTargetPairs", "changedDirectionPairs",
                     "meanTargetJaccard",
