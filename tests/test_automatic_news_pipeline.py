@@ -1,0 +1,106 @@
+"""Automatic news-to-Gemma pipeline offline regression tests."""
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+from unittest.mock import patch
+
+from tris_market_event_intelligence.automatic_news_pipeline import process
+from tris_market_event_intelligence.dashboard_server import snapshot
+
+
+def test_news_analysis_persisted_and_idempotent(tmp_path):
+    path = tmp_path / "news.sqlite3"
+    body = "The central bank changed its policy guidance and discussed inflation."
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+        CREATE TABLE articles (
+          id INTEGER PRIMARY KEY, source TEXT, url TEXT, title TEXT, summary TEXT,
+          published_at TEXT, detected_at TEXT
+        );
+        CREATE TABLE article_full_text (
+          article_id INTEGER PRIMARY KEY, status TEXT, body TEXT, body_sha256 TEXT,
+          sparse_pages TEXT
+        );
+        """)
+        db.execute("INSERT INTO articles VALUES (1,?,?,?,?,?,?)", (
+            "fed_monetary", "https://example.org/1", "New guidance", "summary",
+            "2026-11-20T10:00:00+00:00", "2026-11-20T10:01:00+00:00",
+        ))
+        db.execute("INSERT INTO article_full_text VALUES (1,'COMPLETE',?,?,?)",
+                   (body, digest, "[]"))
+    result = {
+        "summary": "Guidance change", "limitations": "Conditional impact",
+        "impacts": [{
+            "target": "Technology", "direction": "DOWN", "reason": "Higher discount rates",
+            "evidence_id": "E1", "evidence_quote": body,
+        }],
+    }
+    with patch(
+        "tris_market_event_intelligence.automatic_news_pipeline.ask_gemma",
+        return_value=result,
+    ) as ask:
+        first = process(path, collect=False, limit=3)
+        second = process(path, collect=False, limit=3)
+    assert first["completed"] == 1
+    assert second["completed"] == 0
+    assert ask.call_count == 1
+    report = snapshot(path)
+    assert report["articles"][0]["automaticStatus"] == "COMPLETED"
+    assert json.loads(report["articles"][0]["automaticAnalysis"]) == result
+    with sqlite3.connect(path) as db:
+        assert db.execute(
+            "SELECT attempts FROM automatic_news_analyses"
+        ).fetchone()[0] == 1
+
+
+def test_missing_fulltext_does_not_invoke_model(tmp_path):
+    path = tmp_path / "news.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+        CREATE TABLE articles (
+          id INTEGER PRIMARY KEY, source TEXT, url TEXT, title TEXT, summary TEXT,
+          published_at TEXT, detected_at TEXT
+        );
+        INSERT INTO articles VALUES
+          (1,'fed','https://example.org','Headline',NULL,NULL,'2026-11-20');
+        """)
+    with patch(
+        "tris_market_event_intelligence.automatic_news_pipeline.ask_gemma"
+    ) as ask:
+        report = process(path, collect=False)
+    assert report["completed"] == 0
+    ask.assert_not_called()
+
+
+def test_error_is_saved_and_not_immediately_retried(tmp_path):
+    path = tmp_path / "news.sqlite3"
+    body = "A sufficiently long source sentence of new public information."
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+        CREATE TABLE articles (
+          id INTEGER PRIMARY KEY, source TEXT, url TEXT, title TEXT, summary TEXT,
+          published_at TEXT, detected_at TEXT
+        );
+        CREATE TABLE article_full_text (
+          article_id INTEGER PRIMARY KEY, status TEXT, body TEXT, body_sha256 TEXT,
+          sparse_pages TEXT
+        );
+        INSERT INTO articles VALUES
+          (1,'fed','https://example.org','Headline',NULL,NULL,'2026-11-20');
+        """)
+        db.execute("INSERT INTO article_full_text VALUES (1,'COMPLETE',?,?,?)",
+                   (body, digest, "[]"))
+    with patch(
+        "tris_market_event_intelligence.automatic_news_pipeline.ask_gemma",
+        side_effect=ValueError("invalid model response"),
+    ) as ask:
+        first = process(path, collect=False)
+        second = process(path, collect=False)
+    assert first["failed"] == 1
+    assert second["failed"] == 0
+    assert ask.call_count == 1
+    assert snapshot(path)["articles"][0]["automaticStatus"] == "FAILED"
