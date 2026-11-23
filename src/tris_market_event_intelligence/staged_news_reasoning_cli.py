@@ -23,7 +23,10 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     validate_answer,
     verified_articles,
 )
-from tris_market_event_intelligence.news_event_source_review import assess_event
+from tris_market_event_intelligence.news_event_source_review import (
+    assess_event,
+    source_type_hints,
+)
 
 EVENT_KINDS = (
     "POLICY_DECISION", "POLICY_GUIDANCE", "SCHEDULE_ONLY",
@@ -37,6 +40,12 @@ from historical events described within it. Distinguish a meeting schedule
 (SCHEDULE_ONLY) and prior observed market movements (RETROSPECTIVE_MARKET)
 from a fresh policy action. A previously described rate decision must not
 be reported as if it happened at publication time. If uncertain, choose OTHER.
+A document-form hint is a conservative rule-based clue, NOT a forced answer.
+If the document title and opening text both say the only announcement is a
+revised FOMC meeting schedule, prefer SCHEDULE_ONLY over POLICY_DECISION.
+For published minutes describing past meetings, distinguish the publication
+of historical minutes from a fresh policy decision; never assume a decision
+occurred at publication. Ground eventFact in the newly reported information.
 Do not predict prices, invent events, or infer market directions. JSON only."""
 IMPACT_SYSTEM = """You are evaluating one already extracted reported event.
 The extracted event is a model hypothesis, not verified fact. Use only the
@@ -134,20 +143,59 @@ def analyze_staged(client: httpx.Client, model: str, request: dict) -> dict:
     evidence = {item["id"]: item["text"] for item in passages}
     if not evidence:
         raise AnswerError("NO_USABLE_EVIDENCE")
+    hints = source_type_hints(request["article"], request["body"])
     source = {
         "article": request["article"],
         "evidence": passages,
         "bodyTruncated": request["bodyTruncated"],
+        "documentFormHints": hints,
     }
     event = _validated_event(
         _chat_json(client, model, system=EVENT_SYSTEM,
                    payload=source, schema=event_schema(list(evidence))),
         evidence,
     )
-    # The original model classification is retained, but known contradictions
-    # prevent a false positive market-impact analysis. Zero impacts here means
-    # WITHHELD, not a model conclusion of no material market consequences.
-    event_assessment = assess_event(request["article"], request["body"], event)
+    initial_event = event
+    initial_assessment = assess_event(request["article"], request["body"], event)
+    event_assessment = initial_assessment
+    correction = {"attempted": False, "status": "NOT_NEEDED"}
+    if initial_assessment["status"] == "REVIEW_REQUIRED":
+        # One targeted re-extraction; never rewrite the initial model output.
+        # A corrected model claim remains unverified and is fully traceable.
+        correction = {"attempted": True, "status": "STILL_REQUIRES_REVIEW"}
+        try:
+            revised = _validated_event(
+                _chat_json(
+                    client, model, system=EVENT_SYSTEM + (
+                        "\\nYour previous classification conflicts with the "
+                        "original article's independently detected document form. "
+                        "Re-read the title and source passages. Reconsider eventKind "
+                        "and the timing of the described event; do not simply copy "
+                        "the proposed hint. Output a grounded event fact."
+                    ),
+                    payload={
+                        **source,
+                        "previousEvent": initial_event,
+                        "detectedConflictFlags": initial_assessment["flags"],
+                    },
+                    schema=event_schema(list(evidence)),
+                ),
+                evidence,
+            )
+            revised_assessment = assess_event(
+                request["article"], request["body"], revised
+            )
+            correction["revisedEvent"] = revised
+            correction["revisedAssessment"] = revised_assessment
+            if revised_assessment["status"] != "REVIEW_REQUIRED":
+                event = revised
+                event_assessment = revised_assessment
+                correction["status"] = "REVISED_UNVERIFIED"
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            correction["status"] = "RETRY_ERROR_REVIEW_REQUIRED"
+            correction["errorCode"] = result_error(exc)
+    # The initial model classification and correction attempt remain visible.
+    # Missing confidence or review-required kinds cannot create market impacts.
     if event_assessment["status"] == "REVIEW_REQUIRED":
         analysis = {
             "summary": event["eventFact"],
@@ -178,6 +226,9 @@ def analyze_staged(client: httpx.Client, model: str, request: dict) -> dict:
         analysis = validate_answer(json.dumps(candidate, ensure_ascii=False), evidence)
     return {
         "event": event,
+        "originalEvent": initial_event,
+        "originalEventAssessment": initial_assessment,
+        "eventCorrection": correction,
         "eventAssessment": event_assessment,
         "impactDecisionStatus": impact_status,
         "analysis": analysis,
