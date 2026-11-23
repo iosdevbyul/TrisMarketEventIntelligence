@@ -22,6 +22,7 @@ from tris_market_event_intelligence.market_outcome_validation_cli import (
 )
 from tris_market_event_intelligence.market_price_recovery_cli import _observations
 from tris_market_event_intelligence.market_proxy_cohort_cli import CSV_FIELDS
+from tris_market_event_intelligence.typed_market_targets_cli import KNOWN
 
 REVIEW_ORIGINAL_FIELDS = (
     "target", "impacts", "articles", "article_ids", "predictions", "issue",
@@ -94,6 +95,7 @@ def apply_review(
     reviewed_csv: Path,
     original_mappings: Path,
     price_csv: Path,
+    *, semantic_plan: Path | None = None,
 ) -> tuple[dict[str, object], list[dict[str, str]], list[dict[str, str]]]:
     """Build explicit mapping/price-fetch plan without modifying any source."""
     for path in (gap_report, source_outcomes, reviewed_csv, original_mappings, price_csv):
@@ -108,6 +110,28 @@ def apply_review(
     if not isinstance(queue, list) or len(queue) > 2000:
         raise ValueError("Invalid original unapproved mapping queue")
     rows = _review_rows(reviewed_csv)
+    semantic_by_target: dict[str, dict] = {}
+    if semantic_plan is not None:
+        _hash(semantic_plan)
+        semantics = json.loads(semantic_plan.read_text(encoding="utf-8"))
+        if (semantics.get("schemaVersion") != "typed_market_target_inventory_v1"
+                or semantics.get("gapSha256") != _hash(gap_report)
+                or semantics.get("anyStockMappingApproved") is not False
+                or semantics.get("trainingEligible") is not False):
+            raise ValueError("Semantic plan provenance or policy mismatch")
+        records = semantics.get("targets")
+        if not isinstance(records, list):
+            raise ValueError("Malformed semantic target list")
+        for record in records:
+            if (not isinstance(record, dict)
+                    or not isinstance(record.get("target"), str)
+                    or record["target"] in semantic_by_target):
+                raise ValueError("Duplicate or malformed semantic target")
+            semantic_by_target[record["target"]] = record
+        if set(semantic_by_target) != {
+            item["target"] for item in gap["mappingQueue"]
+        }:
+            raise ValueError("Semantic plan target scope does not match gap")
     if len(rows) != len(queue):
         raise ValueError("Reviewed queue must contain every original target")
     expected = {}
@@ -132,7 +156,27 @@ def apply_review(
         if decision not in DECISIONS:
             raise ValueError(f"Unknown review decision for {target}")
         if decision == "APPROVE":
-            approved.append(_validate_approval(row))
+            if semantic_plan is None:
+                raise ValueError("Semantic plan required before approving equity mapping")
+            category = semantic_by_target[target].get("targetKind")
+            known = KNOWN.get(target)
+            if known is None or known[0] != category or known[2] != (
+                semantic_by_target[target].get("candidateRelatedListedParentSymbol") or ""
+            ):
+                raise ValueError("Typed research metadata does not match source catalog")
+            if category != "LISTED_PARENT_CANDIDATE":
+                raise ValueError(
+                    f"Equity scoring not suitable for target measurement type: "
+                    f"{target} ({category})"
+                )
+            approved_row = _validate_approval(row)
+            expected_symbol = semantic_by_target[target].get(
+                "candidateRelatedListedParentSymbol"
+            )
+            if (approved_row["mapping_kind"] != "DIRECT_EQUITY"
+                    or approved_row["symbol"] != expected_symbol):
+                raise ValueError("Documented parent symbol mismatch")
+            approved.append(approved_row)
         else:
             if any(row[field].strip() for field in REVIEW_EDIT_FIELDS[1:]):
                 raise ValueError(f"Unapproved target contains instrument fields: {target}")
@@ -178,6 +222,10 @@ def apply_review(
         "gapReportSha256": _hash(gap_report),
         "originalOutcomesSha256": _hash(source_outcomes),
         "reviewCSVSha256": _hash(reviewed_csv),
+        "semanticPlanSha256": (
+            _hash(semantic_plan) if semantic_plan is not None else None
+        ),
+        "economicTargetTypesGuarded": semantic_plan is not None,
         "originalMappingsSha256": _hash(original_mappings),
         "existingAdjustedPricesSha256": _hash(price_csv),
         "existingMappedTargets": len(original_rows),
@@ -208,6 +256,8 @@ def main() -> None:
     parser.add_argument("--review-csv", type=Path, required=True)
     parser.add_argument("--mappings", type=Path, required=True)
     parser.add_argument("--prices", type=Path, required=True)
+    parser.add_argument("--semantic-plan", type=Path,
+                        help="Required if approving any equity mappings")
     parser.add_argument("--output-mappings", type=Path, required=True)
     parser.add_argument("--output-price-queue", type=Path, required=True)
     parser.add_argument("--output-report", type=Path, required=True)
@@ -219,7 +269,7 @@ def main() -> None:
             raise ValueError("Outputs must be distinct new files; prior results immutable")
         report, mapped, collect = apply_review(
             args.gap_report, args.outcomes, args.review_csv,
-            args.mappings, args.prices,
+            args.mappings, args.prices, semantic_plan=args.semantic_plan,
         )
         with args.output_mappings.open("x", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)

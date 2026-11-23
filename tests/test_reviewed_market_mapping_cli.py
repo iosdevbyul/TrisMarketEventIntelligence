@@ -10,6 +10,7 @@ import pytest
 
 from tris_market_event_intelligence.market_outcome_gap_review_cli import QUEUE_COLUMNS
 from tris_market_event_intelligence.reviewed_market_mapping_cli import apply_review
+from tris_market_event_intelligence.typed_market_targets_cli import analyze_target_semantics
 
 
 def _csv(path: Path, columns: list[str], items: list[dict[str, str]]) -> None:
@@ -31,7 +32,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
     }), encoding="utf-8")
     review = tmp_path / "review.csv"
     original = {
-        "target": "Documented Example Company", "impacts": "2",
+        "target": "United Community Bank", "impacts": "2",
         "articles": "2", "article_ids": "1;2", "predictions": "DOWN:1;UP:1",
         "issue": "MAPPING_REQUIRED", "review_decision": "PENDING",
         "reviewed_market": "", "reviewed_symbol": "",
@@ -46,6 +47,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
         "inputSha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "trainingEligible": False,
         "mappingApprovedAutomatically": False,
+        "unmappedImpacts": 2,
         "mappingQueue": [{
             key: (int(value) if key in ("impacts", "articles") else value)
             for key, value in original.items()
@@ -72,7 +74,7 @@ def approve(path: Path, **overrides: str) -> None:
     rows[0].update({
         "review_decision": "APPROVE",
         "reviewed_market": "XNYS",
-        "reviewed_symbol": "EXMP",
+        "reviewed_symbol": "UCB",
         "reviewed_benchmark": "SPY",
         "mapping_kind": "DIRECT_EQUITY",
         "mapping_evidence_url": "https://example.org/issuer-listing",
@@ -82,11 +84,19 @@ def approve(path: Path, **overrides: str) -> None:
     _csv(path, list(QUEUE_COLUMNS), rows)
 
 
+
+def typed(gap: Path, review: Path) -> Path:
+    output = gap.parent / "semantic.json"
+    classification = analyze_target_semantics(gap, review)
+    output.write_text(json.dumps(classification), encoding="utf-8")
+    return output
+
+
 def test_pending_does_not_approve_or_invent_symbols(tmp_path: Path) -> None:
     args = fixture(tmp_path)
     result, mappings, to_collect = apply_review(*args)
     assert result["newlyApprovedTargets"] == 0
-    assert result["pendingTargets"] == ["Documented Example Company"]
+    assert result["pendingTargets"] == ["United Community Bank"]
     assert result["newPriceSymbolsWithoutAnyStoredDailyBars"] == []
     assert to_collect == []
     assert len(mappings) == 1
@@ -102,16 +112,17 @@ def test_approved_target_generates_precise_new_price_collection_plan(
     approve(review)
     result, new_mapping, collection = apply_review(
         gap, source, review, mappings, prices,
+        semantic_plan=typed(gap, review),
     )
     assert source.read_bytes() == source_before
     assert prices.read_bytes() == existing_before
     assert result["newlyApprovedTargets"] == 1
-    assert result["approvedNewTargets"] == ["Documented Example Company"]
-    assert result["newPriceSymbolsWithoutAnyStoredDailyBars"] == ["EXMP"]
+    assert result["approvedNewTargets"] == ["United Community Bank"]
+    assert result["newPriceSymbolsWithoutAnyStoredDailyBars"] == ["UCB"]
     assert result["newApprovedTargetsRequiringPriceCollection"] == 1
     assert len(new_mapping) == 2
     assert len(collection) == 1
-    assert collection[0]["symbol"] == "EXMP"
+    assert collection[0]["symbol"] == "UCB"
     assert collection[0]["benchmark"] == "SPY"
     assert collection[0]["evidence_url"].startswith("https://")
     assert result["approvedBySourceDocumentationIndependently"] is False
@@ -122,8 +133,12 @@ def test_approved_existing_price_symbol_skips_unneeded_download(
     tmp_path: Path,
 ) -> None:
     gap, source, review, mappings, prices = fixture(tmp_path)
-    approve(review, reviewed_symbol="EXIST")
-    result, mapped, collect = apply_review(gap, source, review, mappings, prices)
+    approve(review)
+    with prices.open("a", encoding="utf-8", newline="") as handle:
+        csv.writer(handle).writerow(["UCB", "2026-11-20", "99", "synthetic fixture"])
+    result, mapped, collect = apply_review(
+        gap, source, review, mappings, prices, semantic_plan=typed(gap, review),
+    )
     assert len(mapped) == 2
     assert collect == []
     assert result["newPriceSymbolsWithoutAnyStoredDailyBars"] == []
@@ -143,7 +158,9 @@ def test_approval_must_have_documentation_and_explicit_instrument(
     gap, source, review, mappings, prices = fixture(tmp_path)
     approve(review, **override)
     with pytest.raises(ValueError):
-        apply_review(gap, source, review, mappings, prices)
+        apply_review(
+            gap, source, review, mappings, prices, semantic_plan=typed(gap, review),
+        )
 
 
 def test_cannot_edit_original_article_or_target_evidence(tmp_path: Path) -> None:
@@ -182,7 +199,43 @@ def test_not_representable_is_retained_without_made_up_etf(
     _csv(review, list(QUEUE_COLUMNS), rows)
     result, mapped, collect = apply_review(gap, source, review, mappings, prices)
     assert result["rejectedAsUnrepresentableTargets"] == [
-        "Documented Example Company"
+        "United Community Bank"
     ]
     assert len(mapped) == 1
     assert collect == []
+
+
+def test_unlisted_macro_target_must_never_approve_equity_proxy(tmp_path: Path) -> None:
+    gap, source, review, mappings, prices = fixture(tmp_path)
+    with review.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    rows[0]["target"] = "Inflation"
+    _csv(review, list(QUEUE_COLUMNS), rows)
+    doc = json.loads(gap.read_text())
+    doc["mappingQueue"][0]["target"] = "Inflation"
+    gap.write_text(json.dumps(doc), encoding="utf-8")
+    approve(review)
+    with pytest.raises(ValueError, match="not suitable"):
+        apply_review(
+            gap, source, review, mappings, prices, semantic_plan=typed(gap, review),
+        )
+
+
+def test_arbitrary_approved_stock_needs_semantic_plan(tmp_path: Path) -> None:
+    gap, source, review, mappings, prices = fixture(tmp_path)
+    approve(review)
+    with pytest.raises(ValueError, match="Semantic plan required"):
+        apply_review(gap, source, review, mappings, prices)
+
+
+def test_forged_semantic_parent_ticker_cannot_approve_stock(tmp_path: Path) -> None:
+    gap, source, review, mappings, prices = fixture(tmp_path)
+    approve(review)
+    plan = typed(gap, review)
+    metadata = json.loads(plan.read_text(encoding="utf-8"))
+    metadata["targets"][0]["candidateRelatedListedParentSymbol"] = "FAKE"
+    plan.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="source catalog"):
+        apply_review(
+            gap, source, review, mappings, prices, semantic_plan=plan,
+        )
