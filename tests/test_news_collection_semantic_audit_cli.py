@@ -93,6 +93,13 @@ def test_repeatability_identifies_divergent_direction(tmp_path: Path) -> None:
     assert result["stableArticles"] == 0
     assert result["agreement"] == 0
     assert result["cases"][0]["status"] == "DIVERGENT_TARGET_DIRECTIONS"
+    assert result["sameImpactCountArticles"] == 1
+    assert result["sameTargetSetArticles"] == 1
+    assert result["sameSharedTargetDirectionArticles"] == 0
+    assert result["cases"][0]["impactCountsStable"] is True
+    assert result["cases"][0]["targetSetsIdentical"] is True
+    assert result["cases"][0]["sharedTargetDirectionsIdentical"] is False
+    assert result["cases"][0]["sharedTargets"] == ["financial markets"]
     assert result["cases"][0]["analysisByRun"][0]["impacts"][0]["evidenceQuote"]
 
 
@@ -127,3 +134,24 @@ def test_repeatability_requires_distinct_folders(tmp_path: Path) -> None:
     folder.mkdir()
     with pytest.raises(ValueError, match="distinct"):
         repeatability_audit(db, [folder, folder])
+
+
+def test_target_change_separated_from_direction_change(tmp_path: Path) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    digest = hashlib.sha256(
+        ("This report describes the regional market and company activity. " * 8).encode()
+    ).hexdigest()
+    first = _run(tmp_path / "run-a", digest)
+    second = _run(tmp_path / "run-b", digest)
+    saved = second / "article-1.json"
+    report = json.loads(saved.read_text())
+    report["analysis"]["impacts"][0]["target"] = "Technology Sector"
+    saved.write_text(json.dumps(report))
+    result = repeatability_audit(db, [first, second])
+    case = result["cases"][0]
+    assert result["comparableArticles"] == 1
+    assert result["stableArticles"] == 0
+    assert result["sameImpactCountArticles"] == 1
+    assert result["sameTargetSetArticles"] == 0
+    assert case["sharedTargets"] == []
+    assert case["sharedTargetDirectionsIdentical"] is True
