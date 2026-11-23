@@ -29,7 +29,7 @@ If no justified impact exists return impacts: []. Output JSON only."""
 def evidence_passages(body: str, *, max_items: int = 24) -> list[dict[str, str]]:
     """Bounded exact source spans. IDs are constructed by Python, not the LLM."""
     pieces = [
-        piece.strip() for piece in re.split(r"(?<=[.!?])\\s+|\\n+", body[:12000])
+        piece.strip() for piece in re.split(r"(?<=[.!?])\s+|\n+", body[:12000])
         if piece.strip()
     ]
     spans: list[str] = []
