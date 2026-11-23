@@ -385,3 +385,57 @@ Original v1/v2/v3 saved outputs are intentionally never rewritten.
 The next actual model investigation should focus on the *event fact and
 classification* of articles #1–#5, not on increasing the proportion
 of `impacts=[]` responses or making 75% appear higher.
+
+## Event classification re-extraction after 3/4 empty-only agreement
+
+The developer reran the original staged five-article experiment through the
+expanded read-only audit. Results: `comparableArticles=4`,
+`stableArticles=3`, **`stableEmptyArticles=3`**,
+**`stableNonEmptyArticles=0`**, `mixedEmptyNonEmptyArticles=1`,
+`matchingEventKindArticles=4`. All comparable models had assigned
+`POLICY_DECISION`, including the first original document announcing only
+a revised 2027 FOMC meeting schedule. This is **not** evidence of improved
+market reasoning.
+
+The staged research pilot now includes independent document-form hints,
+computed from the title *and* source body, in the initial event extraction
+request. The hints are not labeled ground truth. When an event classification
+conflicts with these clues, one additional source-grounded re-extraction
+reconsiders the reported action and whether it occurred now or historically.
+The pipeline persists **both** `originalEvent` and `event`, plus
+`originalEventAssessment` and `eventCorrection`. The original
+disagreement cannot disappear from the record. If the model cannot resolve
+the conflict, or the correction call fails, the analysis is recorded
+`WITHHELD_EVENT_REVIEW`, not a validated neutral/empty prediction.
+Successful corrections remain `REVISED_UNVERIFIED`, never 'correct'.
+
+A corrected `SCHEDULE_ONLY` or `RETROSPECTIVE_MARKET` classification is
+an explicit `ABSTAINED_EVENT_SCOPE`; it is not counted as reproducible
+directional market reasoning. The audit now includes correction attempt and
+revised counts and shows initial and resulting event kinds side by side.
+
+This is an isolated source-only experiment: the existing automatic worker
+and dashboard do not switch to this pilot. For an on-device evaluation use
+two **new distinct output directories** and a new audit filename. Do not
+overwrite prior frozen baseline reports:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.staged_news_reasoning_cli \\
+  --db "$DATA/news.sqlite3" --model gemma4:e2b --limit 5 \\
+  --output-dir "$DATA/news-staged-source-context-run-1"
+python -m tris_market_event_intelligence.staged_news_reasoning_cli \\
+  --db "$DATA/news.sqlite3" --model gemma4:e2b --limit 5 \\
+  --output-dir "$DATA/news-staged-source-context-run-2"
+python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --run "$DATA/news-staged-source-context-run-1" \\
+  --run "$DATA/news-staged-source-context-run-2" \\
+  --output "$DATA/news-staged-source-context-audit-v1.json"
+```
+
+Inspect `eventKindsByRun`, `originalEventKindsByRun`,
+`eventCorrectionsByRun` and original evidence quotes, and report the
+number of **stableNonEmptyArticles** rather than headline empty agreement.
+Any repeated source-to-event error still counts as failure of economic
+understanding, not research success.
