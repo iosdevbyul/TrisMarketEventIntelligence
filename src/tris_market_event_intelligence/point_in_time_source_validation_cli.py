@@ -176,6 +176,7 @@ def evaluate_sources(
     evidence_csv: Path | None = None,
     max_anchor_age_minutes: int = 5,
     max_exit_age_minutes: int = 5,
+    admitted_prediction_ids: set[str] | None = None,
 ) -> dict[str, object]:
     if not 1 <= max_anchor_age_minutes <= 4320 or not 1 <= max_exit_age_minutes <= 4320:
         raise ValueError("Price age windows must be 1..4320 explicit minutes")
@@ -193,7 +194,10 @@ def evaluate_sources(
         event = prediction.event
         release = event.verified_cutoff
         chronology_row = chronology["articles"][event.article_id]
-        if evidence_csv and chronology_row["chronologyStatus"] != (
+        if (admitted_prediction_ids is not None
+                and prediction.prediction_id not in admitted_prediction_ids):
+            status = "OPERATIONAL_ARTICLE_NOT_ADMITTED"
+        elif evidence_csv and chronology_row["chronologyStatus"] != (
             "DOCUMENTARY_CONSISTENT_UNATTESTED"
         ):
             status = chronology_row["chronologyStatus"]
