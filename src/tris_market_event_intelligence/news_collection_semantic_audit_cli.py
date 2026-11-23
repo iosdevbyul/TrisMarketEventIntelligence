@@ -136,6 +136,11 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
     same_counts = 0
     same_targets = 0
     same_common_directions = 0
+    no_shared_target_articles = 0
+    changed_direction_articles = 0
+    shared_target_pairs = 0
+    changed_direction_pairs = 0
+    target_jaccards = []
     for article_id in ids:
         present = [run.get(article_id) for run in runs]
         if any(report is None for report in present):
@@ -179,6 +184,21 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
                 for target in shared)
             for direction_map in direction_maps[1:]
         )
+        union = set.union(*target_sets) if target_sets else set()
+        jaccard = len(shared) / len(union) if union else 1.0
+        target_jaccards.append(jaccard)
+        direction_changes = [
+            {"target": target,
+             "directionsByRun": [mapping[target] for mapping in direction_maps]}
+            for target in sorted(shared)
+            if len({mapping[target] for mapping in direction_maps}) > 1
+        ]
+        shared_target_pairs += len(shared)
+        changed_direction_pairs += len(direction_changes)
+        if not shared and union:
+            no_shared_target_articles += 1
+        if direction_changes:
+            changed_direction_articles += 1
         if stable:
             consistent += 1
         if count_stable:
@@ -194,6 +214,8 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             "targetSetsIdentical": targets_stable,
             "sharedTargetDirectionsIdentical": common_directions_stable,
             "sharedTargets": sorted(shared),
+            "targetJaccard": jaccard,
+            "sharedDirectionDisagreements": direction_changes,
             "targetsByRun": [sorted(targets) for targets in target_sets],
             "impactsByRun": [
                 [{"target": target, "direction": direction} for target, direction in signature]
@@ -230,6 +252,13 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         "sameImpactCountArticles": same_counts,
         "sameTargetSetArticles": same_targets,
         "sameSharedTargetDirectionArticles": same_common_directions,
+        "noSharedTargetArticles": no_shared_target_articles,
+        "changedDirectionArticles": changed_direction_articles,
+        "sharedTargetPairs": shared_target_pairs,
+        "changedDirectionPairs": changed_direction_pairs,
+        "meanTargetJaccard": (
+            sum(target_jaccards) / len(target_jaccards) if target_jaccards else None
+        ),
         "sharedTargetDirectionWarning": (
             "Common-target direction agreement is vacuously true when "
             "there are no shared target labels; interpret with sharedTargets"
@@ -273,7 +302,13 @@ def main() -> None:
             "integrity": collection["completeBodyIntegrity"],
             "repeatability": (
                 {key: report["repeatability"][key]
-                 for key in ("articleIdsSeen", "comparableArticles", "stableArticles", "agreement")}
+                 for key in (
+                    "articleIdsSeen", "comparableArticles", "stableArticles",
+                    "agreement", "sameImpactCountArticles", "sameTargetSetArticles",
+                    "noSharedTargetArticles", "changedDirectionArticles",
+                    "sharedTargetPairs", "changedDirectionPairs",
+                    "meanTargetJaccard",
+                )}
                 if report["repeatability"] else None
             ),
             "output": str(args.output),
