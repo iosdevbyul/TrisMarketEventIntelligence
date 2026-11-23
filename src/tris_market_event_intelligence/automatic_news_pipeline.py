@@ -18,11 +18,19 @@ from pathlib import Path
 
 import httpx
 
+from tris_market_event_intelligence.automatic_forecast_precommitment import (
+    initialize as initialize_forecasts,
+)
+from tris_market_event_intelligence.automatic_forecast_precommitment import (
+    inspect_commitments,
+    record_new_analysis,
+)
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     MODEL_PATTERN,
     ask_gemma,
     result_error,
 )
+from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
 from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
@@ -63,9 +71,18 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
            WHERE f.article_id IS NULL OR f.status!='COMPLETE'
               OR f.body IS NULL"""
     ).fetchone()[0]
+    fulltext_columns = {
+        column[1] for column in db.execute("PRAGMA table_info(article_full_text)")
+    }
+    body_observed_expr = (
+        "f.observed_at AS body_observed_at"
+        if "observed_at" in fulltext_columns
+        else "NULL AS body_observed_at"
+    )
     candidates = db.execute(
-        """SELECT a.id, a.source, a.title, a.url, a.published_at,
+        f"""SELECT a.id, a.source, a.title, a.url, a.published_at,
                   a.detected_at, f.body, f.body_sha256, f.sparse_pages,
+                  {body_observed_expr},
                   l.status AS prior_status, l.processed_at AS prior_at,
                   l.attempts AS prior_attempts
            FROM articles a JOIN article_full_text f ON f.article_id=a.id
@@ -123,8 +140,12 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
 def process(db_path: Path, *, model: str = "gemma4:e2b",
             limit: int = 10, retry_minutes: int = 30,
             collect: bool = True, client: httpx.Client | None = None,
-            verification_runs: int = 1) -> dict:
+            verification_runs: int = 1, seal_forecasts: bool = False,
+            mappings_path: Path | None = None) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
+    if seal_forecasts and mappings_path is None:
+        raise ValueError("Explicit reviewed market mappings required to precommit")
+    reviewed_mappings = _mappings(mappings_path) if seal_forecasts and mappings_path else {}
     if not MODEL_PATTERN.fullmatch(model):
         raise ValueError("Invalid Ollama model")
     if verification_runs not in (1, 2):
@@ -145,6 +166,8 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
         with closing(sqlite3.connect(db_path, timeout=30)) as db:
             db.execute("PRAGMA busy_timeout=30000")
             initialize(db)
+            if seal_forecasts:
+                initialize_forecasts(db)
             db.commit()
             rows, coverage = pending(db, model, limit, retry_minutes)
             owned = client is None
@@ -152,6 +175,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                 timeout=httpx.Timeout(300), trust_env=False
             )
             completed = failed = 0
+            commitment_counts: dict[str, int] = {}
             results = []
             try:
                 for row in rows:
@@ -186,8 +210,9 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                         status, error_code = "FAILED", result_error(exc)
                         encoded = None
                         failed += 1
+                    analysis_time = now()
                     with db:
-                        db.execute(
+                        inserted = db.execute(
                             """INSERT INTO automatic_news_analyses
                                (article_id,body_sha256,model,status,processed_at,
                                 attempts,error_code,analysis_json)
@@ -199,14 +224,30 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                                 error_code=excluded.error_code,
                                 analysis_json=excluded.analysis_json
                                WHERE automatic_news_analyses.status='FAILED'""",
-                            (row["id"], row["body_sha256"], model, status, now(),
-                             error_code, encoded),
+                            (row["id"], row["body_sha256"], model, status,
+                             analysis_time, error_code, encoded),
                         )
+                        if (seal_forecasts and status == "COMPLETED"
+                                and inserted.rowcount == 1):
+                            forecast_counts = record_new_analysis(
+                                db,
+                                article={**request["article"],
+                                         "bodyObservedAt": row["body_observed_at"]},
+                                analysis=analysis, model=model,
+                                body_sha256=row["body_sha256"],
+                                analyzed_at=analysis_time,
+                                mappings=reviewed_mappings,
+                            )
+                            for eligibility, count in forecast_counts.items():
+                                commitment_counts[eligibility] = (
+                                    commitment_counts.get(eligibility, 0) + count
+                                )
                     results.append({"articleId": row["id"], "status": status,
                                     "errorCode": error_code})
             finally:
                 if owned:
                     session.close()
+            commitment_audit = inspect_commitments(db) if seal_forecasts else None
     collection_status = collection.get("status") if collection is not None else None
     return {
         "status": (
@@ -220,6 +261,11 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
         "coverage": coverage, "results": results,
         "verificationRuns": verification_runs,
         "marketPricesAnalyzed": False,
+        "forecastPrecommitmentsEnabled": seal_forecasts,
+        "newForecastCommitments": commitment_counts if seal_forecasts else {},
+        "forecastCommitmentAudit": commitment_audit,
+        "forecastFirstPublicAvailabilityIndependentlyVerified": False,
+        "forecastExternalTimestampAuthenticated": False,
     }
 
 
@@ -236,6 +282,14 @@ def main() -> None:
     parser.add_argument("--verification-runs", type=int, choices=(1, 2), default=1,
                         help="1=unverified single analysis; 2=compare independent model calls")
     parser.add_argument("--skip-collection", action="store_true")
+    parser.add_argument(
+        "--seal-forecasts", action="store_true",
+        help="Opt in to immutable local forecast commitments on NEW model completions",
+    )
+    parser.add_argument(
+        "--mappings", type=Path,
+        help="Required source-reviewed precommitted target map when --seal-forecasts",
+    )
     args = parser.parse_args()
     if not 300 <= args.interval <= 86400:
         parser.error("interval must be 300..86400 seconds")
@@ -244,8 +298,10 @@ def main() -> None:
             result = process(args.db.expanduser(), model=args.model,
                              limit=args.limit, retry_minutes=args.retry_minutes,
                              collect=not args.skip_collection,
-                             verification_runs=args.verification_runs)
-        except (OSError, sqlite3.Error, ValueError) as exc:
+                             verification_runs=args.verification_runs,
+                             seal_forecasts=args.seal_forecasts,
+                             mappings_path=args.mappings)
+        except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
             result = {"status": "ERROR", "errorCode": type(exc).__name__}
         print(json.dumps(result, ensure_ascii=False), flush=True)
         if not args.watch:
