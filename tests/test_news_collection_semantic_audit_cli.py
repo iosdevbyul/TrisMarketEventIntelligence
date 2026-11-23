@@ -262,3 +262,35 @@ def test_different_event_kinds_do_not_hide_behind_matching_empty_impacts(
     assert result["matchingEventKindArticles"] == 0
     assert result["eventReviewRequiredArticles"] == 1
     assert result["cases"][0]["eventKindsIdentical"] is False
+
+
+def test_event_correction_audit_keeps_initial_disagreement_visible(
+    tmp_path: Path,
+) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    digest = hashlib.sha256(
+        ("This report describes the regional market and company activity. " * 8).encode()
+    ).hexdigest()
+    first = _run(tmp_path / "before", digest)
+    second = _run(tmp_path / "after", digest)
+    for directory in (first, second):
+        path = directory / "article-1.json"
+        report = json.loads(path.read_text())
+        report["analysis"]["impacts"] = []
+        report["event"] = {"eventKind": "SCHEDULE_ONLY"}
+        report["originalEvent"] = {"eventKind": "POLICY_DECISION"}
+        report["eventAssessment"] = {"status": "UNVERIFIED"}
+        report["eventCorrection"] = {
+            "attempted": True, "status": "REVISED_UNVERIFIED",
+        }
+        path.write_text(json.dumps(report))
+    result = repeatability_audit(db, [first, second])
+    assert result["stableEmptyArticles"] == 1
+    assert result["eventCorrectionAttemptArticles"] == 1
+    assert result["eventCorrectionRevisedArticles"] == 1
+    assert result["cases"][0]["originalEventKindsByRun"] == [
+        "POLICY_DECISION", "POLICY_DECISION",
+    ]
+    assert result["cases"][0]["eventKindsByRun"] == [
+        "SCHEDULE_ONLY", "SCHEDULE_ONLY",
+    ]
