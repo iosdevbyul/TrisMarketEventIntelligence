@@ -15,7 +15,7 @@ Novelty = Literal["NEW", "REPRINT", "FOLLOW_UP", "CORRECTION", "UNKNOWN"]
 ForecastMode = Literal["LIVE", "HISTORICAL_REPLAY"]
 ObservationStatus = Literal[
     "OBSERVED", "UNVERIFIED_SOURCE", "MISSING_BASE_PRICE",
-    "MISSING_EXIT_PRICE", "MISSING_BENCHMARK", "STALE_PRICE",
+    "MISSING_EXIT_PRICE", "MISSING_FORECAST_BASE", "MISSING_BENCHMARK", "STALE_PRICE",
 ]
 Direction = Literal["UP", "DOWN", "NEUTRAL"]
 
@@ -128,6 +128,10 @@ class PriceObservation:
     relative_return: float | None
     actual_direction: Direction | None
     direction_match: bool | None
+    forecast_anchor_at: str | None
+    forecast_return: float | None
+    forecast_actual_direction: Direction | None
+    event_window_direction_match: bool | None
     causal_attribution: str = "NOT_ESTABLISHED"
 
     def as_dict(self) -> dict[str, object]:
@@ -186,7 +190,9 @@ def observe(
         return PriceObservation(**base, status=status, anchor_at=None, exit_at=None,
                                 absolute_return=None, benchmark_return=None,
                                 relative_return=None, actual_direction=None,
-                                direction_match=None)
+                                direction_match=None, forecast_anchor_at=None,
+                                forecast_return=None, forecast_actual_direction=None,
+                                event_window_direction_match=None)
 
     anchor_time = event.verified_cutoff
     if anchor_time is None:
@@ -199,19 +205,33 @@ def observe(
     target_exit = _nearest_at_or_before(prices, forecast.target, cutoff, prediction_at)
     if target_exit is None:
         return unavailable("MISSING_EXIT_PRICE")
+    forecast_base = _nearest_at_or_before(
+        prices, forecast.target, prediction_at, anchor_time - timedelta(microseconds=1)
+    )
+    if forecast_base is None:
+        return unavailable("MISSING_FORECAST_BASE")
+    if prediction_at - _utc(forecast_base.bar_end) > max_anchor_age:
+        return unavailable("STALE_PRICE")
     if (anchor_time - _utc(target_base.bar_end) > max_anchor_age
             or cutoff - _utc(target_exit.bar_end) > max_exit_age):
         return unavailable("STALE_PRICE")
 
     benchmark_base = _nearest_before(prices, forecast.benchmark, anchor_time)
     benchmark_exit = _nearest_at_or_before(prices, forecast.benchmark, cutoff, prediction_at)
-    if benchmark_base is None or benchmark_exit is None:
+    benchmark_forecast_base = _nearest_at_or_before(
+        prices, forecast.benchmark, prediction_at, anchor_time - timedelta(microseconds=1)
+    )
+    if benchmark_base is None or benchmark_exit is None or benchmark_forecast_base is None:
         return unavailable("MISSING_BENCHMARK")
     if (abs(_utc(benchmark_base.bar_end) - _utc(target_base.bar_end))
             > benchmark_tolerance
             or abs(_utc(benchmark_exit.bar_end) - _utc(target_exit.bar_end))
             > benchmark_tolerance):
         return unavailable("MISSING_BENCHMARK")
+    if abs(_utc(benchmark_forecast_base.bar_end) - _utc(forecast_base.bar_end)) > benchmark_tolerance:
+        return unavailable("MISSING_BENCHMARK")
+    if prediction_at - _utc(benchmark_forecast_base.bar_end) > max_anchor_age:
+        return unavailable("STALE_PRICE")
     if (anchor_time - _utc(benchmark_base.bar_end) > max_anchor_age
             or cutoff - _utc(benchmark_exit.bar_end) > max_exit_age):
         return unavailable("STALE_PRICE")
@@ -219,10 +239,16 @@ def observe(
     target_return = target_exit.adjusted_price / target_base.adjusted_price - 1.0
     benchmark_return = benchmark_exit.adjusted_price / benchmark_base.adjusted_price - 1.0
     actual = _direction(target_return, forecast.deadband)
+    forecast_return = target_exit.adjusted_price / forecast_base.adjusted_price - 1.0
+    forecast_actual = _direction(forecast_return, forecast.deadband)
     return PriceObservation(
         **base, status="OBSERVED", anchor_at=_utc(target_base.bar_end).isoformat(),
         exit_at=_utc(target_exit.bar_end).isoformat(),
         absolute_return=target_return, benchmark_return=benchmark_return,
         relative_return=target_return - benchmark_return, actual_direction=actual,
-        direction_match=actual == forecast.direction,
+        direction_match=forecast_actual == forecast.direction,
+        forecast_anchor_at=_utc(forecast_base.bar_end).isoformat(),
+        forecast_return=forecast_return,
+        forecast_actual_direction=forecast_actual,
+        event_window_direction_match=actual == forecast.direction,
     )
