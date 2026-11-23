@@ -141,7 +141,7 @@ def evaluate_automatic_outcomes(
         "automaticLedgerCoverage": coverage,
         "historicalEvaluationOnly": True,
         "marketPricesAnalyzed": True,
-        "marketPricesAreRealSourceProvided": True,
+        "sourcedAdjustedDailyPriceFileCompared": True,
         "actualMarketOutcomeProviderIndependentlyVerified": False,
         "forecastSealedBeforeOutcomes": False,
         "prospectivePredictionAccuracy": None,
