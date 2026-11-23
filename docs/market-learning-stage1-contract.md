@@ -229,3 +229,49 @@ python -m tris_market_event_intelligence.point_in_time_source_validation_cli \
 Still outstanding: authenticated earliest-public data, genuine provider
 minute history for real symbols, verified exchange sessions and source
 relationship evidence. Synthetic fixtures cannot satisfy these gates.
+
+
+## Operational local SQLite audit: actual observed news records
+
+The new `operational_news_pit_readiness_cli` reads the **existing**
+production `news.sqlite3` directly, using SQLite `mode=ro`; it does not
+bootstrap a second database, run collection, call Gemma, generate a forecast
+or rewrite existing events. It accepts up to 3,000 actual stored articles
+and emits one article-level report with explicit blockers.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.operational_news_pit_readiness_cli \
+  --db "$DATA/news.sqlite3" \
+  --limit 1000 \
+  --output "$DATA/market-learning-real-news-readiness-v1.json"
+```
+
+For each persisted article it compares the publisher-stated publication
+timestamp with RSS detection / feed capture chronology, independently
+re-hashes the stored RSS bytes and full-text body/raw bytes, checks the
+full-text completion status, identifies exact duplicate URLs, and reports
+candidate same-story groups from the existing `story_members` index.
+If the optional automatic-news analysis ledger exists, it also reports
+whether a completed Gemma analysis exists.
+
+This is a **real operational data readiness inspection**, not the
+creation of new price or causal labels. RSS capture plus source body
+demonstrates what the application stored, not the first time the information
+was made public. The existing `story_members` grouping is conservative
+and only suggests article similarity, not independently established
+economic-event identity. Price mappings, market calendar authentication,
+source-aware minute observations and actual Gemini/Gemma forecast sealing
+are separate requirements.
+
+The CLI's `verifiedFirstPublicArticleCount`,
+`independentlyVerifiedMarketOutcomeCount`, and
+`learningEligibleCount` are intentionally **zero** until independent
+evidence is integrated. A valid local SHA-256 is not source attestation.
+The report is intentionally bounded; always review `truncated` and
+`totalArticlesAtScan`, not merely the first `--limit` articles.
+Existing output files cannot be overwritten.
+
+**Stage 1 remains incomplete** until the actual machine report is inspected
+and independently supported publication, issuer and price-source evidence
+is available. This avoids claiming progress because test fixtures passed.
