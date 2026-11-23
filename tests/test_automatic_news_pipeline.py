@@ -49,6 +49,8 @@ def test_news_analysis_persisted_and_idempotent(tmp_path):
     assert ask.call_count == 1
     report = snapshot(path)
     assert report["articles"][0]["automaticStatus"] == "COMPLETED"
+    assert report["automaticAnalysisCounts"] == {"COMPLETED": 1, "FAILED": 0}
+    assert report["automaticFailureCodes"] == {}
     assert json.loads(report["articles"][0]["automaticAnalysis"]) == result
     with sqlite3.connect(path) as db:
         assert db.execute(
@@ -104,3 +106,19 @@ def test_error_is_saved_and_not_immediately_retried(tmp_path):
     assert second["failed"] == 0
     assert ask.call_count == 1
     assert snapshot(path)["articles"][0]["automaticStatus"] == "FAILED"
+
+
+def test_degraded_collector_is_not_reported_as_healthy(tmp_path):
+    path = tmp_path / "news.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY)")
+    with patch(
+        "tris_market_event_intelligence.automatic_news_pipeline.run_cycle",
+        return_value={"status": "degraded", "successful_sources": 7, "total_sources": 8},
+    ):
+        result = process(path, collect=True)
+    assert result["status"] == "DEGRADED_COLLECTION"
+    assert result["collectionHealthy"] is False
+    assert result["collectionStatus"] == "degraded"
+    assert result["completed"] == 0
+    assert result["failed"] == 0
