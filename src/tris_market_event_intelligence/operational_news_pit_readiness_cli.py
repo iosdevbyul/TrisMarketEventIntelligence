@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 from collections import Counter
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
     from urllib.parse import quote
 
     db_uri = "file:" + quote(str(db_path.resolve()), safe="/") + "?mode=ro"
-    with sqlite3.connect(db_uri, uri=True, timeout=10) as db:
+    with closing(sqlite3.connect(db_uri, uri=True, timeout=10)) as db:
         db.row_factory = sqlite3.Row
         tables = _tables(db)
         if not {"articles", "captures"}.issubset(tables):
