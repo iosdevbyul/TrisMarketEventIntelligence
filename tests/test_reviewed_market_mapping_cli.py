@@ -47,6 +47,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
         "inputSha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "trainingEligible": False,
         "mappingApprovedAutomatically": False,
+        "unmappedImpacts": 2,
         "mappingQueue": [{
             key: (int(value) if key in ("impacts", "articles") else value)
             for key, value in original.items()
