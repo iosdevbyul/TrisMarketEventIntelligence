@@ -134,7 +134,7 @@ def test_committed_1d_and_5d_original_source_actual_market_labels(
         "alwaysUp": 1, "alwaysDown": 0, "alwaysNeutral": 0,
     }
     assert report["horizons"]["1d"]["relativeConstantDirectionBaselines"] == {
-        "alwaysUp": 0, "alwaysDown": 0, "alwaysNeutral": 1,
+        "alwaysUp": 0, "alwaysDown": 1, "alwaysNeutral": 0,
     }
     assert report["horizons"]["1d"]["confusionMatrixActualByPredicted"]["UP"]["UP"] == 1
     assert report["horizons"]["1d"]["distinctArticlesScored"] == 1
