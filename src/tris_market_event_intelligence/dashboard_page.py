@@ -72,7 +72,7 @@ tr.data-row{cursor:pointer}tr.data-row:hover{background:#1a2738}tr.data-row.sele
 <section class="panel"><div class="panel-head"><div><h2>기사 처리 흐름</h2><p class="sub" id="lastObserved">최근 수집 시각 확인 중</p></div>
 <div class="filters"><input class="search" id="search" placeholder="기사 제목 검색" aria-label="기사 제목 검색">
 <select id="sourceFilter" aria-label="출처 필터"><option value="">모든 출처</option></select>
-<select id="stageFilter" aria-label="분석 상태 필터"><option value="">전체 상태</option><option value="pending">미추출</option><option value="extracted">이벤트 추출</option><option value="analyzed">AI 분석 완료</option><option value="failed">AI 분석 실패</option><option value="noevent">이벤트 없음</option></select></div></div>
+<select id="stageFilter" aria-label="분석 상태 필터"><option value="">전체 상태</option><option value="pending">미추출</option><option value="extracted">이벤트 추출</option><option value="analyzed">AI 분석 완료</option><option value="review">AI 판단 불일치·검토 필요</option><option value="failed">AI 분석 실패</option><option value="noevent">이벤트 없음</option></select></div></div>
 <div class="table-wrap"><table><thead><tr><th>원본 뉴스 / 출처</th><th>수집 시각</th><th>이벤트 처리</th><th>AI / 시장 영향</th></tr></thead><tbody id="articleRows"><tr><td colspan="4" class="empty">불러오는 중...</td></tr></tbody></table></div>
 <div class="note" id="tableNote">최근 기사 최대 300건을 보여줍니다. 수집 시각은 기사 발행 시각과 다를 수 있습니다.</div>
 </section>
@@ -89,8 +89,8 @@ let current=null,selected=null;
 const n=v=>v==null?'—':Number(v).toLocaleString('ko-KR');
 const date=v=>{if(!v)return '기록 없음';const d=new Date(v);return isNaN(d)?String(v):d.toLocaleString('ko-KR',{dateStyle:'short',timeStyle:'short'});};
 function elt(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=String(text);if(cls)e.className=cls;return e;}
-function state(a){if(a.automaticStatus==='COMPLETED')return 'analyzed';if(a.automaticStatus==='FAILED')return 'failed';if(a.impactCount>0)return 'analyzed';if(a.eventCount>0)return 'extracted';if(a.extractionCount>0)return 'noevent';return 'pending';}
-function stageLabel(a){const s=state(a);return s==='analyzed'?'Gemma 분석 완료':s==='failed'?'AI 분석 실패':s==='extracted'?'이벤트 추출':s==='noevent'?'추출 완료 · 이벤트 없음':'미추출 / 확인 필요';}
+function state(a){if(a.automaticStatus==='COMPLETED'&&a.automaticVerificationStatus==='REVIEW_REQUIRED')return 'review';if(a.automaticStatus==='COMPLETED')return 'analyzed';if(a.automaticStatus==='FAILED')return 'failed';if(a.impactCount>0)return 'analyzed';if(a.eventCount>0)return 'extracted';if(a.extractionCount>0)return 'noevent';return 'pending';}
+function stageLabel(a){const s=state(a);return s==='review'?'AI 판단 불일치 · 검토 필요':s==='analyzed'?(a.automaticVerificationStatus==='REPEATABLE_UNREVIEWED'?'Gemma 반복 일치 · 사실 미검증':'Gemma 분석 완료 · 사실 미검증'):s==='failed'?'AI 분석 실패':s==='extracted'?'이벤트 추출':s==='noevent'?'추출 완료 · 이벤트 없음':'미추출 / 확인 필요';}
 function tag(text,cls){return elt('span',text,'tag '+(cls||''));}
 function renderArticles(){
 const term=$('search').value.toLocaleLowerCase();const stage=$('stageFilter').value;
@@ -103,7 +103,7 @@ const td1=elt('td');td1.append(elt('div',a.title,'article-title'),elt('div',a.so
 const td2=elt('td',date(a.detectedAt));
 const td3=elt('td');td3.append(tag(stageLabel(a),state(a)==='analyzed'?'positive':state(a)==='pending'?'pending':'muted'));
 const td4=elt('td');
-if(a.automaticStatus==='COMPLETED'){let data=null;try{data=JSON.parse(a.automaticAnalysis||'null');}catch(_){};td4.append(tag('Gemma · '+(data?.impacts?.length??0)+'개 영향','positive'));}
+if(a.automaticStatus==='COMPLETED'){let data=null;try{data=JSON.parse(a.automaticAnalysis||'null');}catch(_){};td4.append(tag('Gemma · '+(data?.impacts?.length??0)+'개 영향',a.automaticVerificationStatus==='REVIEW_REQUIRED'?'negative':'muted'));}
 else if(a.automaticStatus==='FAILED')td4.append(tag('분석 실패: '+(a.automaticError||'UNKNOWN'),'negative'));
 else if(a.impactCount>0)td4.append(tag(a.latestDirection||'방향 미지정',/UP|POSITIVE|BULL|RISE/i.test(a.latestDirection||'')?'positive':/DOWN|NEGATIVE|BEAR|FALL/i.test(a.latestDirection||'')?'negative':'muted'));
 else td4.append(tag(a.latestRunOutcome||'기록 없음','muted'));
@@ -112,7 +112,7 @@ tr.append(td1,td2,td3,td4);tr.onclick=()=>{selected=a.id;renderArticles();render
 function addPair(dl,k,v){dl.append(elt('dt',k),elt('dd',v==null||v===''?'기록 없음':v));}
 function renderDetail(a){
 const box=$('detail');box.replaceChildren();box.append(elt('h3',a.title),tag(stageLabel(a),state(a)==='analyzed'?'positive':'muted'));
-const dl=elt('dl');addPair(dl,'출처',a.source);addPair(dl,'기사 ID',a.id);addPair(dl,'발행',date(a.publishedAt));addPair(dl,'최초 수집',date(a.detectedAt));addPair(dl,'원문 상태',a.fullTextStatus);addPair(dl,'추출 횟수',a.extractionCount);addPair(dl,'이벤트 수',a.eventCount);addPair(dl,'이벤트 분류',a.eventClassification);addPair(dl,'이벤트 상태',a.eventStatus);addPair(dl,'클레임 수',a.claimCount);addPair(dl,'영향 분석 수',a.impactCount);addPair(dl,'최신 모델',a.latestModel);addPair(dl,'영향 섹터',a.latestSector);addPair(dl,'방향 예측',a.latestDirection);addPair(dl,'분석 실행 결과',a.latestRunOutcome);addPair(dl,'자동 AI 분석 상태',a.automaticStatus);addPair(dl,'자동 AI 모델',a.automaticModel);addPair(dl,'AI 실패 코드',a.automaticError);box.append(dl);
+const dl=elt('dl');addPair(dl,'출처',a.source);addPair(dl,'기사 ID',a.id);addPair(dl,'발행',date(a.publishedAt));addPair(dl,'최초 수집',date(a.detectedAt));addPair(dl,'원문 상태',a.fullTextStatus);addPair(dl,'추출 횟수',a.extractionCount);addPair(dl,'이벤트 수',a.eventCount);addPair(dl,'이벤트 분류',a.eventClassification);addPair(dl,'이벤트 상태',a.eventStatus);addPair(dl,'클레임 수',a.claimCount);addPair(dl,'영향 분석 수',a.impactCount);addPair(dl,'최신 모델',a.latestModel);addPair(dl,'영향 섹터',a.latestSector);addPair(dl,'방향 예측',a.latestDirection);addPair(dl,'분석 실행 결과',a.latestRunOutcome);addPair(dl,'자동 AI 분석 상태',a.automaticStatus);addPair(dl,'AI 반복 검토 상태',a.automaticVerificationStatus);addPair(dl,'자동 AI 모델',a.automaticModel);addPair(dl,'AI 실패 코드',a.automaticError);box.append(dl);
 if(a.automaticAnalysis){try{
 const analysis=JSON.parse(a.automaticAnalysis);box.append(elt('div','Gemma 원문 분석','section-title'));
 box.append(elt('p',analysis.summary||'요약 없음'));
