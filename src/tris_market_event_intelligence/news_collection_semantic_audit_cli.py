@@ -174,6 +174,24 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
                 for signature in signatures
             ],
             "summaryIdentical": len(set(summaries)) == 1,
+            "analysisByRun": [
+                {
+                    "title": report["article"].get("title"),
+                    "summary": report["analysis"]["summary"],
+                    "limitations": report["analysis"]["limitations"],
+                    "impacts": [
+                        {
+                            "target": impact["target"],
+                            "direction": impact["direction"],
+                            "reason": impact["reason"],
+                            "evidenceId": impact.get("evidence_id"),
+                            "evidenceQuote": impact["evidence_quote"],
+                        }
+                        for impact in report["analysis"]["impacts"]
+                    ],
+                }
+                for report in present
+            ],
         })
     return {
         "schemaVersion": "gemma_news_repeatability_audit_v1",
