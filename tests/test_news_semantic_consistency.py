@@ -96,3 +96,15 @@ def test_invalid_verification_setting_rejected(tmp_path):
     from pytest import raises
     with raises(ValueError, match="verification_runs"):
         process(tmp_path / "missing.sqlite3", collect=False, verification_runs=3)
+
+
+def test_narrow_aliases_do_not_silently_mark_raw_outputs_identical():
+    first = _analysis("Financial Markets", "UNCERTAIN")
+    second = _analysis("General market", "UNCERTAIN")
+    compared = compare_analyses(first, second)
+    assert compared["status"] == "REVIEW_REQUIRED"
+    assert compared["exactTargetDirections"] is False
+    assert compared["limitedAliasTargetDirectionsMatch"] is True
+    assert compared["aliasesExplainedDifferenceOnly"] is True
+    assert first["impacts"][0]["target"] == "Financial Markets"
+    assert second["impacts"][0]["target"] == "General market"
