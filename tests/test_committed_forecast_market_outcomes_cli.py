@@ -127,6 +127,18 @@ def test_committed_1d_and_5d_original_source_actual_market_labels(
         assert row["verdict"] == "CORRECT"
     assert report["horizons"]["1d"]["correct"] == 1
     assert report["horizons"]["1d"]["candidateLocalAgreement"] == 1.0
+    assert report["horizons"]["1d"]["relative"]["denominator"] == 1
+    assert report["horizons"]["1d"]["relative"]["correct"] == 0
+    assert report["horizons"]["1d"]["relative"]["candidateLocalAgreement"] == 0.0
+    assert report["horizons"]["1d"]["constantDirectionBaselines"] == {
+        "alwaysUp": 1, "alwaysDown": 0, "alwaysNeutral": 0,
+    }
+    assert report["horizons"]["1d"]["relativeConstantDirectionBaselines"] == {
+        "alwaysUp": 0, "alwaysDown": 1, "alwaysNeutral": 0,
+    }
+    assert report["horizons"]["1d"]["confusionMatrixActualByPredicted"]["UP"]["UP"] == 1
+    assert report["horizons"]["1d"]["distinctArticlesScored"] == 1
+    assert report["horizons"]["5d"]["relative"]["denominator"] == 1
     assert report["horizons"]["1d"]["independentlyAuthenticatedProspectiveAccuracy"] is None
     assert report["horizons"]["5d"]["correct"] == 1
     assert report["rows"][0]["relativeVerdict"] == "INCORRECT"
@@ -202,6 +214,10 @@ def test_abstained_retained_but_never_claimed_correct(tmp_path: Path) -> None:
     report = evaluate(db, _prices(tmp_path))
     assert report["horizons"]["1d"]["abstained"] == 1
     assert report["horizons"]["1d"]["denominator"] == 0
+    assert report["horizons"]["1d"]["relative"]["denominator"] == 0
+    assert report["horizons"]["1d"]["constantDirectionBaselines"] == {
+        "alwaysUp": 0, "alwaysDown": 0, "alwaysNeutral": 0,
+    }
     assert report["rows"][0]["verdict"] == "ABSTAINED"
 
 

@@ -241,6 +241,64 @@ def evaluate(db_path: Path, prices_path: Path, price_manifest: Path | None = Non
                 **verdict,
             })
     horizons = {}
+    # Compare constant-class baselines on precisely the same *observed*
+    # directional rows. Never mix an unscorable record into a denominator.
+    baseline_counts = {}
+    for horizon in sorted(HORIZONS):
+        eligible_rows = [
+            row for row in result_rows
+            if row["horizonSessions"] == horizon
+            and row["status"] == "OBSERVED_UNAUTHENTICATED_PRECOMMITMENT"
+            and row["direction"] in {"UP", "DOWN", "NEUTRAL"}
+        ]
+        actual = Counter(row["actualDirection"] for row in eligible_rows)
+        relative_actual = Counter(
+            row["relativeActualDirection"] for row in eligible_rows
+        )
+        relative_correct = sum(
+            row["relativeVerdict"] == "CORRECT" for row in eligible_rows
+        )
+        per_class = {
+            truth: {
+                "UP": sum(
+                    row["direction"] == "UP" and row["actualDirection"] == truth
+                    for row in eligible_rows
+                ),
+                "DOWN": sum(
+                    row["direction"] == "DOWN" and row["actualDirection"] == truth
+                    for row in eligible_rows
+                ),
+                "NEUTRAL": sum(
+                    row["direction"] == "NEUTRAL" and row["actualDirection"] == truth
+                    for row in eligible_rows
+                ),
+            }
+            for truth in ("UP", "DOWN", "NEUTRAL")
+        }
+        baseline_counts[horizon] = {
+            "observedComparable": len(eligible_rows),
+            "constantDirectionCorrect": {
+                "alwaysUp": actual["UP"],
+                "alwaysDown": actual["DOWN"],
+                "alwaysNeutral": actual["NEUTRAL"],
+            },
+            "relativeConstantDirectionCorrect": {
+                "alwaysUp": relative_actual["UP"],
+                "alwaysDown": relative_actual["DOWN"],
+                "alwaysNeutral": relative_actual["NEUTRAL"],
+            },
+            "confusionMatrixActualByPredicted": per_class,
+            "relativeCorrect": relative_correct,
+            "relativeIncorrect": len(eligible_rows) - relative_correct,
+            "relativeCandidateLocalAgreement": (
+                relative_correct / len(eligible_rows) if eligible_rows else None
+            ),
+            "distinctArticles": len({row["articleId"] for row in eligible_rows}),
+            "distinctSourceDays": len({
+                row["publisherStatedAt"][:10] for row in eligible_rows
+                if row["publisherStatedAt"] is not None
+            }),
+        }
     for horizon, counts in sorted(verdict_counts.items()):
         total = counts["CORRECT"] + counts["INCORRECT"]
         horizons[f"{horizon}d"] = {
@@ -249,6 +307,29 @@ def evaluate(db_path: Path, prices_path: Path, price_manifest: Path | None = Non
             "denominator": total,
             "candidateLocalAgreement": counts["CORRECT"] / total if total else None,
             "independentlyAuthenticatedProspectiveAccuracy": None,
+            "relative": {
+                "correct": baseline_counts[horizon]["relativeCorrect"],
+                "incorrect": baseline_counts[horizon]["relativeIncorrect"],
+                "denominator": baseline_counts[horizon]["observedComparable"],
+                "candidateLocalAgreement": baseline_counts[horizon][
+                    "relativeCandidateLocalAgreement"
+                ],
+            },
+            "constantDirectionBaselines": baseline_counts[horizon][
+                "constantDirectionCorrect"
+            ],
+            "relativeConstantDirectionBaselines": baseline_counts[horizon][
+                "relativeConstantDirectionCorrect"
+            ],
+            "confusionMatrixActualByPredicted": baseline_counts[horizon][
+                "confusionMatrixActualByPredicted"
+            ],
+            "distinctArticlesScored": baseline_counts[horizon][
+                "distinctArticles"
+            ],
+            "distinctPublisherDatesScored": baseline_counts[horizon][
+                "distinctSourceDays"
+            ],
         }
     return {
         "schemaVersion": "committed_forecast_daily_price_evaluation_v1",

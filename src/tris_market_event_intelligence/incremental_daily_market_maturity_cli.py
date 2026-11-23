@@ -19,6 +19,9 @@ from pathlib import Path
 from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
     evaluate_automatic_outcomes,
 )
+from tris_market_event_intelligence.committed_forecast_market_outcomes_cli import (
+    evaluate as evaluate_committed_forecasts,
+)
 from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
 from tris_market_event_intelligence.market_price_collection_cli import collect_prices
 from tris_market_event_intelligence.market_price_recovery_cli import FIELDS, _observations
@@ -126,6 +129,7 @@ def refresh_and_recheck(
     previous_report: Path, news_db: Path, mappings: Path,
     previous_prices: Path, quote_targets: Path, output_dir: Path,
     *, model: str, end: date, client: object,
+    include_committed_forecasts: bool = False,
 ) -> dict:
     if output_dir.exists() or output_dir.is_symlink():
         raise ValueError("Refusing to overwrite prior market observations")
@@ -191,6 +195,19 @@ def refresh_and_recheck(
             price_source="Yahoo adjusted historical daily with validated anchors",
         )
         comparison = compare_same_cohort(old_report, current, mappings, expanded)
+        committed = None
+        if include_committed_forecasts:
+            # Evaluate exactly the SAME freshly observed source-price snapshot,
+            # never infer a prospective result from historical Gemma outputs.
+            committed = evaluate_committed_forecasts(
+                news_db, expanded,
+                staged / "expanded-adjusted-daily.csv.manifest.json",
+            )
+            committed_path = staged / "committed-forecast-outcomes.json"
+            committed_path.write_text(
+                json.dumps(committed, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         result = {
             **extension,
             "previousImpactCount": comparison["previousImpactCount"],
@@ -202,6 +219,20 @@ def refresh_and_recheck(
             "notYetMatured": comparison["notYetMatured"],
             "previousOutcomesSha256": _sha(previous_report),
             "newMarketOutcomeReportSha256": None,
+            "committedForecastsIncluded": include_committed_forecasts,
+            "committedForecastReportSha256": (
+                _sha(staged / "committed-forecast-outcomes.json")
+                if committed is not None else None
+            ),
+            "committedForecastStatus": (
+                committed["status"] if committed is not None else "NOT_REQUESTED"
+            ),
+            "committedForecastRows": (
+                committed["committedRows"] if committed is not None else None
+            ),
+            "committedForecastHorizonMetrics": (
+                committed.get("horizons") if committed is not None else None
+            ),
             "prospectivePredictionAccuracy": None,
             "historicalUnsealedOnly": True,
             "productionDatabaseModified": False,
@@ -227,6 +258,10 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--end", type=date.fromisoformat, required=True)
+    parser.add_argument(
+        "--include-committed-forecasts", action="store_true",
+        help="Evaluate locally precommitted forecasts on the exact new price snapshot",
+    )
     args = parser.parse_args()
     try:
         client = importlib.import_module("yfinance")
@@ -234,6 +269,7 @@ def main() -> None:
             args.previous, args.db, args.mappings, args.prices,
             args.quote_targets, args.output_dir, model=args.model, end=args.end,
             client=client,
+            include_committed_forecasts=args.include_committed_forecasts,
         )
         print(json.dumps({
             "status": "COMPLETED",
@@ -245,6 +281,11 @@ def main() -> None:
             "fiveDay": result["sameSourceHorizonScores"]["5d"],
             "notYetMatured": len(result["notYetMatured"]),
             "prospectivePredictionAccuracy": None,
+            "committedForecastStatus": result["committedForecastStatus"],
+            "committedForecastRows": result["committedForecastRows"],
+            "committedForecastHorizonMetrics": result[
+                "committedForecastHorizonMetrics"
+            ],
             "outputDir": str(args.output_dir),
         }, ensure_ascii=False))
     except (ValueError, TypeError, KeyError, ImportError, OSError) as exc:
