@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -146,6 +147,10 @@ def load_prices(manifest_path: Path) -> tuple[list[TimestampedPrice], dict, dict
                 provider=row["provider"], source_id=filename,
                 session_id=stamp.date().isoformat(),
             ))
+        # The CSV must remain unchanged between its audited read and scoring.
+        with path.open("rb") as handle:
+            if hashlib.file_digest(handle, "sha256").hexdigest() != source["sha256"]:
+                raise ValueError("Market price source changed after SHA audit")
     return bars, availability, {"audit": audit, "market_by_symbol": market_by_symbol}
 
 
