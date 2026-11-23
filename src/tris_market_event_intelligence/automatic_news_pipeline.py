@@ -19,9 +19,11 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
-    MODEL_PATTERN, ask_gemma, result_error,
+    MODEL_PATTERN,
+    ask_gemma,
+    result_error,
 )
-from tris_market_event_intelligence.operations import run_cycle, OPERATIONAL_SOURCES
+from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS automatic_news_analyses (
