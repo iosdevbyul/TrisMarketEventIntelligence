@@ -18,15 +18,17 @@ from pathlib import Path
 
 import httpx
 
+from tris_market_event_intelligence.automatic_forecast_precommitment import (
+    initialize as initialize_forecasts,
+)
+from tris_market_event_intelligence.automatic_forecast_precommitment import (
+    inspect_commitments,
+    record_new_analysis,
+)
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     MODEL_PATTERN,
     ask_gemma,
     result_error,
-)
-from tris_market_event_intelligence.automatic_forecast_precommitment import (
-    initialize as initialize_forecasts,
-    inspect_commitments,
-    record_new_analysis,
 )
 from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
 from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
