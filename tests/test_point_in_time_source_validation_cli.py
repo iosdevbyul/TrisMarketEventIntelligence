@@ -211,3 +211,75 @@ def test_after_close_requires_explicit_prior_and_next_sessions(tmp_path: Path) -
     assert long["items"][0]["status"] == "OBSERVED"
     assert long["items"][0]["observation"]["absolute_return"] == 98 / 102 - 1
     assert long["trainingEligible"] is False
+
+
+def test_conflicting_documentary_chronology_blocks_market_scoring(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.point_in_time_source_validation_cli import (
+        evaluate_sources,
+    )
+
+    experiment(tmp_path)
+    source = tmp_path / "evidence.csv"
+    with source.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=[
+            "article_id", "evidence_url", "evidence_type", "evidence_published_at",
+            "captured_at", "sha256", "source_url", "first_public_at", "family_id",
+            "relationship", "family_evidence_url",
+        ])
+        writer.writeheader()
+        writer.writerow({
+            "article_id": "1", "evidence_url": "https://archive.example/1",
+            "evidence_type": "ARCHIVE_SNAPSHOT",
+            "evidence_published_at": stamp(13, 55),
+            "captured_at": stamp(15, 31),
+            "sha256": hashlib.sha256(b"fixture-doc").hexdigest(),
+            "source_url": "https://example.com/a",
+            "first_public_at": stamp(13, 55),
+            "family_id": "story-42", "relationship": "NEW",
+            "family_evidence_url": "",
+        })
+    report = evaluate_sources(
+        tmp_path / "predictions.csv", tmp_path / "manifest.json",
+        tmp_path / "sessions.csv", evidence_csv=source,
+    )
+    assert report["documentaryEvidenceSupplied"] is True
+    assert report["items"][0]["status"] == "EVIDENCE_CONFLICT"
+    assert "observation" not in report["items"][0]
+    assert report["trainingEligible"] is False
+
+
+def test_consistent_operator_evidence_is_not_independent_certification(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.point_in_time_source_validation_cli import (
+        evaluate_sources,
+    )
+
+    experiment(tmp_path)
+    source = tmp_path / "evidence.csv"
+    with source.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=[
+            "article_id", "evidence_url", "evidence_type", "evidence_published_at",
+            "captured_at", "sha256", "source_url", "first_public_at", "family_id",
+            "relationship", "family_evidence_url",
+        ])
+        writer.writeheader()
+        writer.writerow({
+            "article_id": "1", "evidence_url": "https://archive.example/1",
+            "evidence_type": "PUBLISHER_METADATA",
+            "evidence_published_at": stamp(14, 0),
+            "captured_at": stamp(15, 31),
+            "sha256": hashlib.sha256(b"fixture-doc").hexdigest(),
+            "source_url": "https://example.com/a",
+            "first_public_at": stamp(14, 0),
+            "family_id": "story-42", "relationship": "NEW",
+            "family_evidence_url": "",
+        })
+    report = evaluate_sources(
+        tmp_path / "predictions.csv", tmp_path / "manifest.json",
+        tmp_path / "sessions.csv", evidence_csv=source,
+    )
+    result = report["items"][0]
+    assert result["status"] == "OBSERVED"
+    assert result["chronology"]["chronologyStatus"] == "DOCUMENTARY_CONSISTENT_UNATTESTED"
+    assert result["independentFamilyScoringEligible"] is False
+    assert result["learningEligible"] is False
+    assert result["chronology"]["independentlyCertified"] is False
