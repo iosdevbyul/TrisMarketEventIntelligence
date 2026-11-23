@@ -139,4 +139,35 @@ def test_missing_optional_legacy_tables_is_not_silent_evidence(tmp_path: Path) -
     blockers = report["rows"][0]["blockers"]
     assert "ORIGINAL_BODY_INCOMPLETE" in blockers
     assert "STORY_GROUP_UNAVAILABLE" in blockers
-    assert "NO_COMPLETED_AUTOMATIC_GEMMA_ANALYSIS" in blockers
+    assert "NO_COMPLETED_AUTOMATIC_GEMMA_ANALYSIS" not in blockers
+    assert report["automaticAnalysisLedgerCoverage"] == "TABLE_NOT_PRESENT"
+    assert report["rows"][0]["automaticAnalysisCoverage"] == "LEDGER_NOT_PRESENT"
+    assert report["rows"][0]["completedModelRows"] is None
+
+
+def test_present_automatic_ledger_with_no_completed_runs_is_explicit(tmp_path: Path) -> None:
+    database = tmp_path / "ledger-present.sqlite3"
+    create_db(database)
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE automatic_news_analyses SET status='FAILED'")
+    report = inspect_live_news(database)
+    assert report["automaticAnalysisLedgerCoverage"] == "TABLE_PRESENT"
+    assert report["rows"][0]["automaticAnalysisCoverage"] == "NO_COMPLETED_ROW"
+    assert report["rows"][0]["completedModelRows"] == 0
+    assert "NO_COMPLETED_AUTOMATIC_GEMMA_ANALYSIS" in report["rows"][0]["blockers"]
+
+
+def test_actual_operational_model_ledger_is_optional_not_all_gemma_runs(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "optional-analyses.sqlite3"
+    create_db(database)
+    with sqlite3.connect(database) as db:
+        db.execute("DROP TABLE automatic_news_analyses")
+    report = inspect_live_news(database)
+    assert report["automaticAnalysisLedgerAvailable"] is False
+    assert report["articlesWithoutListedBlockers"] == 1
+    assert report["contentCompleteCount"] == 1
+    assert report["blockerCounts"] == {}
+    assert report["rows"][0]["automaticAnalysisCoverage"] == "LEDGER_NOT_PRESENT"
+    assert report["learningEligibleCount"] == 0
