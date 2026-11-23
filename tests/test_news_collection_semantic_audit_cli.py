@@ -169,3 +169,23 @@ def test_target_change_separated_from_direction_change(tmp_path: Path) -> None:
     assert result["changedDirectionArticles"] == 0
     assert result["sharedTargetPairs"] == 0
     assert result["meanTargetJaccard"] == 0.0
+
+
+def test_narrow_alias_agreement_is_reported_without_upgrading_raw_agreement(
+    tmp_path: Path,
+) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    digest = hashlib.sha256(
+        ("This report describes the regional market and company activity. " * 8).encode()
+    ).hexdigest()
+    first = _run(tmp_path / "first", digest)
+    second = _run(tmp_path / "second", digest)
+    report_path = second / "article-1.json"
+    report = json.loads(report_path.read_text())
+    report["analysis"]["impacts"][0]["target"] = "General market"
+    report_path.write_text(json.dumps(report))
+    results = repeatability_audit(db, [first, second])
+    assert results["stableArticles"] == 0
+    assert results["limitedAliasTargetDirectionArticles"] == 1
+    assert results["cases"][0]["limitedAliasTargetDirectionsIdentical"] is True
+    assert results["cases"][0]["status"] == "DIVERGENT_TARGET_DIRECTIONS"
