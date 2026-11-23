@@ -198,3 +198,123 @@ def test_real_price_refresh_rechecks_only_source_identical_cohort(
             directory, model="gemma4:e2b", end=date(2026, 11, 24),
             client=object(),
         )
+
+
+def test_refresh_scores_new_forecast_commitments_on_same_genuine_price_snapshot(
+    tmp_path: Path,
+) -> None:
+    """The historical and committed evaluations must share a single price SHA."""
+    old, mapping, targets = setup(tmp_path)
+    previous = tmp_path / "previous.json"
+    impact = {
+        "articleId": 20975, "impactIndex": 0,
+        "predictionSourceSha256": "a" * 64,
+        "target": "Nvidia", "prediction": "UP",
+        "predictionSealedBeforeOutcome": False,
+        "publishedAt": "2026-11-23T00:08:00+00:00",
+        "status": "NO_ENTRY_SESSION", "horizons": [],
+    }
+    previous.write_text(json.dumps({
+        "schemaVersion": "automatic_gemma_daily_outcomes_v1",
+        "sourceType": "REAL_AUTOMATIC_SQLITE_GEMMA_LEDGER",
+        "researchOnly": True, "trainingEligible": False,
+        "prospectivePredictionAccuracy": None,
+        "impactsInspected": 1, "items": [impact],
+    }), encoding="utf-8")
+    historical = {
+        "schemaVersion": "automatic_gemma_daily_outcomes_v1",
+        "sourceType": "REAL_AUTOMATIC_SQLITE_GEMMA_LEDGER",
+        "researchOnly": True, "trainingEligible": False,
+        "prospectivePredictionAccuracy": None,
+        "impactsInspected": 1, "items": [impact],
+    }
+    with patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.collect_prices"
+    ) as collector, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.evaluate_automatic_outcomes"
+    ) as evaluator, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.evaluate_committed_forecasts"
+    ) as commitments, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.datetime"
+    ) as clock:
+        clock.now.return_value = datetime(2026, 11, 24, 12, tzinfo=UTC)
+        collector.return_value = (
+            quotes(), {"missingSymbols": [], "provider": "synthetic fixture"},
+        )
+        evaluator.return_value = historical
+
+        def evaluate_commitments(_db: Path, prices: Path, manifest: Path) -> dict:
+            actual = json.loads(manifest.read_text(encoding="utf-8"))
+            assert actual["outputSha256"] == hashlib.sha256(prices.read_bytes()).hexdigest()
+            assert prices.parent == manifest.parent
+            assert prices.is_file()
+            return {
+                "status": "COMPLETED", "committedRows": 2,
+                "horizons": {
+                    "1d": {
+                        "denominator": 1,
+                        "candidateLocalAgreement": 1.0,
+                        "independentlyAuthenticatedProspectiveAccuracy": None,
+                    },
+                },
+                "trainingEligible": False, "prospectivePredictionAccuracy": None,
+            }
+
+        commitments.side_effect = evaluate_commitments
+        dest = tmp_path / "atomic-forecast-and-price"
+        result = refresh_and_recheck(
+            previous, tmp_path / "news.sqlite3", mapping, old, targets,
+            dest, model="gemma4:e2b", end=date(2026, 11, 24),
+            client=object(), include_committed_forecasts=True,
+        )
+    commitments.assert_called_once()
+    assert result["committedForecastsIncluded"] is True
+    assert result["committedForecastStatus"] == "COMPLETED"
+    assert result["committedForecastRows"] == 2
+    assert result["committedForecastHorizonMetrics"]["1d"]["denominator"] == 1
+    report_path = dest / "committed-forecast-outcomes.json"
+    assert report_path.is_file()
+    assert result["committedForecastReportSha256"] == hashlib.sha256(
+        report_path.read_bytes()
+    ).hexdigest()
+    assert (dest / "automatic-observed-outcomes.json").is_file()
+    assert result["newPriceRows"] == 2
+    assert result["sameSourceHorizonScores"]["1d"]["newlyScored"] == 0
+
+
+def test_failed_committed_evaluation_does_not_publish_half_price_results(
+    tmp_path: Path,
+) -> None:
+    old, mapping, targets = setup(tmp_path)
+    previous = tmp_path / "previous.json"
+    previous.write_text(json.dumps({
+        "schemaVersion": "automatic_gemma_daily_outcomes_v1",
+        "sourceType": "REAL_AUTOMATIC_SQLITE_GEMMA_LEDGER",
+        "researchOnly": True, "trainingEligible": False,
+        "prospectivePredictionAccuracy": None,
+        "impactsInspected": 0, "items": [],
+    }), encoding="utf-8")
+    with patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.collect_prices"
+    ) as collector, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.evaluate_automatic_outcomes"
+    ) as evaluator, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.evaluate_committed_forecasts"
+    ) as commitments, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.datetime"
+    ) as clock:
+        clock.now.return_value = datetime(2026, 11, 24, 12, tzinfo=UTC)
+        collector.return_value = (quotes(), {"missingSymbols": []})
+        evaluator.return_value = {
+            "impactsInspected": 0, "items": [],
+            "statusCounts": {},
+        }
+        commitments.side_effect = ValueError("commitment chain invalid")
+        dest = tmp_path / "must-not-publish"
+        with pytest.raises(ValueError, match="commitment chain invalid"):
+            refresh_and_recheck(
+                previous, tmp_path / "news.sqlite3", mapping, old, targets,
+                dest, model="gemma4:e2b", end=date(2026, 11, 24),
+                client=object(), include_committed_forecasts=True,
+            )
+    assert not dest.exists()
