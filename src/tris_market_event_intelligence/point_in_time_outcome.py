@@ -184,8 +184,8 @@ def observe(
     if benchmark_tolerance < timedelta(0):
         raise ValueError("Benchmark tolerance cannot be negative")
     event = forecast.event
-    base = dict(prediction_id=forecast.prediction_id, article_id=event.article_id,
-                family_id=event.family_id, novelty=event.novelty)
+    base = {"prediction_id": forecast.prediction_id, "article_id": event.article_id,
+            "family_id": event.family_id, "novelty": event.novelty}
     def unavailable(status: ObservationStatus) -> PriceObservation:
         return PriceObservation(**base, status=status, anchor_at=None, exit_at=None,
                                 absolute_return=None, benchmark_return=None,
