@@ -213,3 +213,53 @@ python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
 Inspect `repeatability.cases[].analysisByRun` for target, direction,
 reason and exact original supporting quotation. Baseline and single-call
 quality remain unchanged merely by adding a review gate.
+
+## Source-grounded target taxonomy correction from actual five FOMC cases
+
+The developer reviewed five saved run pairs and found distinct failures:
+
+1. A 2027 FOMC meeting *schedule* was assigned either the Federal
+   Reserve itself or generic financial markets as the target. The agency
+   is an actor, not a market exposure; a meeting schedule by itself does
+   not justify directional market impact.
+2. Policy statement output labeled the **federal funds rate**, **open
+   market operations**, and repo operations as market targets. Rates and
+   operations are policy variables; a rate change is a reported fact, not
+   an asset-price forecast.
+3. Discount-rate meeting minutes led to **Financial markets DOWN**
+   versus **General market UNCERTAIN**. The labels are close, but
+   the *directions and causal claims genuinely conflict*.
+4. FOMC minutes treated **past yield changes** and changes in AI
+   hyperscaler bond credit spreads as future-looking trading directions.
+   A yield increase is not equivalent to a Treasury-bond price increase;
+   a spread tightening is not a prediction about the issuer's equity.
+5. The primary credit rate increase was sometimes labeled **UP** as
+   an impact target itself; this must remain a policy fact used only
+   to reason about identifiable affected financial instruments/sectors.
+
+**Code change:** model instructions explicitly separate reported policy
+facts and historic observations from possible market consequences.
+`news_impact_target_policy.target_error` now rejects a *narrow enumerated
+set* of nonmarket target labels such as government agencies, FOMC,
+policy rates, economic activity, open-market and repo operations, and
+historical Treasury yields. Rejected responses retry through the
+existing model-validator loop; they are never silently reclassified as
+completed news analyses. This is a structural safety guard, **not proof
+of factual correctness** or a complete named-entity taxonomy.
+
+`target_key` preserves the original target string and adds a narrow
+*diagnostic* key for broad financial-market label aliases such as
+"Financial Markets" / "General market". Both live two-pass checks and
+the source-only research auditor explicitly report limited-alias
+agreement **separately from exact target/direction reproducibility**.
+It never silently upgrades a divergent result to repeatable. Real
+economic disagreement, as in the DOWN/UNCERTAIN discount-rate case,
+remains visible.
+
+For local validation, re-run two *new*, independent source-only Gemma4
+analysis directories after updating this PR. The old 5.0% v2 result
+is a preserved baseline. Then review model completion, target error
+codes, raw exact agreement, limited-alias agreement, and article-by-article
+source-to-reasoning quality. The mere existence of new guardrails is
+not evidence the on-device model's target-selection quality has improved.
+No stock-price collection, price returns, or trades are in this scope.
