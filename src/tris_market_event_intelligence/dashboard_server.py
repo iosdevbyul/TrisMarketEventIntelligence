@@ -127,6 +127,31 @@ def snapshot(db_path: Path, *, limit: int = 100, source: str | None = None) -> d
                 "NULL AS latestRationale", "NULL AS latestModel",
                 "NULL AS latestRunOutcome",
             ])
+        if "automatic_news_analyses" in names and "article_full_text" in names:
+            fields.extend([
+                """(SELECT l.status FROM automatic_news_analyses l
+                    JOIN article_full_text f2 ON f2.article_id=l.article_id
+                    WHERE l.article_id=a.id AND l.body_sha256=f2.body_sha256
+                    ORDER BY l.processed_at DESC LIMIT 1) AS automaticStatus""",
+                """(SELECT l.model FROM automatic_news_analyses l
+                    JOIN article_full_text f2 ON f2.article_id=l.article_id
+                    WHERE l.article_id=a.id AND l.body_sha256=f2.body_sha256
+                    ORDER BY l.processed_at DESC LIMIT 1) AS automaticModel""",
+                """(SELECT l.analysis_json FROM automatic_news_analyses l
+                    JOIN article_full_text f2 ON f2.article_id=l.article_id
+                    WHERE l.article_id=a.id AND l.body_sha256=f2.body_sha256
+                    AND l.status='COMPLETED'
+                    ORDER BY l.processed_at DESC LIMIT 1) AS automaticAnalysis""",
+                """(SELECT l.error_code FROM automatic_news_analyses l
+                    JOIN article_full_text f2 ON f2.article_id=l.article_id
+                    WHERE l.article_id=a.id AND l.body_sha256=f2.body_sha256
+                    ORDER BY l.processed_at DESC LIMIT 1) AS automaticError""",
+            ])
+        else:
+            fields.extend([
+                "NULL AS automaticStatus", "NULL AS automaticModel",
+                "NULL AS automaticAnalysis", "NULL AS automaticError",
+            ])
         if "article_event_claims" in names:
             fields.append(
                 "(SELECT COUNT(*) FROM article_event_claims c WHERE c.article_id=a.id) AS claimCount"
