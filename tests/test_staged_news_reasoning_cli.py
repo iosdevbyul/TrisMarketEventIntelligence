@@ -179,18 +179,22 @@ def test_meeting_schedule_labeled_policy_decision_is_withheld_for_review() -> No
 
     def handler(http_request: httpx.Request) -> httpx.Response:
         calls.append(json.loads(http_request.content))
+        kind = "POLICY_DECISION" if len(calls) == 1 else "SCHEDULE_ONLY"
         return httpx.Response(200, json={
-            "message": {"content": json.dumps(_event("POLICY_DECISION"))},
+            "message": {"content": json.dumps(_event(kind))},
         })
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = analyze_staged(client, "gemma4:e2b", request)
 
-    assert len(calls) == 1
-    assert result["event"]["eventKind"] == "POLICY_DECISION"
-    assert result["eventAssessment"]["status"] == "REVIEW_REQUIRED"
-    assert "SOURCE_SCHEDULE_KIND_CONFLICT" in result["eventAssessment"]["flags"]
-    assert result["impactDecisionStatus"] == "WITHHELD_EVENT_REVIEW"
+    assert len(calls) == 2
+    assert calls[0]["messages"][1]["content"] != calls[1]["messages"][1]["content"]
+    assert result["originalEvent"]["eventKind"] == "POLICY_DECISION"
+    assert result["originalEventAssessment"]["status"] == "REVIEW_REQUIRED"
+    assert result["event"]["eventKind"] == "SCHEDULE_ONLY"
+    assert result["eventCorrection"]["status"] == "REVISED_UNVERIFIED"
+    assert result["eventAssessment"]["status"] == "UNVERIFIED"
+    assert result["impactDecisionStatus"] == "ABSTAINED_EVENT_SCOPE"
     assert result["analysis"]["impacts"] == []
     assert result["eventFactVerified"] is False
 
@@ -214,7 +218,38 @@ def test_fomc_minutes_policy_decision_requires_timing_review() -> None:
         result = analyze_staged(client, "gemma4:e2b", request)
 
     assert result["impactDecisionStatus"] == "WITHHELD_EVENT_REVIEW"
+    assert result["eventCorrection"]["status"] == "STILL_REQUIRES_REVIEW"
     assert result["eventAssessment"]["flags"] == [
         "MINUTES_DECISION_TIMING_REVIEW"
     ]
     assert result["analysis"]["impacts"] == []
+
+
+def test_conflicting_event_correction_error_remains_withheld() -> None:
+    request = _request()
+    request["article"]["title"] = (
+        "Federal Reserve announces revised tentative schedule "
+        "of Federal Open Market Committee meetings in 2027"
+    )
+    request["body"] = (
+        "Federal Reserve announced a revised tentative schedule "
+        "of Federal Open Market Committee meetings in 2027."
+    )
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, json={
+                "message": {"content": json.dumps(_event("POLICY_DECISION"))},
+            })
+        return httpx.Response(200, json={"message": {"content": "{}"}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze_staged(client, "gemma4:e2b", request)
+    assert calls == 2
+    assert result["eventCorrection"]["status"] == "RETRY_ERROR_REVIEW_REQUIRED"
+    assert result["eventCorrection"]["errorCode"] == "EVENT_KIND_INVALID"
+    assert result["impactDecisionStatus"] == "WITHHELD_EVENT_REVIEW"
+    assert result["originalEvent"]["eventKind"] == "POLICY_DECISION"
