@@ -201,7 +201,7 @@ def evaluate(db_path: Path, prices_path: Path, price_manifest: Path | None = Non
         }
         for item in commitments:
             admission = _source_identity(db, item)
-            seal = _clock(item["sealed_at"])
+            sealed = _clock(item["sealed_at"])
             published = _clock(item["publisher_stated_at"])
             detected = _clock(item["detected_at"])
             original = _clock(item["original_body_observed_at"])
