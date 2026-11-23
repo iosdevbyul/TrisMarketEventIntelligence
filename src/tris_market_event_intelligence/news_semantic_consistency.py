@@ -5,6 +5,8 @@ Matching output remains unreviewed; disagreement requires human source review.
 """
 from __future__ import annotations
 
+from tris_market_event_intelligence.news_impact_target_policy import target_key
+
 
 def _signature(analysis: dict) -> list[tuple[str, str]]:
     return sorted(
@@ -25,10 +27,17 @@ def compare_analyses(first: dict, second: dict) -> dict:
         for target in common if first_map[target] != second_map[target]
     ]
     exact = first_signature == second_signature
+    canonical_first = sorted((target_key(name), direction)
+                             for name, direction in first_signature)
+    canonical_second = sorted((target_key(name), direction)
+                              for name, direction in second_signature)
+    canonical_match = canonical_first == canonical_second
     return {
         "status": "REPEATABLE_UNREVIEWED" if exact else "REVIEW_REQUIRED",
         "runs": 2,
         "exactTargetDirections": exact,
+        "limitedAliasTargetDirectionsMatch": canonical_match,
+        "aliasesExplainedDifferenceOnly": canonical_match and not exact,
         "firstImpactCount": len(first_signature),
         "secondImpactCount": len(second_signature),
         "commonTargets": common,
