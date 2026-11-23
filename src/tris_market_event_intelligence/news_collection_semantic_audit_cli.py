@@ -138,6 +138,13 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
     same_targets = 0
     alias_equivalent_target_directions = 0
     same_common_directions = 0
+    stable_empty_articles = 0
+    stable_nonempty_articles = 0
+    mixed_empty_articles = 0
+    both_nonempty_articles = 0
+    event_kind_comparable_articles = 0
+    matching_event_kind_articles = 0
+    event_review_required_articles = 0
     no_shared_target_articles = 0
     changed_direction_articles = 0
     shared_target_pairs = 0
@@ -174,6 +181,28 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             signatures.append(signature)
             summaries.append(report["analysis"]["summary"].strip())
         stable = all(signature == signatures[0] for signature in signatures[1:])
+        all_empty = all(not signature for signature in signatures)
+        all_nonempty = all(bool(signature) for signature in signatures)
+        mixed_empty = not all_empty and not all_nonempty
+        if stable and all_empty:
+            stable_empty_articles += 1
+        if stable and all_nonempty:
+            stable_nonempty_articles += 1
+        if mixed_empty:
+            mixed_empty_articles += 1
+        if all_nonempty:
+            both_nonempty_articles += 1
+        kinds = [report.get("event", {}).get("eventKind") for report in present]
+        event_kind_comparable = all(isinstance(kind, str) for kind in kinds)
+        if event_kind_comparable:
+            event_kind_comparable_articles += 1
+            if len(set(kinds)) == 1:
+                matching_event_kind_articles += 1
+        assessments = [
+            report.get("eventAssessment", {}).get("status") for report in present
+        ]
+        if "REVIEW_REQUIRED" in assessments:
+            event_review_required_articles += 1
         alias_signatures = [
             sorted((target_key(target), direction) for target, direction in signature)
             for signature in signatures
@@ -220,6 +249,17 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         cases.append({
             "articleId": article_id,
             "status": "STABLE_TARGET_DIRECTIONS" if stable else "DIVERGENT_TARGET_DIRECTIONS",
+            "allRunsEmpty": all_empty,
+            "allRunsNonEmpty": all_nonempty,
+            "mixedEmptyAndNonEmpty": mixed_empty,
+            "eventKindsByRun": kinds,
+            "eventKindsIdentical": (
+                len(set(kinds)) == 1 if event_kind_comparable else None
+            ),
+            "eventReviewStatusesByRun": assessments,
+            "impactDecisionStatusesByRun": [
+                report.get("impactDecisionStatus") for report in present
+            ],
             "impactCountsStable": count_stable,
             "targetSetsIdentical": targets_stable,
             "limitedAliasTargetDirectionsIdentical": alias_equivalent,
@@ -260,6 +300,13 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         "comparableArticles": matched,
         "stableArticles": consistent,
         "agreement": consistent / matched if matched else None,
+        "stableEmptyArticles": stable_empty_articles,
+        "stableNonEmptyArticles": stable_nonempty_articles,
+        "allRunsNonEmptyArticles": both_nonempty_articles,
+        "mixedEmptyNonEmptyArticles": mixed_empty_articles,
+        "comparableEventKindArticles": event_kind_comparable_articles,
+        "matchingEventKindArticles": matching_event_kind_articles,
+        "eventReviewRequiredArticles": event_review_required_articles,
         "sameImpactCountArticles": same_counts,
         "sameTargetSetArticles": same_targets,
         "limitedAliasTargetDirectionArticles": alias_equivalent_target_directions,
@@ -316,7 +363,11 @@ def main() -> None:
                 {key: report["repeatability"][key]
                  for key in (
                     "articleIdsSeen", "comparableArticles", "stableArticles",
-                    "agreement", "sameImpactCountArticles", "sameTargetSetArticles",
+                    "agreement", "stableEmptyArticles", "stableNonEmptyArticles",
+                    "allRunsNonEmptyArticles", "mixedEmptyNonEmptyArticles",
+                    "comparableEventKindArticles", "matchingEventKindArticles",
+                    "eventReviewRequiredArticles", "sameImpactCountArticles",
+                    "sameTargetSetArticles",
                     "limitedAliasTargetDirectionArticles",
                     "noSharedTargetArticles", "changedDirectionArticles",
                     "sharedTargetPairs", "changedDirectionPairs",
