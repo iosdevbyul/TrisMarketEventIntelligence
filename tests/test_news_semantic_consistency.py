@@ -7,8 +7,8 @@ import sqlite3
 from unittest.mock import patch
 
 from tris_market_event_intelligence.automatic_news_pipeline import process
-from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
 from tris_market_event_intelligence.dashboard_server import snapshot
+from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
 
 
 def _analysis(target: str, direction: str) -> dict:
