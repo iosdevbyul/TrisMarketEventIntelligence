@@ -111,7 +111,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     with os.fdopen(fd, "w") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return {"status": "ALREADY_RUNNING", "modelInvoked": False}
         collection = run_cycle(db_path, selected_sources=OPERATIONAL_SOURCES,
