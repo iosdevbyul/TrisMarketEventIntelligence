@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from tris_market_event_intelligence.automatic_news_pipeline import process
 from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
+from tris_market_event_intelligence.dashboard_server import snapshot
 
 
 def _analysis(target: str, direction: str) -> dict:
@@ -87,6 +88,8 @@ def test_automatic_worker_keeps_both_model_calls_for_review(tmp_path):
         ).fetchone()[0])
     assert stored["_repeatability"]["status"] == "REVIEW_REQUIRED"
     assert stored["_repeatability"]["secondAnalysis"]["impacts"][0]["direction"] == "DOWN"
+    record = snapshot(path)["articles"][0]
+    assert record["automaticVerificationStatus"] == "REVIEW_REQUIRED"
 
 
 def test_invalid_verification_setting_rejected(tmp_path):
