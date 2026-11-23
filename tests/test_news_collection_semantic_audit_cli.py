@@ -96,6 +96,14 @@ def test_repeatability_identifies_divergent_direction(tmp_path: Path) -> None:
     assert result["sameImpactCountArticles"] == 1
     assert result["sameTargetSetArticles"] == 1
     assert result["sameSharedTargetDirectionArticles"] == 0
+    assert result["noSharedTargetArticles"] == 0
+    assert result["changedDirectionArticles"] == 1
+    assert result["sharedTargetPairs"] == 1
+    assert result["changedDirectionPairs"] == 1
+    assert result["meanTargetJaccard"] == 1.0
+    assert result["cases"][0]["sharedDirectionDisagreements"] == [
+        {"target": "financial markets", "directionsByRun": ["UP", "DOWN"]},
+    ]
     assert result["cases"][0]["impactCountsStable"] is True
     assert result["cases"][0]["targetSetsIdentical"] is True
     assert result["cases"][0]["sharedTargetDirectionsIdentical"] is False
@@ -155,3 +163,9 @@ def test_target_change_separated_from_direction_change(tmp_path: Path) -> None:
     assert result["sameTargetSetArticles"] == 0
     assert case["sharedTargets"] == []
     assert case["sharedTargetDirectionsIdentical"] is True
+    assert case["targetJaccard"] == 0.0
+    assert case["sharedDirectionDisagreements"] == []
+    assert result["noSharedTargetArticles"] == 1
+    assert result["changedDirectionArticles"] == 0
+    assert result["sharedTargetPairs"] == 0
+    assert result["meanTargetJaccard"] == 0.0
