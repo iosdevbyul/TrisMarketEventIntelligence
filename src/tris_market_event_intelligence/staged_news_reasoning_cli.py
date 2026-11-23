@@ -199,6 +199,7 @@ def run_pilot(db_path: Path, output_dir: Path, *, model: str = "gemma4:e2b",
     owned = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(300), trust_env=False)
     completed = skipped = failed = 0
+    review_required = abstained = with_market_impacts = 0
     errors: dict[str, int] = {}
     try:
         for article in articles:
@@ -234,6 +235,12 @@ def run_pilot(db_path: Path, output_dir: Path, *, model: str = "gemma4:e2b",
                     output.flush()
                     os.fsync(output.fileno())
                 completed += 1
+                if result["eventAssessment"]["status"] == "REVIEW_REQUIRED":
+                    review_required += 1
+                if result["impactDecisionStatus"] == "ABSTAINED_EVENT_SCOPE":
+                    abstained += 1
+                if result["analysis"]["impacts"]:
+                    with_market_impacts += 1
                 print(json.dumps({
                     "articleId": article["articleId"], "status": "COMPLETED",
                     "eventKind": result["event"]["eventKind"],
@@ -258,6 +265,9 @@ def run_pilot(db_path: Path, output_dir: Path, *, model: str = "gemma4:e2b",
         "schemaVersion": "staged_news_pilot_v1",
         "coverage": coverage, "completed": completed,
         "alreadyCompleted": skipped, "failed": failed, "failureCodes": errors,
+        "reviewRequired": review_required,
+        "abstainedEventScope": abstained,
+        "articlesWithMarketImpacts": with_market_impacts,
         "outputDir": str(output_dir),
         "productionDatabaseModified": False, "marketPricesAnalyzed": False,
     }
