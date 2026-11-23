@@ -263,3 +263,61 @@ codes, raw exact agreement, limited-alias agreement, and article-by-article
 source-to-reasoning quality. The mere existence of new guardrails is
 not evidence the on-device model's target-selection quality has improved.
 No stock-price collection, price returns, or trades are in this scope.
+
+## Staged reasoning research pilot — source fact before market impacts
+
+The latest five-case FOMC review shows that one monolithic Gemma inference
+confounds the **publisher/institution**, **reported policy variable**,
+**retrospective market description**, and an **investable affected market
+exposure**. Merely rejecting a few invalid target labels does not repair that
+fundamental event-versus-effect distinction.
+
+The new independent `staged_news_reasoning_cli` performs two clearly
+separated inference stages on the same immutable source excerpts:
+
+1. **Event reconstruction**: Gemma outputs `eventKind`, `actor`,
+   `eventFact`, `evidence_id`, `isHistoricalObservation`, and limitations.
+   The application validates the shape and attaches the exact source passage.
+   This is *a model hypothesis*, not a verified assertion.
+2. **Conditional impact reasoning**: Only for potentially actionable types,
+   Gemma receives the extracted event and original evidence and must choose
+   investable market exposures, mechanisms, directions, and evidence. The
+   previous strict target validator is reused. Explicit `SCHEDULE_ONLY`
+   and `RETROSPECTIVE_MARKET` events are conservatively assigned **zero
+   new directional market impacts**, not imagined DOWN or UP targets.
+
+This pilot does **not** alter or restart the existing scheduled RSS collector,
+existing auto-analysis ledger, local dashboard, original research JSON, or
+production SQLite. The two-stage engine is not yet enabled for the
+automatic worker: its effectiveness must be checked on the actual local
+Gemma4 model and reviewed against article text before rollout. It can
+produce more MODEL failures than one-stage inference; no improvement
+is claimed until empirical testing.
+
+To run two *independent*, new staged experiments against the same five
+verified originals:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.staged_news_reasoning_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --output-dir "$DATA/news-staged-reasoning-run-1" \\
+  --model gemma4:e2b --limit 5
+python -m tris_market_event_intelligence.staged_news_reasoning_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --output-dir "$DATA/news-staged-reasoning-run-2" \\
+  --model gemma4:e2b --limit 5
+python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --run "$DATA/news-staged-reasoning-run-1" \\
+  --run "$DATA/news-staged-reasoning-run-2" \\
+  --output "$DATA/news-staged-reasoning-audit-v1.json"
+```
+
+The existing repeatability audit supports these files because each output
+preserves the `gemma_original_article_review_v2` envelope and its
+`analysis.impacts`. Open each review JSON's `event` block to see the
+intermediate classification, exact source quotation and limitations.
+Compare with the saved v3 one-stage evidence **on the identical article
+IDs**, examine both stability and whether the event fact and market
+reasoning make sense. No comparisons to stock prices or returns occur.
