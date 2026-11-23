@@ -117,3 +117,36 @@ target overlap against the old baseline, while noting any changes in original
 article hashes, model builds and error counts. Do not interpret better
 agreement alone as proof of economic meaning; sample the newly generated
 reasons for relevance, direction mechanism, and potential hallucination.
+
+## v2 repeatability outcome and root-cause isolation (2026-11-23)
+
+Latest on-device Gemma4 experiment: **20/20 successful** in both freshly
+generated source-only runs, with **1/20 exact target+direction set agreement
+(5.0%)**. The earlier experiment had 1/19 (5.26%) and an empty model response.
+Thus JSON response reliability improved in this small sample, but **content
+stability has not improved**. Neither metric measures semantic correctness.
+
+Before attempting another prompt rewording, use the saved v2 run folders with
+the expanded diagnostic audit. It now separates **same impact count**,
+**same exact target-name set**, **target-set Jaccard overlap**, **articles with
+no shared targets**, and **genuine direction disagreements among shared
+target labels**. It records the actual directions and model-written reasons.
+No semantic synonym mapping or automatic direction fixing is performed; those
+would conceal the original instability. When there are no common labels,
+shared-target direction agreement is *not* evidence of agreement.
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --run "$DATA/news-semantic-stability-v2-run-1" \\
+  --run "$DATA/news-semantic-stability-v2-run-2" \\
+  --output "$DATA/news-semantic-stability-v2-diagnosis.json"
+```
+
+Interpretation: If target Jaccard is low with little shared-target direction
+disagreement, prioritize target identity and extraction policy; if target sets
+mostly match but shared directions frequently conflict, prioritize reasoning
+and directional evidence validity. Neither path can be chosen safely from
+the 5.0% headline alone. Never erase the original run JSON, and do not score
+agreement as news impact truth.
