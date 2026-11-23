@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS automatic_forecast_commitments (
   impact_index INTEGER NOT NULL,
   horizon_sessions INTEGER NOT NULL,
   sealed_at TEXT NOT NULL,
-  publisher_stated_at TEXT NOT NULL,
-  detected_at TEXT NOT NULL,
+  publisher_stated_at TEXT,
+  detected_at TEXT,
   original_body_observed_at TEXT,
   analyzed_at TEXT NOT NULL,
   target TEXT NOT NULL,
@@ -174,6 +174,51 @@ def record_new_analysis(
             counts[status] = counts.get(status, 0) + 1
     return counts
 
+
+
+def verify_chain(db: sqlite3.Connection) -> dict:
+    """Reconstruct each local canonical record; detect accidental rewriting."""
+    db.row_factory = sqlite3.Row
+    rows = db.execute(
+        "SELECT * FROM automatic_forecast_commitments ORDER BY rowid ASC"
+    ).fetchall()
+    previous = None
+    for row in rows:
+        if row["previous_commitment_sha256"] != previous:
+            raise ValueError("COMMITMENT_HASH_CHAIN_BROKEN")
+        data = {
+            "articleId": row["article_id"],
+            "bodySha256": row["body_sha256"],
+            "model": row["model"], "impactIndex": row["impact_index"],
+            "horizonSessions": row["horizon_sessions"],
+            "publisherStatedAt": row["publisher_stated_at"],
+            "detectedAt": row["detected_at"],
+            "originalBodyObservedAt": row["original_body_observed_at"],
+            "analyzedAt": row["analyzed_at"], "sealedAt": row["sealed_at"],
+            "target": row["target"], "direction": row["direction"],
+            "rationale": row["rationale"], "evidenceQuote": row["evidence_quote"],
+            "market": row["market"], "symbol": row["symbol"],
+            "benchmark": row["benchmark"],
+            "mappingVerifiedAt": row["mapping_verified_at"],
+            "marketCutoffPolicy": row["market_cutoff_policy"],
+            "eligibility": row["eligibility"],
+            "previousCommitmentSha256": previous,
+            "independentlyVerifiedFirstAvailability": False,
+            "externallyAuthenticatedSeal": False,
+        }
+        digest = hashlib.sha256(_canonical(data).encode("utf-8")).hexdigest()
+        if (row["forecast_sha256"] != digest
+                or row["first_public_availability_independently_verified"] != 0
+                or row["external_timestamp_authenticated"] != 0):
+            raise ValueError("FORECAST_COMMITMENT_CONTENT_HASH_MISMATCH")
+        previous = digest
+    return {
+        "integrity": "LOCAL_HASH_CHAIN_VALID",
+        "records": len(rows), "chainHeadSha256": previous,
+        "independentTimestampAuthority": False,
+        "historicalTamperProof": False,
+        "trainingEligible": False,
+    }
 
 def inspect_commitments(db: sqlite3.Connection) -> dict:
     """Read-only visibility of sealing and limited PIT eligibility status."""
