@@ -6,6 +6,7 @@ Served on loopback only. No collectors, model invocations, or DB writes.
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -181,12 +182,29 @@ def snapshot(db_path: Path, *, limit: int = 100, source: str | None = None) -> d
             f"SELECT {', '.join(fields)} FROM articles a {' '.join(joins)} "
             f"{where} ORDER BY a.id DESC LIMIT ?", params,
         ).fetchall()
+        articles = [dict(row) for row in rows]
+        for article in articles:
+            # A successful LLM request does not certify the factual validity of
+            # the resulting impact hypothesis. Legacy rows are unverified.
+            verification_status = None
+            raw = article.get("automaticAnalysis")
+            if article.get("automaticStatus") == "COMPLETED":
+                verification_status = "SINGLE_RUN_UNVERIFIED"
+                if raw:
+                    try:
+                        parsed = json.loads(raw)
+                        verification_status = parsed.get("_repeatability", {}).get(
+                            "status", "SINGLE_RUN_UNVERIFIED"
+                        )
+                    except (json.JSONDecodeError, AttributeError, TypeError):
+                        verification_status = "UNREADABLE_REVIEW"
+            article["automaticVerificationStatus"] = verification_status
         return {
             "schemaVersion": "dashboard_v1", "totals": totals,
             "automaticAnalysisCounts": automatic_counts,
             "automaticFailureCodes": automatic_errors,
             "lastArticleDetectedAt": latest, "sources": source_rows,
-            "articles": [dict(row) for row in rows],
+            "articles": articles,
             "notes": {
                 "scope": "Existing SQLite records only. No new collection or AI work is triggered.",
                 "marketVerification": "Not available in this dashboard; predictions are not market-validated.",
