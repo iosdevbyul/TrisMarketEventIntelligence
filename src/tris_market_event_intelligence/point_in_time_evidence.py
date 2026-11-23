@@ -7,7 +7,6 @@ an operator's assertion to certified causality or prospective market accuracy.
 from __future__ import annotations
 
 import csv
-import hashlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
