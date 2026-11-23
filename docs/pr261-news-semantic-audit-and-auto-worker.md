@@ -69,3 +69,51 @@ analysis. The failure retry remains limited and cooldown guarded.
 Note that PR #261 is a code change, not automatic deployment to your Mac:
 fetch/pull its feature branch, perform a real Ollama smoke test, confirm
 the running worker uses the updated code, and check CI before merge.
+
+## Repeatability finding and next controlled model experiment (2026-11-23)
+
+**Local empirical result:** 20 article IDs observed, 19 comparable same-model
+and same-source verified article reviews, **1 exact target+direction agreement
+(5.26%)**. One missing result is article #4 after `MODEL_CONTENT_EMPTY`.
+The saved runs are baseline evidence; **do not overwrite them** or infer that
+18 of 19 are factually wrong. Distinguish different target labels from
+different directional predictions of the *same* target.
+
+The audit now reports `sameImpactCountArticles`, `sameTargetSetArticles`,
+`sameSharedTargetDirectionArticles` as well as exact agreement and per-case
+`targetSetsIdentical`, `sharedTargets`,
+`sharedTargetDirectionsIdentical`, reasons and verbatim source passages.
+Note that shared-target direction agreement is vacuously true for articles
+with no common target labels, so never use it as a headline metric by itself.
+Exact label matching is conservative; semantic synonyms can remain divergent
+even when discussing the same industry.
+
+The common Gemma4 adapter now includes stronger *source-based event scope*,
+conservative sector expansion, explicit directional mechanism and abstention
+instructions. Sampling requests `temperature=0` and an explicit seed; this
+improves configuration reproducibility but does not promise deterministic
+model results across execution environments. Increasing `num_predict` to 1536
+provides room for structured responses without changing validation gates.
+These changes affect both source-only batch mode and automatic SQL analysis.
+Do not silently overwrite preexisting successful automatic analyses.
+
+Run the baseline audit again with a **new immutable output filename**,
+without invoking the model:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --run "$DATA/news-semantic-repeat-run-1" \\
+  --run "$DATA/news-semantic-repeat-run-2" \\
+  --output "$DATA/news-semantic-repeatability-diagnostic-v2.json"
+```
+
+**Controlled experiment after baseline review:** repeat two *fresh* Gemma
+runs in directories `news-semantic-stability-v2-run-1` and
+`news-semantic-stability-v2-run-2` with `--limit 20`, then audit those
+two new directories into a new output file. Compare exact agreement and
+target overlap against the old baseline, while noting any changes in original
+article hashes, model builds and error counts. Do not interpret better
+agreement alone as proof of economic meaning; sample the newly generated
+reasons for relevance, direction mechanism, and potential hallucination.
