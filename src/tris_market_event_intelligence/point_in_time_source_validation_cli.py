@@ -20,6 +20,10 @@ from tris_market_event_intelligence.exchange_sessions import (
     utc,
 )
 from tris_market_event_intelligence.market_minute_source import audit_market_source
+from tris_market_event_intelligence.point_in_time_evidence import (
+    evaluate_chronology,
+    load_evidence,
+)
 from tris_market_event_intelligence.point_in_time_outcome import (
     EventClock,
     SealedForecast,
@@ -169,6 +173,7 @@ def _selected(
 def evaluate_sources(
     predictions_csv: Path, source_manifest: Path, sessions_csv: Path,
     *, halts_csv: Path | None = None,
+    evidence_csv: Path | None = None,
     max_anchor_age_minutes: int = 5,
     max_exit_age_minutes: int = 5,
 ) -> dict[str, object]:
@@ -176,6 +181,10 @@ def evaluate_sources(
         raise ValueError("Price age windows must be 1..4320 explicit minutes")
     calendar = calendar_from_csv(sessions_csv, halts_csv)
     forecasts = load_forecasts(predictions_csv)
+    chronology = evaluate_chronology(
+        [prediction for _, prediction in forecasts],
+        load_evidence(evidence_csv) if evidence_csv else {},
+    )
     bars, availability, info = load_prices(source_manifest)
     market_by_symbol = info["market_by_symbol"]
     items = []
@@ -183,7 +192,12 @@ def evaluate_sources(
     for market, prediction in forecasts:
         event = prediction.event
         release = event.verified_cutoff
-        if market_by_symbol.get(prediction.target) != market or (
+        chronology_row = chronology["articles"][event.article_id]
+        if evidence_csv and chronology_row["chronologyStatus"] != (
+            "DOCUMENTARY_CONSISTENT_UNATTESTED"
+        ):
+            status = chronology_row["chronologyStatus"]
+        elif market_by_symbol.get(prediction.target) != market or (
             market_by_symbol.get(prediction.benchmark) != market
         ):
             status = "MARKET_MAPPING_UNVERIFIED"
@@ -227,6 +241,8 @@ def evaluate_sources(
             "predictionMode": prediction.mode, "sourceAttestedByUser": event.source_verified,
             "independentlyVerifiedFirstPublic": False,
             "causalAttribution": "NOT_ESTABLISHED", "learningEligible": False,
+            "chronology": chronology_row,
+            "independentFamilyScoringEligible": False,
         }
         if status == "READY_FOR_DESCRIPTIVE_EVALUATION":
             result = observe(
@@ -247,9 +263,13 @@ def evaluate_sources(
         statuses[output["status"]] += 1
         items.append(output)
     return {
-        "schemaVersion": "market_learning_source_integration_v1",
+        "schemaVersion": "market_learning_source_integration_v2",
         "rows": len(items), "statusCounts": dict(sorted(statuses.items())),
         "items": items, "sourceAudit": info["audit"],
+        "chronology": {
+            key: value for key, value in chronology.items() if key != "articles"
+        },
+        "documentaryEvidenceSupplied": evidence_csv is not None,
         "exchangeCalendarIndependentlyVerified": False,
         "firstPublicIndependentlyVerified": False,
         "marketSourceIndependentlyVerified": False,
@@ -269,6 +289,8 @@ def main() -> None:
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--sessions", type=Path, required=True)
     parser.add_argument("--halts", type=Path)
+    parser.add_argument("--evidence", type=Path,
+                        help="Optional documentary provenance and event-family CSV")
     parser.add_argument("--max-anchor-age-minutes", type=int, default=5)
     parser.add_argument("--max-exit-age-minutes", type=int, default=5)
     parser.add_argument("--output", type=Path, required=True)
@@ -276,6 +298,7 @@ def main() -> None:
     try:
         report = evaluate_sources(
             args.predictions, args.source_manifest, args.sessions, halts_csv=args.halts,
+            evidence_csv=args.evidence,
             max_anchor_age_minutes=args.max_anchor_age_minutes,
             max_exit_age_minutes=args.max_exit_age_minutes,
         )
