@@ -173,10 +173,16 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             finally:
                 if owned:
                     session.close()
+    collection_status = collection.get("status") if collection is not None else None
     return {
-        "status": "COMPLETED" if not failed else "PARTIAL_FAILURE",
-        "collection": collection, "model": model,
-        "completed": completed, "failed": failed,
+        "status": (
+            "PARTIAL_FAILURE" if failed else
+            "DEGRADED_COLLECTION" if collection_status in {"degraded", "failed"} else
+            "COMPLETED"
+        ),
+        "collection": collection, "collectionStatus": collection_status,
+        "collectionHealthy": collection_status == "healthy" if collect else None,
+        "model": model, "completed": completed, "failed": failed,
         "coverage": coverage, "results": results,
         "marketPricesAnalyzed": False,
     }
