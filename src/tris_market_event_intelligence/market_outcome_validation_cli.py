@@ -10,6 +10,11 @@ import csv
 import hashlib
 import json
 from collections import Counter
+
+from tris_market_event_intelligence.operational_news_pit_readiness_cli import inspect_live_news
+from tris_market_event_intelligence.operational_news_price_bridge_cli import (
+    ADMISSION_BLOCKERS, _stored_articles,
+)
 from datetime import datetime
 from math import isfinite
 from pathlib import Path
@@ -114,6 +119,7 @@ def _direction(actual_return: float) -> str:
 def evaluate(
     articles_dir: Path, mappings_csv: Path, prices_csv: Path, *,
     price_source_description: str,
+    news_db: Path | None = None,
 ) -> dict:
     """Generate a descriptive backtest; never represent retrospective runs as live forecasts."""
     if not price_source_description.strip():
@@ -122,6 +128,14 @@ def evaluate(
         raise ValueError("Existing nonsymlink Gemma result directory required")
     mappings = _mappings(mappings_csv)
     prices = _prices(prices_csv)
+    source_audit = inspect_live_news(news_db, limit=3000) if news_db else None
+    if source_audit and source_audit["truncated"]:
+        raise ValueError("Operational news source audit truncated")
+    source_rows = _stored_articles(news_db) if news_db else {}
+    audit_rows = (
+        {row["articleId"]: row for row in source_audit["rows"]}
+        if source_audit else {}
+    )
     reports = sorted(articles_dir.glob("*.json"))
     if not reports:
         raise ValueError("No Gemma article JSON files found")
@@ -143,6 +157,25 @@ def evaluate(
         processed = _timestamp(report["processedAt"])
         if processed < published:
             raise ValueError("AI processing predates source publication")
+        source_gate = "SOURCE_DB_NOT_REQUESTED"
+        if source_audit is not None:
+            audit_item = audit_rows.get(article_id)
+            observed = source_rows.get(article_id)
+            if audit_item is None or observed is None:
+                source_gate = "NEWS_ARTICLE_ABSENT"
+            elif ADMISSION_BLOCKERS.intersection(audit_item["blockers"]):
+                source_gate = "NEWS_ORIGINAL_INCOMPLETE_OR_DUPLICATE"
+            elif (not isinstance(article.get("url"), str)
+                  or article["url"] != observed["url"]
+                  or not isinstance(article.get("bodySha256"), str)
+                  or article["bodySha256"] != observed["body_sha256"]
+                  or observed["status"] != "COMPLETE"
+                  or not isinstance(article.get("detectedAt"), str)
+                  or _timestamp(article["detectedAt"]) != _timestamp(observed["detected_at"])
+                  or _timestamp(article["publishedAt"]) != _timestamp(observed["published_at"])):
+                source_gate = "NEWS_SOURCE_IDENTITY_MISMATCH"
+            else:
+                source_gate = "STORED_ORIGINAL_SHA_MATCHED"
         for ordinal, impact in enumerate(report["analysis"]["impacts"]):
             target = impact["target"].strip()
             predicted = impact["direction"]
@@ -158,10 +191,18 @@ def evaluate(
                 "model": report["model"], "predictionSourceSha256": _sha(source_file),
                 "predictionSealedBeforeOutcome": bool(report.get("predictionSealedBeforeOutcome")),
                 "evaluationClass": "RETROSPECTIVE_UNSEALED",
+                "sourceAuditStatus": source_gate,
+                "storyCandidateId": (audit_rows[article_id]["storyCandidateId"]
+                                     if article_id in audit_rows else None),
                 "horizons": [],
             }
             mapping = mappings.get(target)
-            if mapping is None:
+            if source_audit is not None and source_gate != "STORED_ORIGINAL_SHA_MATCHED":
+                item["status"] = "NEWS_SOURCE_NOT_ADMITTED"
+                for horizon in HORIZONS:
+                    summaries[f"{horizon}d:UNAVAILABLE"] += 1
+                    summaries[f"{horizon}d:relative:UNAVAILABLE"] += 1
+            elif mapping is None:
                 item["status"] = "UNMAPPED"
                 for horizon in HORIZONS:
                     summaries[f"{horizon}d:UNAVAILABLE"] += 1
@@ -223,11 +264,26 @@ def evaluate(
             summaries[item["status"]] += 1
             detail.append(item)
     metrics = {}
+    baselines = {}
     for horizon in HORIZONS:
         correct = summaries[f"{horizon}d:CORRECT"]
         wrong = summaries[f"{horizon}d:INCORRECT"]
         relative_correct = summaries[f"{horizon}d:relative:CORRECT"]
         relative_wrong = summaries[f"{horizon}d:relative:INCORRECT"]
+        comparable = [
+            row["horizons"][HORIZONS.index(horizon)]["actualDirection"]
+            for row in detail
+            if len(row["horizons"]) == len(HORIZONS)
+            and row["horizons"][HORIZONS.index(horizon)]["verdict"]
+            in {"CORRECT", "INCORRECT"}
+        ]
+        baselines[f"{horizon}d"] = {
+            "denominator": len(comparable),
+            "alwaysUp": sum(direction == "UP" for direction in comparable),
+            "alwaysDown": sum(direction == "DOWN" for direction in comparable),
+            "alwaysNeutral": sum(direction == "NEUTRAL" for direction in comparable),
+            "meaning": "Descriptive constant-class agreement on the same scored cohort",
+        }
         metrics[f"{horizon}d"] = {
             "correct": correct, "incorrect": wrong,
             "abstained": summaries[f"{horizon}d:ABSTAINED"],
@@ -260,6 +316,20 @@ def evaluate(
         "pricesSha256": _sha(prices_csv), "mappingsSha256": _sha(mappings_csv),
         "articlesInspected": len(reports), "impactsInspected": len(detail),
         "statusCounts": dict(summaries), "metrics": metrics, "items": detail,
+        "constantDirectionBaselines": baselines,
+        "marketReturnObservedFromSourcedDailyClose": True,
+        "prospectivePredictionAccuracy": None,
+        "predictionSealAuthenticated": False,
+        "sourceOriginIndependentlyAuthenticated": False,
+        "priceProviderIndependentlyAuthenticated": False,
+        "trainingEligible": False,
+        "operationalNewsDatabaseAudited": news_db is not None,
+        "operationalNewsAudit": ({
+            "sourceArticles": source_audit["totalArticlesAtScan"],
+            "articlesWithoutListedBlockers": source_audit["articlesWithoutListedBlockers"],
+            "completeOriginalBodies": source_audit["contentCompleteCount"],
+            "databaseModified": False,
+        } if source_audit else None),
     }
 
 
@@ -269,6 +339,8 @@ def main() -> None:
     parser.add_argument("--mappings", type=Path, required=True)
     parser.add_argument("--prices", type=Path, required=True)
     parser.add_argument("--price-source", required=True)
+    parser.add_argument("--news-db", type=Path,
+                        help="Optional real operational news.sqlite3 source identity check")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -276,7 +348,7 @@ def main() -> None:
             raise ValueError("Output already exists; previous evaluations are immutable")
         result = evaluate(
             args.gemma_dir, args.mappings, args.prices,
-            price_source_description=args.price_source,
+            price_source_description=args.price_source, news_db=args.news_db,
         )
         with args.output.open("x", encoding="utf-8") as stream:
             json.dump(result, stream, indent=2, ensure_ascii=False)
