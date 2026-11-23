@@ -139,8 +139,75 @@ def test_unverified_news_source_is_not_scored(tmp_path: Path) -> None:
 
 
 def test_incomplete_calendar_is_not_invented(tmp_path: Path) -> None:
-    # A supplied but incorrect session date must not silently accept pricing.
+    from tris_market_event_intelligence.point_in_time_source_validation_cli import (
+        evaluate_sources,
+    )
+
+    experiment(tmp_path)
+    session = tmp_path / "sessions.csv"
+    write_csv(session, ["market", "date", "status", "open_at", "close_at"], [{
+        "market": "XKRX", "date": "2026-11-24",
+        "status": "CLOSED", "open_at": "", "close_at": "",
+    }])
+    report = evaluate_sources(
+        tmp_path / "predictions.csv", tmp_path / "manifest.json", session,
+    )
+    assert report["items"][0]["status"] == "SESSION_UNVERIFIED"
+    assert "observation" not in report["items"][0]
+
+
+def test_after_close_requires_explicit_prior_and_next_sessions(tmp_path: Path) -> None:
+    from tris_market_event_intelligence.point_in_time_source_validation_cli import (
+        evaluate_sources,
+    )
+
+    experiment(tmp_path)
     pred = tmp_path / "predictions.csv"
-    report = experiment(tmp_path)
-    assert report["items"][0]["status"] == "OBSERVED"
-    assert pred.is_file()
+    with pred.open(encoding="utf-8", newline="") as handle:
+        original = list(csv.DictReader(handle))
+    original[0].update({
+        "published_at": stamp(16, 0),
+        "first_public_at": stamp(16, 0),
+        "detected_at": stamp(16, 1),
+        "forecast_at": stamp(16, 2),
+        "horizon_end": datetime(2026, 11, 24, 15, 30, tzinfo=KST).isoformat(),
+    })
+    write_csv(pred, list(original[0]), original)
+    sessions = tmp_path / "sessions.csv"
+    write_csv(sessions, ["market", "date", "status", "open_at", "close_at"], [
+        {"market": "XKRX", "date": "2026-11-23", "status": "OPEN",
+         "open_at": stamp(9, 0), "close_at": stamp(15, 30)},
+        {"market": "XKRX", "date": "2026-11-24", "status": "OPEN",
+         "open_at": datetime(2026, 11, 24, 9, tzinfo=KST).isoformat(),
+         "close_at": datetime(2026, 11, 24, 15, 30, tzinfo=KST).isoformat()},
+    ])
+    prices = tmp_path / "price.csv"
+    with prices.open(encoding="utf-8", newline="") as handle:
+        original_prices = list(csv.DictReader(handle))
+    original_prices = [
+        r for r in original_prices if r["close_at"] == stamp(15, 30)
+    ]
+    for symbol, price in (("EQUITY", "98"), ("INDEX", "101")):
+        original_prices.append({
+            "market": "XKRX", "symbol": symbol,
+            "close_at": datetime(2026, 11, 24, 15, 30, tzinfo=KST).isoformat(),
+            "adjusted_close": price, "adjustment": "adjusted",
+            "instrument_kind": "STOCK", "provider": "fixture-provider",
+            "observed_at": datetime(2026, 11, 24, 15, 30, tzinfo=KST).isoformat(),
+        })
+    write_csv(prices, ["market", "symbol", "close_at", "adjusted_close",
+                       "adjustment", "instrument_kind", "provider", "observed_at"],
+              original_prices)
+    manifest = tmp_path / "manifest.json"
+    raw = json.loads(manifest.read_text(encoding="utf-8"))
+    raw["sources"][0]["sha256"] = hashlib.sha256(prices.read_bytes()).hexdigest()
+    manifest.write_text(json.dumps(raw), encoding="utf-8")
+
+    short = evaluate_sources(pred, manifest, sessions)
+    assert short["items"][0]["status"] == "STALE_PRICE"
+    long = evaluate_sources(
+        pred, manifest, sessions, max_anchor_age_minutes=40,
+    )
+    assert long["items"][0]["status"] == "OBSERVED"
+    assert long["items"][0]["observation"]["absolute_return"] == 98 / 102 - 1
+    assert long["trainingEligible"] is False
