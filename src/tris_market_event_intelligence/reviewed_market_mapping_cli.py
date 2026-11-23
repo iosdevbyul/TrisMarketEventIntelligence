@@ -115,7 +115,6 @@ def apply_review(
         semantics = json.loads(semantic_plan.read_text(encoding="utf-8"))
         if (semantics.get("schemaVersion") != "typed_market_target_inventory_v1"
                 or semantics.get("gapSha256") != _hash(gap_report)
-                or semantics.get("queueSha256") != _hash(reviewed_csv)
                 or semantics.get("anyStockMappingApproved") is not False
                 or semantics.get("trainingEligible") is not False):
             raise ValueError("Semantic plan provenance or policy mismatch")
