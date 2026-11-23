@@ -182,3 +182,50 @@ real symbol-specific minute coverage remain required. The source-format
 integration is not validation of those facts. The existing #261 collection
 and #252 research engines are not automatically wired or promoted by this
 work. No increased learning accuracy can be claimed.
+
+
+## Documentary chronology and repeated-event gate
+
+A versioned optional `--evidence` CSV provides a separate, read-only
+document and event-family cross-check. This prevents the same historical
+event's reprints from quietly counting as independent cases and lets
+source-timestamp inconsistencies withhold market scoring.
+
+Exact evidence columns:
+
+`article_id,evidence_url,evidence_type,evidence_published_at,captured_at,sha256,source_url,first_public_at,family_id,relationship,family_evidence_url`
+
+- `evidence_type`: `OFFICIAL_RELEASE`, `PUBLISHER_METADATA`, or
+  `ARCHIVE_SNAPSHOT`. The `sha256` must be a lowercase 64-digit digest
+  representing an operator-supplied capture, but this CSV alone cannot
+  prove the source bytes were authenticated or published at that instant.
+- `source_url`, `first_public_at`, `family_id`, and `relationship`
+  must match the forecast's source record, or scoring is withheld with
+  `EVIDENCE_CONFLICT`. Later-captured documents cannot authenticate
+  historical point-in-time availability.
+- `REPRINT`, `FOLLOW_UP`, and `CORRECTION` require a nonempty
+  `family_evidence_url`. The URL is a provenance pointer, not proof of
+  the linked causal event. Family membership is never inferred from prices.
+- The report shows `familyCount`, `repeatedFamilyCount`,
+  `reusedArticleForecastCount`, review statuses and one candidate initial
+  article per family. A candidate family representative is not guaranteed
+  to be a statistically independent market observation.
+
+With `--evidence`, missing or contradictory documentary evidence blocks
+scoring. Without the file, evaluation is still descriptive; it is never
+certified for learning. Regardless of the format, independent source,
+market-data, causal attribution and true historical forecast certification
+remain **false** until established by separate authenticated evidence.
+
+```bash
+python -m tris_market_event_intelligence.point_in_time_source_validation_cli \
+  --predictions "$DATA/market-event-predictions.csv" \
+  --evidence "$DATA/market-event-chronology-evidence.csv" \
+  --source-manifest "$DATA/minute-source-manifest.json" \
+  --sessions "$DATA/exchange-sessions.csv" \
+  --output "$DATA/point-in-time-market-evidence-v1.json"
+```
+
+Still outstanding: authenticated earliest-public data, genuine provider
+minute history for real symbols, verified exchange sessions and source
+relationship evidence. Synthetic fixtures cannot satisfy these gates.
