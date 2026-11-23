@@ -1,7 +1,7 @@
 """Evaluate saved Gemma article hypotheses against sourced historical daily prices.
 
-Read-only source artifacts; no access to the news production database or live pipeline.
-The input price CSV must contain real, licensed/authorized adjusted-close observations.
+Read-only source artifacts; optional read-only operational news DB identity check.
+The input price CSV must contain actual source-provided adjusted closes.
 """
 from __future__ import annotations
 
@@ -10,17 +10,17 @@ import csv
 import hashlib
 import json
 from collections import Counter
-
-from tris_market_event_intelligence.operational_news_pit_readiness_cli import inspect_live_news
-from tris_market_event_intelligence.operational_news_price_bridge_cli import (
-    ADMISSION_BLOCKERS, _stored_articles,
-)
 from datetime import datetime
 from math import isfinite
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from tris_market_event_intelligence.event_study import DailyClose, PublishedEvent, study_events
+from tris_market_event_intelligence.operational_news_pit_readiness_cli import inspect_live_news
+from tris_market_event_intelligence.operational_news_price_bridge_cli import (
+    ADMISSION_BLOCKERS,
+    _stored_articles,
+)
 
 DIRECTIONS = {"UP", "DOWN", "NEUTRAL", "UNCERTAIN"}
 ZONES = {
@@ -307,7 +307,8 @@ def evaluate(
             "distinctStoryCandidateGroupsScored": len({
                 r["storyCandidateId"] for r in comparable_rows
                 if r["storyCandidateId"] is not None
-            }), "incorrect": wrong,
+            }),
+            "incorrect": wrong,
             "abstained": summaries[f"{horizon}d:ABSTAINED"],
             "unavailable": summaries[f"{horizon}d:UNAVAILABLE"],
             "accuracy": correct / (correct + wrong) if correct + wrong else None,
