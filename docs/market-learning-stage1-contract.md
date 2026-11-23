@@ -110,3 +110,75 @@ such exclusions and denominator effects, not just scored matches.
 This is an additive pure-Python module with synthetic regression fixtures.
 It does not call Ollama, fetch prices, modify SQLite, start a background
 worker, recalculate historical experiment records or change trading state.
+
+
+## Existing verified-format market source integration (PR #263)
+
+The opt-in `point_in_time_source_validation_cli` integrates the existing
+`market_minute_source.audit_market_source` with
+`exchange_sessions.SessionCalendar`, `TradingHalt` and the new dual-anchor
+`point_in_time_outcome.observe` evaluator. No feeds or local Mac files are
+downloaded by this command. Existing collection and operational databases are
+not modified.
+
+Input contracts:
+
+- `--source-manifest` uses the existing `minute_source_v1` JSON pointing
+  to SHA256-pinned, adjusted minute CSV files. The manifest identifies an
+  original provider and instrument kind. Digest/schema matching proves
+  **file integrity only**, not exchange authenticity or point-in-time
+  existence of these observations.
+- `--sessions` uses the existing `market,date,status,open_at,close_at`
+  CSV; `--halts` optionally uses
+  `market,symbol,start_at,end_at`. Dates absent from the supplied calendar
+  remain UNKNOWN and are not synthesized. Source authenticity of the calendar
+  is separately unverified.
+- `--predictions` contains:
+  `article_id,family_id,published_at,first_public_at,detected_at,novelty,source_url,source_verified,target,benchmark,direction,forecast_at,horizon_end,horizon_name,mode,model_version,rule_version,prediction_id,market`.
+  `source_verified` is **supplied by the operator**; its "true" value
+  does not certify original source availability independently.
+  `forecast_at` must reflect an independently provable forecast seal to
+  support prospective claims. For historical replay, setting the historic
+  clock value alone is insufficient.
+- `observed_at` on market minute bars is a source's supplied availability
+  clock. Historical downloads captured after a replay forecast cannot be
+  represented as if the prices were already in local custody at the cutoff.
+
+The command computes descriptive price returns and post-seal direction
+agreement **only for source/schema/session/halts-eligible rows**, and returns
+explicitly null or withheld metrics for incomplete input. All reports set
+`trainingEligible=false`, `marketSourceIndependentlyVerified=false`,
+`exchangeCalendarIndependentlyVerified=false`, and
+`firstPublicIndependentlyVerified=false` until an independent,
+replay-appropriate source certification procedure exists. This is intentional:
+even a CSV created from genuine later-fetched prices does not prove the
+forecast actually preceded market outcomes.
+
+Run on verified-format exports (not synthetic fixtures in production):
+
+```bash
+python -m tris_market_event_intelligence.point_in_time_source_validation_cli \
+  --predictions "$DATA/market-event-predictions.csv" \
+  --source-manifest "$DATA/minute-source-manifest.json" \
+  --sessions "$DATA/exchange-sessions.csv" \
+  --max-anchor-age-minutes 5 \
+  --max-exit-age-minutes 5 \
+  --output "$DATA/point-in-time-price-diagnostics-v1.json"
+```
+
+A first-public report after the exchange closes may use an older closing bar
+ONLY with a justified, explicit `--max-anchor-age-minutes` that can reach
+the earlier market close and matching calendar data. It does not silently
+expand the age bound. Different exchanges and horizons will require
+separate source-backed configuration policies; a blanket multi-day
+tolerance is not suitable for active intraday release windows.
+
+## Stage 1 acceptance still outstanding
+
+Independent certification of earliest public information (versus a reporter's
+timestamp), event-family linkage (versus user-provided identifiers),
+authoritative exchange/halts calendar, genuine provider quality, and
+real symbol-specific minute coverage remain required. The source-format
+integration is not validation of those facts. The existing #261 collection
+and #252 research engines are not automatically wired or promoted by this
+work. No increased learning accuracy can be claimed.
