@@ -79,14 +79,14 @@ def _automatically_analyzed(
                 ) from exc
             if (not isinstance(analysis, dict)
                     or not isinstance(analysis.get("impacts"), list)):
-                raise ValueError(f"Stored Gemma impact schema invalid: {article_id}")
+                raise TypeError(f"Stored Gemma impact schema invalid: {article_id}")
             for impact in analysis["impacts"]:
                 if (not isinstance(impact, dict)
                         or not isinstance(impact.get("target"), str)
                         or not isinstance(impact.get("direction"), str)
                         or not isinstance(impact.get("reason"), str)
                         or not isinstance(impact.get("evidence_quote"), str)):
-                    raise ValueError(f"Stored impact lacks source evidence: {article_id}")
+                    raise TypeError(f"Stored impact lacks source evidence: {article_id}")
             reports.append({
                 "schemaVersion": "gemma_original_article_review_v2",
                 "model": row["model"], "processedAt": row["processed_at"],
