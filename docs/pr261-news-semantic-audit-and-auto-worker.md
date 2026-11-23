@@ -150,3 +150,66 @@ mostly match but shared directions frequently conflict, prioritize reasoning
 and directional evidence validity. Neither path can be chosen safely from
 the 5.0% headline alone. Never erase the original run JSON, and do not score
 agreement as news impact truth.
+
+## v2 root-cause breakdown and optional automatic consistency gate
+
+The local source-only v2 audit reported **20 comparable articles** and:
+- Exactly identical target/direction sets: **1 / 20 = 5%**
+- Identical impact counts: **11 / 20**
+- Identical exact target-label sets: **1 / 20**
+- No common target labels: **5 / 20**
+- Articles with direction disagreement on a shared label: **5 / 20**
+- Shared target-label pairs: **21**, with **6** conflicting directions
+- Mean target-set Jaccard similarity: **0.3375**
+
+The evidence shows **both target selection and shared-target direction
+instability**, not a demonstrated source collection failure or 95% factual
+error. The current exact target matching may overstate instability if synonyms
+or issuer names are expressed differently; do not silently treat synonyms as
+equal without independent source review.
+
+The automatic pipeline now supports an **opt-in two-call agreement gate**.
+This is an additional local model workload, **not** a retraining or
+accuracy improvement. Use it only if no other automatic worker is running:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.automatic_news_pipeline \\
+  --db "$DATA/news.sqlite3" --model gemma4:e2b \\
+  --skip-collection --limit 3 --verification-runs 2
+```
+
+By default `--verification-runs 1` preserves the existing worker's throughput
+and explicitly marks completed single-run results `SINGLE_RUN_UNVERIFIED`.
+With `--verification-runs 2`, two **independent** source-backed Gemma4
+inferences for the same verified body hash are compared before persistence:
+
+- `REPEATABLE_UNREVIEWED`: complete target and direction sets matched, but
+  the underlying financial/causal reasoning is *still unverified*.
+- `REVIEW_REQUIRED`: the two runs chose different target labels or
+  conflicting directions; the initial analysis, second analysis, original
+  reasons and evidence quotes are all retained for human inspection.
+- A failed model request remains `FAILED`, subject to the existing bounded
+  cooldown/retry policy. Two calls count as one article attempt.
+
+The dashboard distinguishes `REVIEW_REQUIRED` from execution failures
+and visibly labels completed single-run and repeatable analyses as unverified.
+Completed historical results and the saved v1/v2 source-only batches are never
+overwritten. A new two-call check applies only to newly analyzed verified
+article body hashes; **no claim of semantic correctness** follows from
+agreement, and **no market prices or returns** are collected.
+
+To inspect already saved review evidence without any model calls:
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --run "$DATA/news-semantic-stability-v2-run-1" \\
+  --run "$DATA/news-semantic-stability-v2-run-2" \\
+  --output "$DATA/news-semantic-stability-v2-details-final.json"
+```
+
+Inspect `repeatability.cases[].analysisByRun` for target, direction,
+reason and exact original supporting quotation. Baseline and single-call
+quality remain unchanged merely by adding a review gate.
