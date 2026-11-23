@@ -27,6 +27,7 @@ ZONES = {
     "XKRX": "Asia/Seoul",
     "XNAS": "America/New_York",
     "XNYS": "America/New_York",
+    "XLON": "Europe/London",
 }
 HORIZONS = (1, 5)
 NEUTRAL_THRESHOLD = 0.001
