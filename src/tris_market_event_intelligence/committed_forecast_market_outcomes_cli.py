@@ -60,7 +60,8 @@ def _source_identity(db: sqlite3.Connection, commit: sqlite3.Row) -> str | None:
     """Fail closed if stored model answer or current original body was replaced."""
     matched = db.execute(
         """SELECT n.status, n.processed_at, n.analysis_json,
-                  f.body, f.body_sha256, f.status AS body_status,\n                  f.observed_at AS body_observed_at,
+                  f.body, f.body_sha256, f.status AS body_status,
+                  f.observed_at AS body_observed_at,
                   a.published_at, a.detected_at
            FROM automatic_news_analyses n
            JOIN article_full_text f ON f.article_id=n.article_id
