@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tris_market_event_intelligence.dashboard_server import create_dashboard_app, snapshot
