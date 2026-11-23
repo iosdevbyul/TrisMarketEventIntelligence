@@ -91,6 +91,11 @@ def test_repeatability_identifies_divergent_direction(tmp_path: Path) -> None:
     result = repeatability_audit(db, [first, second])
     assert result["comparableArticles"] == 1
     assert result["stableArticles"] == 0
+    assert result["stableEmptyArticles"] == 0
+    assert result["stableNonEmptyArticles"] == 0
+    assert result["allRunsNonEmptyArticles"] == 1
+    assert result["mixedEmptyNonEmptyArticles"] == 0
+    assert result["comparableEventKindArticles"] == 0
     assert result["agreement"] == 0
     assert result["cases"][0]["status"] == "DIVERGENT_TARGET_DIRECTIONS"
     assert result["sameImpactCountArticles"] == 1
@@ -189,3 +194,71 @@ def test_narrow_alias_agreement_is_reported_without_upgrading_raw_agreement(
     assert results["limitedAliasTargetDirectionArticles"] == 1
     assert results["cases"][0]["limitedAliasTargetDirectionsIdentical"] is True
     assert results["cases"][0]["status"] == "DIVERGENT_TARGET_DIRECTIONS"
+
+
+def test_double_empty_is_not_substantive_agreement(tmp_path: Path) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    digest = hashlib.sha256(
+        ("This report describes the regional market and company activity. " * 8).encode()
+    ).hexdigest()
+    first = _run(tmp_path / "first-empty", digest)
+    second = _run(tmp_path / "second-empty", digest)
+    for directory in (first, second):
+        path = directory / "article-1.json"
+        data = json.loads(path.read_text())
+        data["analysis"]["impacts"] = []
+        data["event"] = {
+            "eventKind": "POLICY_DECISION", "eventFact": "Policy was discussed"
+        }
+        path.write_text(json.dumps(data))
+    result = repeatability_audit(db, [first, second])
+    assert result["stableArticles"] == 1
+    assert result["stableEmptyArticles"] == 1
+    assert result["stableNonEmptyArticles"] == 0
+    assert result["allRunsNonEmptyArticles"] == 0
+    assert result["comparableEventKindArticles"] == 1
+    assert result["matchingEventKindArticles"] == 1
+    assert result["cases"][0]["allRunsEmpty"] is True
+
+
+def test_empty_and_nonempty_predictions_are_not_merged(tmp_path: Path) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    digest = hashlib.sha256(
+        ("This report describes the regional market and company activity. " * 8).encode()
+    ).hexdigest()
+    first = _run(tmp_path / "first-mixed", digest)
+    second = _run(tmp_path / "second-mixed", digest)
+    path = second / "article-1.json"
+    data = json.loads(path.read_text())
+    data["analysis"]["impacts"] = []
+    path.write_text(json.dumps(data))
+    result = repeatability_audit(db, [first, second])
+    assert result["stableArticles"] == 0
+    assert result["mixedEmptyNonEmptyArticles"] == 1
+    assert result["cases"][0]["mixedEmptyAndNonEmpty"] is True
+
+
+def test_different_event_kinds_do_not_hide_behind_matching_empty_impacts(
+    tmp_path: Path,
+) -> None:
+    db = database(tmp_path / "news.sqlite3")
+    digest = hashlib.sha256(
+        ("This report describes the regional market and company activity. " * 8).encode()
+    ).hexdigest()
+    first = _run(tmp_path / "first-kind", digest)
+    second = _run(tmp_path / "second-kind", digest)
+    for directory, kind in ((first, "SCHEDULE_ONLY"), (second, "POLICY_DECISION")):
+        path = directory / "article-1.json"
+        data = json.loads(path.read_text())
+        data["analysis"]["impacts"] = []
+        data["event"] = {"eventKind": kind}
+        data["eventAssessment"] = {
+            "status": "REVIEW_REQUIRED" if kind == "POLICY_DECISION" else "UNVERIFIED"
+        }
+        path.write_text(json.dumps(data))
+    result = repeatability_audit(db, [first, second])
+    assert result["stableEmptyArticles"] == 1
+    assert result["comparableEventKindArticles"] == 1
+    assert result["matchingEventKindArticles"] == 0
+    assert result["eventReviewRequiredArticles"] == 1
+    assert result["cases"][0]["eventKindsIdentical"] is False
