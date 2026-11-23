@@ -91,7 +91,7 @@ def compare_same_cohort(
         for symbol, rows in sorted(bars.items()) if rows
     }
     transitions: Counter[str] = Counter()
-    horizon_results = {}
+    horizon_results = {n: Counter() for n in HORIZONS}
     pending = []
     for key in sorted(common):
         old, new = before[key], after[key]
