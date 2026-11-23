@@ -60,7 +60,7 @@ def _source_identity(db: sqlite3.Connection, commit: sqlite3.Row) -> str | None:
     """Fail closed if stored model answer or current original body was replaced."""
     matched = db.execute(
         """SELECT n.status, n.processed_at, n.analysis_json,
-                  f.body, f.body_sha256, f.status AS body_status,
+                  f.body, f.body_sha256, f.status AS body_status,\n                  f.observed_at AS body_observed_at,
                   a.published_at, a.detected_at
            FROM automatic_news_analyses n
            JOIN article_full_text f ON f.article_id=n.article_id
@@ -72,7 +72,7 @@ def _source_identity(db: sqlite3.Connection, commit: sqlite3.Row) -> str | None:
         return "ORIGINAL_MODEL_OR_BODY_NOT_FOUND"
     if (matched["status"] != "COMPLETED"
             or matched["body_status"] != "COMPLETE"
-            or matched["body_sha256"] != commit["body_sha256"]
+            or matched["body_sha256"] != commit["body_sha256"]\n            or matched["body_observed_at"] != commit["original_body_observed_at"]
             or not isinstance(matched["body"], str)
             or hashlib.sha256(matched["body"].encode()).hexdigest() != commit["body_sha256"]
             or matched["processed_at"] != commit["analyzed_at"]
@@ -84,7 +84,7 @@ def _source_identity(db: sqlite3.Connection, commit: sqlite3.Row) -> str | None:
         impact = payload["impacts"][commit["impact_index"]]
     except (TypeError, ValueError, KeyError, IndexError) as exc:
         raise ValueError("Corrupt original stored Gemma answer") from exc
-    if any(impact[key] != commit[field] for key, field in (
+    if commit["evidence_quote"] not in matched["body"]:\n        return "ORIGINAL_EVIDENCE_QUOTE_NOT_IN_STORED_BODY"\n    if any(impact[key] != commit[field] for key, field in (
         ("target", "target"), ("direction", "direction"),
         ("reason", "rationale"), ("evidence_quote", "evidence_quote"),
     )):
@@ -207,7 +207,7 @@ def evaluate(db_path: Path, prices_path: Path, price_manifest: Path | None = Non
                 verdict = {"status": "COMMITMENT_CUTOFF_POLICY_CHANGED"}
             elif admission is not None:
                 verdict = {"status": admission}
-            elif (sealed is None or published is None or detected is None
+            elif (sealed is None or published is None or detected is None\n                  or original is None
                   or published > detected or detected > sealed
                   or (original is not None and original > sealed)):
                 verdict = {"status": "COMMITMENT_CLOCK_ORDER_INVALID"}
