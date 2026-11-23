@@ -145,6 +145,8 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
     event_kind_comparable_articles = 0
     matching_event_kind_articles = 0
     event_review_required_articles = 0
+    event_correction_attempt_articles = 0
+    event_correction_revised_articles = 0
     no_shared_target_articles = 0
     changed_direction_articles = 0
     shared_target_pairs = 0
@@ -203,6 +205,13 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         ]
         if "REVIEW_REQUIRED" in assessments:
             event_review_required_articles += 1
+        corrections = [
+            report.get("eventCorrection", {}) for report in present
+        ]
+        if any(item.get("attempted") for item in corrections):
+            event_correction_attempt_articles += 1
+        if any(item.get("status") == "REVISED_UNVERIFIED" for item in corrections):
+            event_correction_revised_articles += 1
         alias_signatures = [
             sorted((target_key(target), direction) for target, direction in signature)
             for signature in signatures
@@ -253,6 +262,10 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             "allRunsNonEmpty": all_nonempty,
             "mixedEmptyAndNonEmpty": mixed_empty,
             "eventKindsByRun": kinds,
+            "originalEventKindsByRun": [
+                report.get("originalEvent", {}).get("eventKind") for report in present
+            ],
+            "eventCorrectionsByRun": corrections,
             "eventKindsIdentical": (
                 len(set(kinds)) == 1 if event_kind_comparable else None
             ),
@@ -307,6 +320,8 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         "comparableEventKindArticles": event_kind_comparable_articles,
         "matchingEventKindArticles": matching_event_kind_articles,
         "eventReviewRequiredArticles": event_review_required_articles,
+        "eventCorrectionAttemptArticles": event_correction_attempt_articles,
+        "eventCorrectionRevisedArticles": event_correction_revised_articles,
         "sameImpactCountArticles": same_counts,
         "sameTargetSetArticles": same_targets,
         "limitedAliasTargetDirectionArticles": alias_equivalent_target_directions,
@@ -366,7 +381,8 @@ def main() -> None:
                     "agreement", "stableEmptyArticles", "stableNonEmptyArticles",
                     "allRunsNonEmptyArticles", "mixedEmptyNonEmptyArticles",
                     "comparableEventKindArticles", "matchingEventKindArticles",
-                    "eventReviewRequiredArticles", "sameImpactCountArticles",
+                    "eventReviewRequiredArticles", "eventCorrectionAttemptArticles",
+                    "eventCorrectionRevisedArticles", "sameImpactCountArticles",
                     "sameTargetSetArticles",
                     "limitedAliasTargetDirectionArticles",
                     "noSharedTargetArticles", "changedDirectionArticles",
