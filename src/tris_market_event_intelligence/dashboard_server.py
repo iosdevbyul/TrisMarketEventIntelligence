@@ -39,6 +39,22 @@ def snapshot(db_path: Path, *, limit: int = 100, source: str | None = None) -> d
             ("events", "economic_events"), ("impacts", "market_impacts"),
             ("analysisRuns", "impact_runs"), ("claims", "article_event_claims"),
         )}
+        automatic_counts = {"COMPLETED": 0, "FAILED": 0}
+        automatic_errors: dict[str, int] = {}
+        if "automatic_news_analyses" in names:
+            automatic_counts.update({
+                status: count for status, count in db.execute(
+                    "SELECT status, COUNT(*) FROM automatic_news_analyses "
+                    "GROUP BY status"
+                )
+            })
+            automatic_errors = {
+                error: count for error, count in db.execute(
+                    "SELECT error_code, COUNT(*) FROM automatic_news_analyses "
+                    "WHERE status='FAILED' AND error_code IS NOT NULL "
+                    "GROUP BY error_code ORDER BY COUNT(*) DESC, error_code"
+                )
+            }
         latest = db.execute(
             "SELECT MAX(detected_at) FROM articles"
         ).fetchone()[0]
@@ -167,6 +183,8 @@ def snapshot(db_path: Path, *, limit: int = 100, source: str | None = None) -> d
         ).fetchall()
         return {
             "schemaVersion": "dashboard_v1", "totals": totals,
+            "automaticAnalysisCounts": automatic_counts,
+            "automaticFailureCodes": automatic_errors,
             "lastArticleDetectedAt": latest, "sources": source_rows,
             "articles": [dict(row) for row in rows],
             "notes": {
