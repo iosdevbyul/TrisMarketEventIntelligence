@@ -23,6 +23,7 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     ask_gemma,
     result_error,
 )
+from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
 SCHEMA = """
@@ -121,10 +122,13 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
 
 def process(db_path: Path, *, model: str = "gemma4:e2b",
             limit: int = 10, retry_minutes: int = 30,
-            collect: bool = True, client: httpx.Client | None = None) -> dict:
+            collect: bool = True, client: httpx.Client | None = None,
+            verification_runs: int = 1) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
     if not MODEL_PATTERN.fullmatch(model):
         raise ValueError("Invalid Ollama model")
+    if verification_runs not in (1, 2):
+        raise ValueError("verification_runs must be 1 or 2")
     if not 1 <= limit <= 100 or not 1 <= retry_minutes <= 1440:
         raise ValueError("Invalid bounded run settings")
     if not db_path.is_file() or db_path.is_symlink():
@@ -165,6 +169,16 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                     }
                     try:
                         analysis = ask_gemma(session, model, request)
+                        if verification_runs == 2:
+                            second = ask_gemma(session, model, request)
+                            analysis["_repeatability"] = compare_analyses(analysis, second)
+                        else:
+                            analysis["_repeatability"] = {
+                                "status": "SINGLE_RUN_UNVERIFIED",
+                                "runs": 1,
+                                "semanticCorrectnessVerified": False,
+                                "priceDataUsed": False,
+                            }
                         status, error_code = "COMPLETED", None
                         encoded = json.dumps(analysis, ensure_ascii=False)
                         completed += 1
@@ -204,6 +218,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
         "collectionHealthy": collection_status == "healthy" if collect else None,
         "model": model, "completed": completed, "failed": failed,
         "coverage": coverage, "results": results,
+        "verificationRuns": verification_runs,
         "marketPricesAnalyzed": False,
     }
 
@@ -218,6 +233,8 @@ def main() -> None:
     parser.add_argument("--interval", type=int, default=900,
                         help="Seconds between passes when --watch is selected")
     parser.add_argument("--watch", action="store_true")
+    parser.add_argument("--verification-runs", type=int, choices=(1, 2), default=1,
+                        help="1=unverified single analysis; 2=compare independent model calls")
     parser.add_argument("--skip-collection", action="store_true")
     args = parser.parse_args()
     if not 300 <= args.interval <= 86400:
@@ -226,7 +243,8 @@ def main() -> None:
         try:
             result = process(args.db.expanduser(), model=args.model,
                              limit=args.limit, retry_minutes=args.retry_minutes,
-                             collect=not args.skip_collection)
+                             collect=not args.skip_collection,
+                             verification_runs=args.verification_runs)
         except (OSError, sqlite3.Error, ValueError) as exc:
             result = {"status": "ERROR", "errorCode": type(exc).__name__}
         print(json.dumps(result, ensure_ascii=False), flush=True)
