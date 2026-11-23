@@ -11,7 +11,6 @@ import json
 import sqlite3
 from collections import Counter
 from contextlib import closing
-from datetime import datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.operational_news_pit_readiness_cli import (
