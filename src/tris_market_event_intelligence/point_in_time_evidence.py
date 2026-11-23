@@ -9,7 +9,7 @@ from __future__ import annotations
 import csv
 import hashlib
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -117,6 +117,7 @@ def evaluate_chronology(
     by_article: dict[int, list[SealedForecast]] = defaultdict(list)
     for f in forecasts:
         by_article[f.event.article_id].append(f)
+    articles_by_id = {article_id: articles[0] for article_id, articles in by_article.items()}
     rows: dict[int, dict[str, object]] = {}
     groups: dict[str, set[int]] = defaultdict(set)
     for article_id, articles in by_article.items():
@@ -149,8 +150,22 @@ def evaluate_chronology(
             "captureAt": item.captured_at.isoformat() if item else None,
             "familyEvidenceURL": item.family_evidence_url if item else None,
         }
-    family_counts = Counter({key: len(ids) for key, ids in groups.items()})
+    family_counts = {key: len(ids) for key, ids in groups.items()}
     duplicate_family_count = sum(size > 1 for size in family_counts.values())
+    first_in_family = {
+        family: min(ids, key=lambda article: (
+            articles_by_id[article].event.verified_cutoff or datetime.max.replace(tzinfo=UTC),
+            article,
+        ))
+        for family, ids in groups.items()
+    }
+    for article_id, row in rows.items():
+        row["familyArticleCount"] = family_counts[row["familyId"]]
+        row["isCandidateFamilyRepresentative"] = (
+            article_id == first_in_family[row["familyId"]]
+            and row["relationship"] == "NEW"
+            and row["chronologyStatus"] == "DOCUMENTARY_CONSISTENT_UNATTESTED"
+        )
     return {
         "articles": rows, "articleCount": len(rows), "familyCount": len(groups),
         "repeatedFamilyCount": duplicate_family_count,
