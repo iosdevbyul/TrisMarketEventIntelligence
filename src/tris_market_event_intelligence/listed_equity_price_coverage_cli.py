@@ -30,6 +30,7 @@ from tris_market_event_intelligence.market_price_recovery_cli import (
     recover_prices,
 )
 from tris_market_event_intelligence.market_proxy_cohort_cli import CSV_FIELDS
+from tris_market_event_intelligence.same_cohort_market_recheck_cli import compare_same_cohort
 
 # Exact observed issuer names and original article IDs. Do not map generic
 # sectors, an exchange venue, a policy institution, or a private corporation.
@@ -243,16 +244,31 @@ def run(
             plan["newRealPricesFetched"] = True
             plan["quoteRows"] = len(prices)
             plan["providerMissingSymbols"] = collection["missingSymbols"]
-            plan["scoredDirectionBefore"] = old["metrics"]["1d"]["denominator"]
-            plan["scoredDirectionAfter"] = evaluated["metrics"]["1d"]["denominator"]
-            plan["newDirectionScoresObserved"] = (
-                plan["scoredDirectionAfter"] - plan["scoredDirectionBefore"]
+            comparison = compare_same_cohort(
+                old, evaluated, mapping_path, expanded,
             )
-            plan["newDailyObservedImpacts"] = (
-                evaluated["statusCounts"].get("COMPLETED", 0) -
-                old["statusCounts"].get("COMPLETED", 0)
+            one_day = comparison["sameSourceHorizonScores"]["1d"]
+            plan["priorSourceImpactCount"] = comparison["previousImpactCount"]
+            plan["evaluatedImpactCount"] = comparison["currentImpactCount"]
+            plan["commonIdenticalSourceImpacts"] = (
+                comparison["commonIdenticalSourceImpacts"]
             )
-            plan["evaluatedImpactCount"] = evaluated["impactsInspected"]
+            plan["newSourceImpacts"] = comparison["newSourceImpacts"]
+            plan["removedOrChangedSourceImpacts"] = (
+                comparison["removedOrChangedSourceImpacts"]
+            )
+            plan["cohortsIdentical"] = comparison["cohortsIdentical"]
+            plan["scoredDirectionBefore"] = one_day["before"]
+            plan["scoredDirectionAfter"] = one_day["after"]
+            plan["newDirectionScoresObserved"] = one_day["newlyScored"]
+            plan["lostDirectionScores"] = one_day["lostScores"]
+            plan["sameSourceHorizonScores"] = comparison["sameSourceHorizonScores"]
+            plan["notYetMaturedCount"] = comparison["notYetMaturedCount"]
+            plan["newDailyObservedImpacts"] = None
+            plan["newDailyObservedImpactsReason"] = (
+                "Global completed counts cannot be compared across changing "
+                "Gemma cohorts. Use source-matched horizon scores instead."
+            )
             plan["historicalPriceCoverageIncomplete"] = True
         with (tmp / "coverage-plan.json").open("x", encoding="utf-8") as f:
             json.dump(plan, f, ensure_ascii=False, indent=2)
