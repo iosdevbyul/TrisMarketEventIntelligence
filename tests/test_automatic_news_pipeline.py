@@ -122,3 +122,42 @@ def test_degraded_collector_is_not_reported_as_healthy(tmp_path):
     assert result["collectionStatus"] == "degraded"
     assert result["completed"] == 0
     assert result["failed"] == 0
+
+
+def test_newest_news_not_starved_by_existing_historical_backlog(tmp_path):
+    path = tmp_path / "news.sqlite3"
+    body = "The central bank described a significant updated policy decision."
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+        CREATE TABLE articles (
+          id INTEGER PRIMARY KEY, source TEXT, url TEXT, title TEXT, summary TEXT,
+          published_at TEXT, detected_at TEXT
+        );
+        CREATE TABLE article_full_text (
+          article_id INTEGER PRIMARY KEY, status TEXT, body TEXT, body_sha256 TEXT,
+          sparse_pages TEXT
+        );
+        """)
+        for article_id in range(1, 13):
+            db.execute(
+                "INSERT INTO articles VALUES (?,?,?,?,?,?,?)",
+                (article_id, "fed_all", f"https://example.org/{article_id}",
+                 f"Policy {article_id}", None, "2026-11-20T00:00:00+00:00",
+                 "2026-11-20T00:01:00+00:00"),
+            )
+            db.execute(
+                "INSERT INTO article_full_text VALUES (?,'COMPLETE',?,?,?)",
+                (article_id, body, digest, "[]"),
+            )
+    answer = {"summary": "Policy news", "limitations": "Uncertain impact", "impacts": []}
+    with patch(
+        "tris_market_event_intelligence.automatic_news_pipeline.ask_gemma",
+        return_value=answer,
+    ):
+        report = process(path, collect=False, limit=3)
+    assert report["completed"] == 3
+    selected = [row["articleId"] for row in report["results"]]
+    assert 12 in selected
+    assert 1 in selected
+    assert len(set(selected)) == 3
