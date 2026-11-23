@@ -51,7 +51,10 @@ def test_news_analysis_persisted_and_idempotent(tmp_path):
     assert report["articles"][0]["automaticStatus"] == "COMPLETED"
     assert report["automaticAnalysisCounts"] == {"COMPLETED": 1, "FAILED": 0}
     assert report["automaticFailureCodes"] == {}
-    assert json.loads(report["articles"][0]["automaticAnalysis"]) == result
+    saved = json.loads(report["articles"][0]["automaticAnalysis"])
+    assert {key: saved[key] for key in result} == result
+    assert saved["_repeatability"]["status"] == "SINGLE_RUN_UNVERIFIED"
+    assert saved["_repeatability"]["semanticCorrectnessVerified"] is False
     with sqlite3.connect(path) as db:
         assert db.execute(
             "SELECT attempts FROM automatic_news_analyses"
