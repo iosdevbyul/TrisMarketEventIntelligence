@@ -12,7 +12,7 @@ import hashlib
 import importlib
 import json
 import tempfile
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
@@ -181,8 +181,8 @@ def run(
         outcomes, previous_mappings, previous_prices, verified_at=now,
     )
     if fetch and (start is None or end is None or start >= end
-                  or end > now.date() + timedelta(days=1)):
-        raise ValueError("Explicit historical period must end by tomorrow UTC")
+                  or end > now.date()):
+        raise ValueError("Explicit historical period must exclude the current unfinished UTC date")
     # Assemble in an isolated same-filesystem folder; final name appears only
     # after all validations and real price observations finish successfully.
     with tempfile.TemporaryDirectory(
