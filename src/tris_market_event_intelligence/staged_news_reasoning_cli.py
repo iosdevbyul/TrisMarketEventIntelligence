@@ -23,6 +23,7 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     validate_answer,
     verified_articles,
 )
+from tris_market_event_intelligence.news_event_source_review import assess_event
 
 EVENT_KINDS = (
     "POLICY_DECISION", "POLICY_GUIDANCE", "SCHEDULE_ONLY",
@@ -143,8 +144,21 @@ def analyze_staged(client: httpx.Client, model: str, request: dict) -> dict:
                    payload=source, schema=event_schema(list(evidence))),
         evidence,
     )
-    # This is a conservative scope gate, not a claim the event type is correct.
-    if event["eventKind"] in {"SCHEDULE_ONLY", "RETROSPECTIVE_MARKET"}:
+    # The original model classification is retained, but known contradictions
+    # prevent a false positive market-impact analysis. Zero impacts here means
+    # WITHHELD, not a model conclusion of no material market consequences.
+    event_assessment = assess_event(request["article"], request["body"], event)
+    if event_assessment["status"] == "REVIEW_REQUIRED":
+        analysis = {
+            "summary": event["eventFact"],
+            "limitations": (
+                "Impact decision withheld because the extracted event conflicts "
+                "with the document type. Manual source review required."
+            ),
+            "impacts": [],
+        }
+        impact_status = "WITHHELD_EVENT_REVIEW"
+    elif event["eventKind"] in {"SCHEDULE_ONLY", "RETROSPECTIVE_MARKET"}:
         analysis = {
             "summary": event["eventFact"],
             "limitations": (
@@ -153,7 +167,9 @@ def analyze_staged(client: httpx.Client, model: str, request: dict) -> dict:
             ),
             "impacts": [],
         }
+        impact_status = "ABSTAINED_EVENT_SCOPE"
     else:
+        impact_status = "MODEL_INFERENCE_UNVERIFIED"
         candidate = _chat_json(
             client, model, system=IMPACT_SYSTEM,
             payload={**source, "extractedEvent": event},
@@ -162,6 +178,8 @@ def analyze_staged(client: httpx.Client, model: str, request: dict) -> dict:
         analysis = validate_answer(json.dumps(candidate, ensure_ascii=False), evidence)
     return {
         "event": event,
+        "eventAssessment": event_assessment,
+        "impactDecisionStatus": impact_status,
         "analysis": analysis,
         "reasoningStages": ["EVENT_EXTRACTION", "CONDITIONAL_IMPACT"],
         "eventFactVerified": False,
@@ -219,6 +237,8 @@ def run_pilot(db_path: Path, output_dir: Path, *, model: str = "gemma4:e2b",
                 print(json.dumps({
                     "articleId": article["articleId"], "status": "COMPLETED",
                     "eventKind": result["event"]["eventKind"],
+                    "eventReview": result["eventAssessment"]["status"],
+                    "impactDecisionStatus": result["impactDecisionStatus"],
                     "impactCount": len(result["analysis"]["impacts"]),
                 }), flush=True)
             except FileExistsError:
