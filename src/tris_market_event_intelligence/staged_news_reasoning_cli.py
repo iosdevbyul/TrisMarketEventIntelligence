@@ -15,8 +15,8 @@ from pathlib import Path
 import httpx
 
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
-    AnswerError,
     MODEL_PATTERN,
+    AnswerError,
     evidence_passages,
     output_schema,
     result_error,
