@@ -50,18 +50,20 @@ actions or trading permissions. A verified session calendar, source-specific
 close conventions, minute-bar availability and adjusted-price provenance
 must be attached by the ingestion/validation integration before operational use.
 
-A forecast generated after publication is still evaluated from the pre-release
-price baseline for *event-window research*, while its declared direction
-forecast is sealed at `forecast_at`. For true forecast-after-seal accuracy,
-the next integration must also expose a separate **forecast-entry price at or
-after the seal**, because already completed publication-to-seal returns are
-not predictable at the seal time. Do not describe the event-window return as
-pure prospective forecast performance.
+A forecast generated after publication is evaluated with TWO distinct baselines:
+(a) the latest bar before first public availability, for an event-window description;
+(b) the last completed bar no later than the sealed forecast cutoff, for the
+actual post-seal forecast-direction score. This latter price must not be stale
+and cannot be in the future relative to the seal. Neither return is a
+causal news impact. Historical replay remains non-prospective without
+independently demonstrated information availability.
 
 ## Output fields and fail-closed behavior
 
 `observe()` reports `absolute_return`, `benchmark_return`,
-`relative_return`, `actual_direction`, `direction_match`,
+`relative_return`, `actual_direction`, `forecast_return`,
+`forecast_actual_direction`, `forecast_anchor_at`, `direction_match`,
+`event_window_direction_match`,
 `novelty`, `family_id`, and permanently
 `causal_attribution=NOT_ESTABLISHED`. The absolute direction uses a
 precommitted deadband; a positive market-adjusted performance is **not**
@@ -94,9 +96,8 @@ such exclusions and denominator effects, not just scored matches.
   causal identity.
 - Specify market calendars and separate 30m, session-close, 1/3/5-session
   horizons, per-exchange anchor/max-age and suspended/after-hours behavior.
-- Add a distinct forecast-entry anchoring rule so the **post-seal direction
-  score** cannot benefit from already-observed price reactions; label the
-  current output as event-window descriptive observation only.
+- Audit the new post-seal direction score on genuine timestamped sources, and
+  ensure retrospective examples are not relabeled as live forecasts.
 - Match source-verified real intraday price quotes, benchmark and provenance;
   exclude adjusted/unadjusted mismatches. Keep missing data and causal
   ambiguity visible.
