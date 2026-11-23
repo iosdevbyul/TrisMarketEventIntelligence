@@ -19,11 +19,15 @@ from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
     evaluate_automatic_outcomes,
 )
 from tris_market_event_intelligence.market_outcome_validation_cli import (
-    _csv, _mappings, _timestamp,
+    _csv,
+    _mappings,
+    _timestamp,
 )
 from tris_market_event_intelligence.market_price_collection_cli import collect_prices
 from tris_market_event_intelligence.market_price_recovery_cli import (
-    FIELDS, _observations, recover_prices,
+    FIELDS,
+    _observations,
+    recover_prices,
 )
 from tris_market_event_intelligence.market_proxy_cohort_cli import CSV_FIELDS
 
