@@ -52,6 +52,11 @@ def fixtures(tmp_path: Path) -> tuple[Path, Path, Path]:
             "prediction": "UNCERTAIN", "predictionSealedBeforeOutcome": False,
         },
     ]
+    for i, row in enumerate(items):
+        row["impactIndex"] = i
+        row["predictionSourceSha256"] = hashlib.sha256(
+            f"synthetic-original-{row['articleId']}".encode()
+        ).hexdigest()
     outcomes.write_text(json.dumps({
         "schemaVersion": "automatic_gemma_daily_outcomes_v1",
         "sourceType": "REAL_AUTOMATIC_SQLITE_GEMMA_LEDGER",
@@ -154,11 +159,13 @@ def test_real_quote_snapshot_recovers_complete_instrument_without_date_splice(
             "missingSymbols": [], "researchOnly": True,
             "pointInTimeArchive": False,
         })
-        evaluate.return_value = {
-            "metrics": {"1d": {"denominator": 1}},
-            "statusCounts": {"COMPLETED": 1},
-            "impactsInspected": 4,
-        }
+        reevaluated = json.loads(outcomes.read_text(encoding="utf-8"))
+        reevaluated["items"][0]["status"] = "COMPLETED"
+        reevaluated["items"][0]["horizons"] = [
+            {"sessions": horizon, "verdict": "CORRECT", "dataStatus": "COMPLETED"}
+            for horizon in (1, 5)
+        ]
+        evaluate.return_value = reevaluated
         folder = tmp_path / "new-research"
         r = run(
             outcomes, db, mappings, prices, folder, model="gemma4:e2b",
@@ -168,6 +175,8 @@ def test_real_quote_snapshot_recovers_complete_instrument_without_date_splice(
     assert yf.called
     assert r["newRealPricesFetched"] is True
     assert r["newDirectionScoresObserved"] == 1
+    assert r["commonIdenticalSourceImpacts"] == 4
+    assert r["cohortsIdentical"] is True
     assert r["quoteRows"] == 8
     assert (folder / "expanded-adjusted-daily.csv").is_file()
     with (folder / "expanded-adjusted-daily.csv").open(newline="") as stream:
