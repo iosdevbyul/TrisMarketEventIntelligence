@@ -58,7 +58,8 @@ def initialize(db: sqlite3.Connection) -> None:
 
 
 def pending(db: sqlite3.Connection, model: str, limit: int,
-            retry_minutes: int) -> tuple[list[sqlite3.Row], dict[str, int]]:
+            retry_minutes: int, *, fresh_only_minutes: int | None = None,
+            observed_now: datetime | None = None) -> tuple[list[sqlite3.Row], dict[str, int]]:
     db.row_factory = sqlite3.Row
     tables = {r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
@@ -79,6 +80,12 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         if "observed_at" in fulltext_columns
         else "NULL AS body_observed_at"
     )
+    # Forward capture is ordered by the *actual detected clock*, not IDs.
+    # The older historical backlog may exceed the 2000-row query bound.
+    order = (
+        "a.detected_at DESC, a.id DESC"
+        if fresh_only_minutes is not None else "a.id"
+    )
     candidates = db.execute(
         f"""SELECT a.id, a.source, a.title, a.url, a.published_at,
                   a.detected_at, f.body, f.body_sha256, f.sparse_pages,
@@ -90,12 +97,36 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
                  l.article_id=a.id AND l.body_sha256=f.body_sha256 AND l.model=?
            WHERE f.status='COMPLETE' AND f.body IS NOT NULL
              AND (l.status IS NULL OR l.status='FAILED')
-           ORDER BY a.id LIMIT 2000""", (model,)
+           ORDER BY {order} LIMIT 2000""", (model,)
     ).fetchall()
-    cutoff = datetime.now(UTC) - timedelta(minutes=retry_minutes)
+    current = observed_now or datetime.now(UTC)
+    cutoff = current - timedelta(minutes=retry_minutes)
+    fresh_cutoff = (
+        current - timedelta(minutes=fresh_only_minutes)
+        if fresh_only_minutes is not None else None
+    )
+    blocked_fresh = 0
     ready_new = []
     ready_retry = []
     for row in candidates:
+        if fresh_cutoff is not None:
+            try:
+                published = datetime.fromisoformat(row["published_at"])
+                detected = datetime.fromisoformat(row["detected_at"])
+                observed = datetime.fromisoformat(row["body_observed_at"])
+                # A recent detection is NOT a newly published historical story:
+                # the release, detection and original body must all be recent.
+                fresh = (
+                    all(t.tzinfo is not None and t.utcoffset() is not None
+                        for t in (published, detected, observed))
+                    and fresh_cutoff <= published <= detected <= observed <= current
+                    and observed - published <= timedelta(minutes=fresh_only_minutes)
+                )
+            except (TypeError, ValueError, OverflowError):
+                fresh = False
+            if not fresh:
+                blocked_fresh += 1
+                continue
         body = row["body"]
         digest = row["body_sha256"]
         if not isinstance(body, str) or not isinstance(digest, str):
@@ -115,6 +146,18 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
             ready_retry.append(row)
         else:
             ready_new.append(row)
+    if fresh_only_minutes is not None:
+        # Fresh-only mode does not borrow spare slots from past article IDs.
+        chosen = (ready_new + ready_retry)[:limit]
+        return chosen, {
+            "eligible": len(candidates), "missingFullText": missing,
+            "readyNew": len(ready_new), "readyRetry": len(ready_retry),
+            "freshOnlyMinutes": fresh_only_minutes,
+            "freshClockRejected": blocked_fresh,
+            "freshAdmissible": len(ready_new) + len(ready_retry),
+            "noHistoricalBackfill": True,
+            "freshQueryLimitReached": len(candidates) == 2000,
+        }
     # A large historical backlog must not prevent newly collected news from
     # receiving timely analysis. Reserve capacity for old news and due retries.
     newest_slots = (limit + 2) // 3
@@ -141,8 +184,13 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             limit: int = 10, retry_minutes: int = 30,
             collect: bool = True, client: httpx.Client | None = None,
             verification_runs: int = 1, seal_forecasts: bool = False,
-            mappings_path: Path | None = None) -> dict:
+            mappings_path: Path | None = None,
+            fresh_only_minutes: int | None = None) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
+    if fresh_only_minutes is not None and not seal_forecasts:
+        raise ValueError("Fresh-only capture requires explicit forecast sealing")
+    if fresh_only_minutes is not None and not 1 <= fresh_only_minutes <= 1440:
+        raise ValueError("fresh_only_minutes must be 1..1440")
     if seal_forecasts and mappings_path is None:
         raise ValueError("Explicit reviewed market mappings required to precommit")
     reviewed_mappings = _mappings(mappings_path) if seal_forecasts and mappings_path else {}
@@ -169,7 +217,11 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             if seal_forecasts:
                 initialize_forecasts(db)
             db.commit()
-            rows, coverage = pending(db, model, limit, retry_minutes)
+            rows, coverage = pending(
+                db, model, limit, retry_minutes,
+                fresh_only_minutes=fresh_only_minutes,
+                observed_now=datetime.now(UTC),
+            )
             owned = client is None
             session = client or httpx.Client(
                 timeout=httpx.Timeout(300), trust_env=False
@@ -262,6 +314,8 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
         "verificationRuns": verification_runs,
         "marketPricesAnalyzed": False,
         "forecastPrecommitmentsEnabled": seal_forecasts,
+        "freshOnlyCaptureEnabled": fresh_only_minutes is not None,
+        "noHistoricalPredictionBackfill": fresh_only_minutes is not None,
         "newForecastCommitments": commitment_counts if seal_forecasts else {},
         "forecastCommitmentAudit": commitment_audit,
         "forecastFirstPublicAvailabilityIndependentlyVerified": False,
@@ -283,6 +337,11 @@ def main() -> None:
                         help="1=unverified single analysis; 2=compare independent model calls")
     parser.add_argument("--skip-collection", action="store_true")
     parser.add_argument(
+        "--fresh-only-minutes", type=int,
+        help="With --seal-forecasts, process only genuinely recent first-published, "
+             "detected and full-body-observed articles, never old backlog",
+    )
+    parser.add_argument(
         "--seal-forecasts", action="store_true",
         help="Opt in to immutable local forecast commitments on NEW model completions",
     )
@@ -300,7 +359,8 @@ def main() -> None:
                              collect=not args.skip_collection,
                              verification_runs=args.verification_runs,
                              seal_forecasts=args.seal_forecasts,
-                             mappings_path=args.mappings)
+                             mappings_path=args.mappings,
+                             fresh_only_minutes=args.fresh_only_minutes)
         except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
             result = {"status": "ERROR", "errorCode": type(exc).__name__}
         print(json.dumps(result, ensure_ascii=False), flush=True)
