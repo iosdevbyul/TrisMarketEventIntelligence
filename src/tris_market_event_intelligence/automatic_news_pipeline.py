@@ -75,7 +75,8 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
            ORDER BY a.id LIMIT 2000""", (model,)
     ).fetchall()
     cutoff = datetime.now(UTC) - timedelta(minutes=retry_minutes)
-    selected = []
+    ready_new = []
+    ready_retry = []
     for row in candidates:
         body = row["body"]
         digest = row["body_sha256"]
@@ -93,10 +94,29 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
                     continue
             except (TypeError, ValueError):
                 continue
-        selected.append(row)
-        if len(selected) >= limit:
+            ready_retry.append(row)
+        else:
+            ready_new.append(row)
+    # A large historical backlog must not prevent newly collected news from
+    # receiving timely analysis. Reserve capacity for old news and due retries.
+    newest_slots = (limit + 2) // 3
+    oldest_slots = (limit + 1) // 3
+    retry_slots = limit - newest_slots - oldest_slots
+    selected = (
+        list(reversed(ready_new[-newest_slots:]))
+        + ready_new[:oldest_slots]
+        + ready_retry[:retry_slots]
+    )
+    # For small backlogs the two new-news queues may overlap.
+    unique = {row["id"]: row for row in selected}
+    for row in list(reversed(ready_new)) + ready_retry:
+        if len(unique) >= limit:
             break
-    return selected, {"eligible": len(candidates), "missingFullText": missing}
+        unique.setdefault(row["id"], row)
+    return list(unique.values())[:limit], {
+        "eligible": len(candidates), "missingFullText": missing,
+        "readyNew": len(ready_new), "readyRetry": len(ready_retry),
+    }
 
 
 def process(db_path: Path, *, model: str = "gemma4:e2b",
