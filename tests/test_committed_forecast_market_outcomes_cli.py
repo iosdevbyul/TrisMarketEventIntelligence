@@ -215,7 +215,10 @@ def test_abstained_retained_but_never_claimed_correct(tmp_path: Path) -> None:
     assert report["horizons"]["1d"]["abstained"] == 1
     assert report["horizons"]["1d"]["denominator"] == 0
     assert report["horizons"]["1d"]["relative"]["denominator"] == 0
-    assert report["horizons"]["1d"]["constantDirectionBaselines"] == {\n        "alwaysUp": 0, "alwaysDown": 0, "alwaysNeutral": 0,\n    }\n    assert report["rows"][0]["verdict"] == "ABSTAINED"
+    assert report["horizons"]["1d"]["constantDirectionBaselines"] == {
+        "alwaysUp": 0, "alwaysDown": 0, "alwaysNeutral": 0,
+    }
+    assert report["rows"][0]["verdict"] == "ABSTAINED"
 
 
 def test_manifest_mismatch_and_local_chain_tamper_refused(tmp_path: Path) -> None:
