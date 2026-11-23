@@ -164,7 +164,11 @@ def _selected(
 def evaluate_sources(
     predictions_csv: Path, source_manifest: Path, sessions_csv: Path,
     *, halts_csv: Path | None = None,
+    max_anchor_age_minutes: int = 5,
+    max_exit_age_minutes: int = 5,
 ) -> dict[str, object]:
+    if not 1 <= max_anchor_age_minutes <= 4320 or not 1 <= max_exit_age_minutes <= 4320:
+        raise ValueError("Price age windows must be 1..4320 explicit minutes")
     calendar = calendar_from_csv(sessions_csv, halts_csv)
     forecasts = load_forecasts(predictions_csv)
     bars, availability, info = load_prices(source_manifest)
@@ -221,8 +225,8 @@ def evaluate_sources(
         }
         if status == "READY_FOR_DESCRIPTIVE_EVALUATION":
             result = observe(
-                prediction, bars, max_anchor_age=timedelta(minutes=5),
-                max_exit_age=timedelta(minutes=5),
+                prediction, bars, max_anchor_age=timedelta(minutes=max_anchor_age_minutes),
+                max_exit_age=timedelta(minutes=max_exit_age_minutes),
                 benchmark_tolerance=timedelta(minutes=1),
             )
             output["observation"] = result.as_dict()
@@ -247,6 +251,10 @@ def evaluate_sources(
         "eventCausalityEstablished": False,
         "learningPerformanceDemonstrated": False,
         "trainingEligible": False,
+        "anchorMaximumAgeMinutes": max_anchor_age_minutes,
+        "exitMaximumAgeMinutes": max_exit_age_minutes,
+        "independentFamilyCount": len({p.event.family_id for _, p in forecasts}),
+        "nonNewArticles": sum(p.event.novelty != "NEW" for _, p in forecasts),
     }
 
 
@@ -256,11 +264,15 @@ def main() -> None:
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--sessions", type=Path, required=True)
     parser.add_argument("--halts", type=Path)
+    parser.add_argument("--max-anchor-age-minutes", type=int, default=5)
+    parser.add_argument("--max-exit-age-minutes", type=int, default=5)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
         report = evaluate_sources(
-            args.predictions, args.source_manifest, args.sessions, halts_csv=args.halts
+            args.predictions, args.source_manifest, args.sessions, halts_csv=args.halts,
+            max_anchor_age_minutes=args.max_anchor_age_minutes,
+            max_exit_age_minutes=args.max_exit_age_minutes,
         )
         with args.output.open("x", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)
