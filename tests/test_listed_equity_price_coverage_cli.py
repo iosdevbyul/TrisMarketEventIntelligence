@@ -152,7 +152,7 @@ def test_real_quote_snapshot_recovers_complete_instrument_without_date_splice(
             for symbol, price in (
                 ("CPI.L", 80), ("ISF.L", 800), ("NVDA", 200), ("SPY", 450)
             )
-            for day in ("2026-11-20", "2026-11-21")
+            for day in ("2026-11-19", "2026-11-20")
         ], {
             "missingSymbols": [], "researchOnly": True,
             "pointInTimeArchive": False,
