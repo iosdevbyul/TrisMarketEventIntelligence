@@ -65,7 +65,7 @@ tr.data-row{cursor:pointer}tr.data-row:hover{background:#1a2738}tr.data-row.sele
 <div class="metric"><div class="metric-label">수집된 전체 기사</div><div class="metric-num" id="articlesCount">—</div><div class="metric-foot">SQLite 원본 기사</div></div>
 <div class="metric"><div class="metric-label">추출된 이벤트</div><div class="metric-num" id="eventsCount">—</div><div class="metric-foot">경제·시장 이벤트 레코드</div></div>
 <div class="metric"><div class="metric-label">시장 영향 분석</div><div class="metric-num" id="impactsCount">—</div><div class="metric-foot">방향·섹터 판단 기록</div></div>
-<div class="metric"><div class="metric-label">분석 실행 기록</div><div class="metric-num" id="runsCount">—</div><div class="metric-foot">결과 없음도 실행으로 집계</div></div>
+<div class="metric"><div class="metric-label">자동 Gemma 분석 완료 / 실패</div><div class="metric-num" id="runsCount">—</div><div class="metric-foot" id="runsFoot">분석 처리 현황 불러오는 중</div></div>
 </div>
 <div id="error" hidden class="err"></div>
 <div class="dashboard">
@@ -142,7 +142,12 @@ const r=await fetch('/api/v1/dashboard?limit=300'+(source?'&source='+encodeURICo
 if(!r.ok)throw Error('서버 응답 '+r.status+' — 뉴스 DB 연결을 확인하세요.');
 current=await r.json();
 $('articlesCount').textContent=n(current.totals.articles);$('eventsCount').textContent=n(current.totals.events);
-$('impactsCount').textContent=n(current.totals.impacts);$('runsCount').textContent=n(current.totals.analysisRuns);
+$('impactsCount').textContent=n(current.totals.impacts);
+const auto=current.automaticAnalysisCounts||{};
+$('runsCount').textContent=n(auto.COMPLETED);
+const errors=current.automaticFailureCodes||{};
+const byCode=Object.entries(errors).map(([code,count])=>code+': '+count).join(', ');
+$('runsFoot').textContent='완료 '+n(auto.COMPLETED)+' · 실패 '+n(auto.FAILED)+(byCode?' · '+byCode:'');
 $('lastObserved').textContent='최근 기사 최초 관측: '+date(current.lastArticleDetectedAt);
 $('connection').replaceChildren(elt('span',null,'dot ok'),document.createTextNode(' 로컬 DB 연결됨'));
 const select=$('sourceFilter');const selectedSource=select.value;select.replaceChildren(new Option('모든 출처',''));
