@@ -73,7 +73,10 @@ def test_policy_event_requires_separate_source_backed_impact_step() -> None:
         assert payload["messages"][0]["content"] != calls[0]["messages"][0]["content"]
         user = json.loads(payload["messages"][1]["content"])
         assert user["extractedEvent"]["eventKind"] == "POLICY_DECISION"
-        assert user["extractedEvent"]["evidence_quote"] in _request()["body"]
+        assert user["extractedEvent"]["evidence_quote"] in (
+            "The committee announced a new monetary policy decision. "
+            "The policy action may affect funding conditions."
+        )
         return httpx.Response(200, json={
             "message": {"content": json.dumps({
                 "summary": "Policy decision affects funding conditions",
@@ -86,11 +89,18 @@ def test_policy_event_requires_separate_source_backed_impact_step() -> None:
             })},
         })
 
+    policy_request = {
+        **_request(),
+        "article": {**_request()["article"], "title": "Federal Reserve issues policy statement"},
+        "body": ("The committee announced a new monetary policy decision. "
+                 "The policy action may affect funding conditions."),
+    }
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = analyze_staged(client, "gemma4:e2b", _request())
+        result = analyze_staged(client, "gemma4:e2b", policy_request)
     assert len(calls) == 2
     assert result["analysis"]["impacts"][0]["target_key"] == "banking system"
-    assert result["analysis"]["impacts"][0]["evidence_quote"] in _request()["body"]
+    assert result["analysis"]["impacts"][0]["evidence_quote"] in policy_request["body"]
+    assert result["eventAssessment"]["status"] == "UNVERIFIED"
 
 
 def test_prior_market_observation_is_not_projected_as_new_return() -> None:
@@ -148,3 +158,60 @@ def test_staged_pilot_writes_create_only_and_never_modifies_source_database(
     assert hashlib.sha256(db_path.read_bytes()).hexdigest() == first
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM article_full_text").fetchone()[0] == 3
+
+
+def test_meeting_schedule_labeled_policy_decision_is_withheld_for_review() -> None:
+    request = _request()
+    request["article"]["title"] = (
+        "Federal Reserve announces revised tentative schedule of "
+        "Federal Open Market Committee meetings in 2027"
+    )
+    request["body"] = (
+        "Federal Reserve announces revised tentative schedule of Federal "
+        "Open Market Committee meetings in 2027. "
+        "The Federal Reserve announced a revised tentative schedule of "
+        "Federal Open Market Committee meetings in 2027."
+    )
+    calls = []
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(http_request.content))
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps(_event("POLICY_DECISION"))},
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze_staged(client, "gemma4:e2b", request)
+
+    assert len(calls) == 1
+    assert result["event"]["eventKind"] == "POLICY_DECISION"
+    assert result["eventAssessment"]["status"] == "REVIEW_REQUIRED"
+    assert "SOURCE_SCHEDULE_KIND_CONFLICT" in result["eventAssessment"]["flags"]
+    assert result["impactDecisionStatus"] == "WITHHELD_EVENT_REVIEW"
+    assert result["analysis"]["impacts"] == []
+    assert result["eventFactVerified"] is False
+
+
+def test_fomc_minutes_policy_decision_requires_timing_review() -> None:
+    request = _request()
+    request["article"]["title"] = (
+        "Minutes of the Federal Open Market Committee, September 15-16, 2026"
+    )
+    request["body"] = (
+        "Minutes of the Federal Open Market Committee. "
+        "Treasury yields increased over the intermeeting period."
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps(_event("POLICY_DECISION"))},
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze_staged(client, "gemma4:e2b", request)
+
+    assert result["impactDecisionStatus"] == "WITHHELD_EVENT_REVIEW"
+    assert result["eventAssessment"]["flags"] == [
+        "MINUTES_DECISION_TIMING_REVIEW"
+    ]
+    assert result["analysis"]["impacts"] == []
