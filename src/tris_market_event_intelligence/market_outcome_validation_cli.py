@@ -273,6 +273,7 @@ def evaluate(
             detail.append(item)
     metrics = {}
     baselines = {}
+    relative_baselines = {}
     for horizon in HORIZONS:
         correct = summaries[f"{horizon}d:CORRECT"]
         wrong = summaries[f"{horizon}d:INCORRECT"]
@@ -297,6 +298,24 @@ def evaluate(
             "alwaysDown": sum(direction == "DOWN" for direction in comparable),
             "alwaysNeutral": sum(direction == "NEUTRAL" for direction in comparable),
             "meaning": "Descriptive constant-class agreement on the same scored cohort",
+        }
+        # Relative baseline must use the SAME forecasts whose relative
+        # verdicts are scored. Do not quietly compare different denominators.
+        relative_comparable = [
+            row["horizons"][HORIZONS.index(horizon)]["relativeActualDirection"]
+            for row in detail
+            if len(row["horizons"]) == len(HORIZONS)
+            and row["horizons"][HORIZONS.index(horizon)]["relativeVerdict"]
+            in {"CORRECT", "INCORRECT"}
+        ]
+        relative_baselines[f"{horizon}d"] = {
+            "denominator": len(relative_comparable),
+            "alwaysUp": sum(direction == "UP" for direction in relative_comparable),
+            "alwaysDown": sum(direction == "DOWN" for direction in relative_comparable),
+            "alwaysNeutral": sum(
+                direction == "NEUTRAL" for direction in relative_comparable
+            ),
+            "meaning": "Benchmark-relative constant-class agreement on same scored cohort",
         }
         metrics[f"{horizon}d"] = {
             "correct": correct,
@@ -344,6 +363,7 @@ def evaluate(
         "articlesInspected": len(reports), "impactsInspected": len(detail),
         "statusCounts": dict(summaries), "metrics": metrics, "items": detail,
         "constantDirectionBaselines": baselines,
+        "relativeConstantDirectionBaselines": relative_baselines,
         "marketReturnObservedFromSourcedDailyClose": True,
         "prospectivePredictionAccuracy": None,
         "predictionSealAuthenticated": False,
