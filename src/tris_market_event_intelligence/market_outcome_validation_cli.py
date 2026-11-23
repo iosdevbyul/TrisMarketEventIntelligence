@@ -120,6 +120,7 @@ def evaluate(
     articles_dir: Path, mappings_csv: Path, prices_csv: Path, *,
     price_source_description: str,
     news_db: Path | None = None,
+    price_manifest: Path | None = None,
 ) -> dict:
     """Generate a descriptive backtest; never represent retrospective runs as live forecasts."""
     if not price_source_description.strip():
@@ -128,6 +129,13 @@ def evaluate(
         raise ValueError("Existing nonsymlink Gemma result directory required")
     mappings = _mappings(mappings_csv)
     prices = _prices(prices_csv)
+    price_manifest_verified = False
+    if price_manifest is not None:
+        provenance = _load_json(price_manifest)
+        if (provenance.get("outputSha256") != _sha(prices_csv)
+                or provenance.get("mappingsSha256") != _sha(mappings_csv)):
+            raise ValueError("Price recovery manifest SHA mismatch")
+        price_manifest_verified = True
     source_audit = inspect_live_news(news_db, limit=3000) if news_db else None
     if source_audit and source_audit["truncated"]:
         raise ValueError("Operational news source audit truncated")
@@ -277,6 +285,12 @@ def evaluate(
             and row["horizons"][HORIZONS.index(horizon)]["verdict"]
             in {"CORRECT", "INCORRECT"}
         ]
+        comparable_rows = [
+            row for row in detail
+            if len(row["horizons"]) == len(HORIZONS)
+            and row["horizons"][HORIZONS.index(horizon)]["verdict"]
+            in {"CORRECT", "INCORRECT"}
+        ]
         baselines[f"{horizon}d"] = {
             "denominator": len(comparable),
             "alwaysUp": sum(direction == "UP" for direction in comparable),
@@ -285,7 +299,15 @@ def evaluate(
             "meaning": "Descriptive constant-class agreement on the same scored cohort",
         }
         metrics[f"{horizon}d"] = {
-            "correct": correct, "incorrect": wrong,
+            "correct": correct,
+            "distinctArticlesScored": len({r["articleId"] for r in comparable_rows}),
+            "distinctPublicationDatesScored": len({
+                r["publishedAt"][:10] for r in comparable_rows
+            }),
+            "distinctStoryCandidateGroupsScored": len({
+                r["storyCandidateId"] for r in comparable_rows
+                if r["storyCandidateId"] is not None
+            }), "incorrect": wrong,
             "abstained": summaries[f"{horizon}d:ABSTAINED"],
             "unavailable": summaries[f"{horizon}d:UNAVAILABLE"],
             "accuracy": correct / (correct + wrong) if correct + wrong else None,
@@ -314,6 +336,10 @@ def evaluate(
         "priceBasis": "source_provided_adjusted_close",
         "priceSource": price_source_description,
         "pricesSha256": _sha(prices_csv), "mappingsSha256": _sha(mappings_csv),
+        "priceRecoveryManifestVerified": price_manifest_verified,
+        "priceRecoveryManifestSha256": (
+            _sha(price_manifest) if price_manifest is not None else None
+        ),
         "articlesInspected": len(reports), "impactsInspected": len(detail),
         "statusCounts": dict(summaries), "metrics": metrics, "items": detail,
         "constantDirectionBaselines": baselines,
@@ -339,6 +365,8 @@ def main() -> None:
     parser.add_argument("--mappings", type=Path, required=True)
     parser.add_argument("--prices", type=Path, required=True)
     parser.add_argument("--price-source", required=True)
+    parser.add_argument("--price-manifest", type=Path,
+                        help="Optional SHA-pinned recovery manifest for the exact price CSV")
     parser.add_argument("--news-db", type=Path,
                         help="Optional real operational news.sqlite3 source identity check")
     parser.add_argument("--output", type=Path, required=True)
@@ -349,6 +377,7 @@ def main() -> None:
         result = evaluate(
             args.gemma_dir, args.mappings, args.prices,
             price_source_description=args.price_source, news_db=args.news_db,
+            price_manifest=args.price_manifest,
         )
         with args.output.open("x", encoding="utf-8") as stream:
             json.dump(result, stream, indent=2, ensure_ascii=False)
