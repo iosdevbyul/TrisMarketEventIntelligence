@@ -107,3 +107,84 @@ def test_duplicate_article_ids_rejected(tmp_path):
     (folder / "duplicate.json").write_bytes((folder / "1.json").read_bytes())
     with pytest.raises(ValueError, match="Duplicate"):
         evaluate(folder, mappings, prices, price_source_description="fixture")
+
+
+def _operational_db_for_fixture(tmp_path: Path, folder: Path) -> Path:
+    import sqlite3
+
+    from test_operational_news_pit_readiness_cli import create_db
+
+    db_path = tmp_path / "news.sqlite3"
+    create_db(db_path)
+    item_path = folder / "1.json"
+    gemma = json.loads(item_path.read_text(encoding="utf-8"))
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "UPDATE articles SET published_at=?, detected_at=? WHERE id=1",
+            ("2026-01-05T15:00:00+00:00", "2026-01-05T15:30:00+00:00"),
+        )
+        db.execute("UPDATE captures SET fetched_at=? WHERE id=1",
+                   ("2026-01-05T15:30:00+00:00",))
+        db.execute("UPDATE article_full_text SET observed_at=? WHERE article_id=1",
+                   ("2026-01-05T15:45:00+00:00",))
+        digest = db.execute(
+            "SELECT body_sha256 FROM article_full_text WHERE article_id=1"
+        ).fetchone()[0]
+    gemma["article"].update({
+        "url": "https://example.org/article",
+        "detectedAt": "2026-01-05T15:30:00+00:00",
+        "bodySha256": digest,
+    })
+    item_path.write_text(json.dumps(gemma), encoding="utf-8")
+    return db_path
+
+
+def test_real_db_identity_gates_daily_market_outcome(tmp_path: Path) -> None:
+    folder, mappings, prices = _fixture(tmp_path)
+    news_db = _operational_db_for_fixture(tmp_path, folder)
+    before = news_db.read_bytes()
+    report = evaluate(
+        folder, mappings, prices, news_db=news_db,
+        price_source_description="synthetic comparison",
+    )
+    assert news_db.read_bytes() == before
+    assert report["operationalNewsDatabaseAudited"] is True
+    assert report["items"][0]["sourceAuditStatus"] == "STORED_ORIGINAL_SHA_MATCHED"
+    assert report["items"][0]["horizons"][0]["dataStatus"] == "COMPLETED"
+    assert report["prospectivePredictionAccuracy"] is None
+    assert report["trainingEligible"] is False
+    assert report["constantDirectionBaselines"]["1d"]["denominator"] == 1
+    assert report["constantDirectionBaselines"]["1d"]["alwaysUp"] == 1
+
+
+def test_mismatched_gemma_digest_withholds_daily_score(tmp_path: Path) -> None:
+    folder, mappings, prices = _fixture(tmp_path)
+    news_db = _operational_db_for_fixture(tmp_path, folder)
+    article_path = folder / "1.json"
+    item = json.loads(article_path.read_text())
+    item["article"]["bodySha256"] = "0" * 64
+    article_path.write_text(json.dumps(item), encoding="utf-8")
+    result = evaluate(
+        folder, mappings, prices, news_db=news_db,
+        price_source_description="synthetic comparison",
+    )
+    target = result["items"][0]
+    assert target["status"] == "NEWS_SOURCE_NOT_ADMITTED"
+    assert target["sourceAuditStatus"] == "NEWS_SOURCE_IDENTITY_MISMATCH"
+    assert target["horizons"] == []
+    assert result["metrics"]["1d"]["denominator"] == 0
+    assert result["metrics"]["1d"]["accuracy"] is None
+    assert result["constantDirectionBaselines"]["1d"]["denominator"] == 0
+
+
+def test_unsealed_reporting_is_not_prospective_accuracy(tmp_path: Path) -> None:
+    folder, mappings, prices = _fixture(tmp_path)
+    result = evaluate(
+        folder, mappings, prices,
+        price_source_description="synthetic comparison",
+    )
+    assert result["marketReturnObservedFromSourcedDailyClose"] is True
+    assert result["prospectivePredictionAccuracy"] is None
+    assert result["predictionSealAuthenticated"] is False
+    assert result["priceProviderIndependentlyAuthenticated"] is False
+    assert result["items"][0]["evaluationClass"] == "RETROSPECTIVE_UNSEALED"
