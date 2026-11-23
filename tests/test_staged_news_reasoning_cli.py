@@ -147,6 +147,9 @@ def test_staged_pilot_writes_create_only_and_never_modifies_source_database(
     assert run1["completed"] == 1
     assert run2["alreadyCompleted"] == 1
     assert run1["failed"] == 0
+    assert run1["reviewRequired"] == 0
+    assert run1["abstainedEventScope"] == 1
+    assert run1["articlesWithMarketImpacts"] == 0
     assert len(calls) == 1
     saved = json.loads(next(output.glob("*.json")).read_text())
     assert saved["schemaVersion"] == "gemma_original_article_review_v2"
