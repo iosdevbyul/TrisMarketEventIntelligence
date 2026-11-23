@@ -133,6 +133,9 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
     cases = []
     matched = 0
     consistent = 0
+    same_counts = 0
+    same_targets = 0
+    same_common_directions = 0
     for article_id in ids:
         present = [run.get(article_id) for run in runs]
         if any(report is None for report in present):
@@ -164,11 +167,34 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
             signatures.append(signature)
             summaries.append(report["analysis"]["summary"].strip())
         stable = all(signature == signatures[0] for signature in signatures[1:])
+        count_stable = all(len(signature) == len(signatures[0])
+                           for signature in signatures[1:])
+        target_sets = [{target for target, _direction in signature}
+                       for signature in signatures]
+        targets_stable = all(targets == target_sets[0] for targets in target_sets[1:])
+        shared = set.intersection(*target_sets) if target_sets else set()
+        direction_maps = [dict(signature) for signature in signatures]
+        common_directions_stable = all(
+            all(direction_map[target] == direction_maps[0][target]
+                for target in shared)
+            for direction_map in direction_maps[1:]
+        )
         if stable:
             consistent += 1
+        if count_stable:
+            same_counts += 1
+        if targets_stable:
+            same_targets += 1
+        if common_directions_stable:
+            same_common_directions += 1
         cases.append({
             "articleId": article_id,
             "status": "STABLE_TARGET_DIRECTIONS" if stable else "DIVERGENT_TARGET_DIRECTIONS",
+            "impactCountsStable": count_stable,
+            "targetSetsIdentical": targets_stable,
+            "sharedTargetDirectionsIdentical": common_directions_stable,
+            "sharedTargets": sorted(shared),
+            "targetsByRun": [sorted(targets) for targets in target_sets],
             "impactsByRun": [
                 [{"target": target, "direction": direction} for target, direction in signature]
                 for signature in signatures
@@ -201,6 +227,13 @@ def repeatability_audit(db_path: Path, folders: list[Path]) -> dict:
         "comparableArticles": matched,
         "stableArticles": consistent,
         "agreement": consistent / matched if matched else None,
+        "sameImpactCountArticles": same_counts,
+        "sameTargetSetArticles": same_targets,
+        "sameSharedTargetDirectionArticles": same_common_directions,
+        "sharedTargetDirectionWarning": (
+            "Common-target direction agreement is vacuously true when "
+            "there are no shared target labels; interpret with sharedTargets"
+        ),
         "cases": cases,
         "limitations": [
             "Agreement checks exact target name and direction, not economic reasoning quality",
