@@ -13,7 +13,6 @@ import pytest
 
 from test_market_outcome_validation_cli import _fixture
 from test_operational_news_pit_readiness_cli import create_db
-
 from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
     _automatically_analyzed,
     evaluate_automatic_outcomes,
