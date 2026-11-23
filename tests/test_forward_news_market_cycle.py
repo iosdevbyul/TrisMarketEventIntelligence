@@ -121,7 +121,6 @@ def test_forward_only_model_does_not_backfill_historical_article(
     model.assert_called_once()
     assert report["completed"] == 1
     assert [row["articleId"] for row in report["results"]] == [2]
-    assert report["freshCaptureCoverage"]["not_existing"] if False else True
     assert report["coverage"]["freshClockRejected"] == 3
     with sqlite3.connect(db) as conn:
         assert conn.execute(
