@@ -217,3 +217,15 @@ def test_recovery_manifest_must_match_actual_historical_price_bytes(tmp_path: Pa
             price_source_description="synthetic comparison",
             price_manifest=manifest,
         )
+
+
+def test_relative_naive_baseline_uses_same_scored_impact_rows(tmp_path: Path) -> None:
+    folder, mappings, prices = _fixture(tmp_path)
+    report = evaluate(folder, mappings, prices, price_source_description="synthetic")
+    absolute = report["constantDirectionBaselines"]["1d"]
+    relative = report["relativeConstantDirectionBaselines"]["1d"]
+    assert absolute["denominator"] == report["metrics"]["1d"]["denominator"] == 1
+    assert relative["denominator"] == report["metrics"]["1d"]["relative"]["denominator"] == 1
+    assert relative["alwaysUp"] == 1
+    assert relative["alwaysDown"] == 0
+    assert report["prospectivePredictionAccuracy"] is None
