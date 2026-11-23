@@ -22,6 +22,7 @@ from tris_market_event_intelligence.market_outcome_validation_cli import (
 )
 from tris_market_event_intelligence.market_price_recovery_cli import _observations
 from tris_market_event_intelligence.market_proxy_cohort_cli import CSV_FIELDS
+from tris_market_event_intelligence.typed_market_targets_cli import KNOWN
 
 REVIEW_ORIGINAL_FIELDS = (
     "target", "impacts", "articles", "article_ids", "predictions", "issue",
@@ -158,6 +159,11 @@ def apply_review(
             if semantic_plan is None:
                 raise ValueError("Semantic plan required before approving equity mapping")
             category = semantic_by_target[target].get("targetKind")
+            known = KNOWN.get(target)
+            if known is None or known[0] != category or known[2] != (
+                semantic_by_target[target].get("candidateRelatedListedParentSymbol") or ""
+            ):
+                raise ValueError("Typed research metadata does not match source catalog")
             if category != "LISTED_PARENT_CANDIDATE":
                 raise ValueError(
                     f"Equity scoring not suitable for target measurement type: "
