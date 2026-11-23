@@ -245,9 +245,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             finally:
                 if owned:
                     session.close()
-            commitment_audit = (
-                commitment_audit
-            )
+            commitment_audit = inspect_commitments(db) if seal_forecasts else None
     collection_status = collection.get("status") if collection is not None else None
     return {
         "status": (
@@ -263,9 +261,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
         "marketPricesAnalyzed": False,
         "forecastPrecommitmentsEnabled": seal_forecasts,
         "newForecastCommitments": commitment_counts if seal_forecasts else {},
-        "forecastCommitmentAudit": (
-            inspect_commitments(db) if seal_forecasts else None
-        ),
+        "forecastCommitmentAudit": commitment_audit,
         "forecastFirstPublicAvailabilityIndependentlyVerified": False,
         "forecastExternalTimestampAuthenticated": False,
     }
