@@ -7,7 +7,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -171,7 +171,10 @@ def test_real_price_refresh_rechecks_only_source_identical_cohort(
         "tris_market_event_intelligence.incremental_daily_market_maturity_cli.collect_prices"
     ) as collection, patch(
         "tris_market_event_intelligence.incremental_daily_market_maturity_cli.evaluate_automatic_outcomes"
-    ) as evaluator:
+    ) as evaluator, patch(
+        "tris_market_event_intelligence.incremental_daily_market_maturity_cli.datetime"
+    ) as clock:
+        clock.now.return_value = datetime(2026, 11, 24, 12, tzinfo=UTC)
         collection.return_value = (
             quotes(), {"missingSymbols": [], "provider": "synthetic fixture"},
         )
