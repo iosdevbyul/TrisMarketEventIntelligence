@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tris_market_event_intelligence import listed_equity_price_coverage_cli as coverage
 from tris_market_event_intelligence.listed_equity_price_coverage_cli import (
     prepare_direct_equities,
     run,
@@ -137,13 +138,9 @@ def test_real_quote_snapshot_recovers_complete_instrument_without_date_splice(
     outcomes, mappings, prices = fixtures(tmp_path)
     db = tmp_path / "news.sqlite3"
     db.write_bytes(b"synthetic source for mocked evaluation")
-    with patch(
-        "tris_market_event_intelligence.listed_equity_price_coverage_cli.importlib.import_module"
-    ) as yf, patch(
-        "tris_market_event_intelligence.listed_equity_price_coverage_cli.collect_prices"
-    ) as collect, patch(
-        "tris_market_event_intelligence.listed_equity_price_coverage_cli.evaluate_automatic_outcomes"
-    ) as evaluate:
+    with patch.object(coverage, "collect_prices") as collect, patch.object(
+        coverage, "evaluate_automatic_outcomes"
+    ) as evaluate, patch.object(coverage.importlib, "import_module") as yf:
         collect.return_value = ([
             {
                 "symbol": symbol, "date": day, "adjusted_close": str(price),
