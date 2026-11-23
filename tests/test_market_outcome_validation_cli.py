@@ -188,3 +188,32 @@ def test_unsealed_reporting_is_not_prospective_accuracy(tmp_path: Path) -> None:
     assert result["predictionSealAuthenticated"] is False
     assert result["priceProviderIndependentlyAuthenticated"] is False
     assert result["items"][0]["evaluationClass"] == "RETROSPECTIVE_UNSEALED"
+
+
+def test_recovery_manifest_must_match_actual_historical_price_bytes(tmp_path: Path) -> None:
+    folder, mappings, prices = _fixture(tmp_path)
+    manifest = tmp_path / "prices.csv.manifest.json"
+    manifest.write_text(json.dumps({
+        "schemaVersion": "market_price_recovery_v1",
+        "outputSha256": hashlib.sha256(prices.read_bytes()).hexdigest(),
+        "mappingsSha256": hashlib.sha256(mappings.read_bytes()).hexdigest(),
+        "completeDateCoverageGuaranteed": False,
+    }), encoding="utf-8")
+    report = evaluate(
+        folder, mappings, prices, price_source_description="synthetic comparison",
+        price_manifest=manifest,
+    )
+    assert report["priceRecoveryManifestVerified"] is True
+    assert report["metrics"]["1d"]["distinctArticlesScored"] == 1
+    assert report["metrics"]["1d"]["distinctPublicationDatesScored"] == 1
+    assert report["metrics"]["1d"]["distinctStoryCandidateGroupsScored"] == 0
+    manifest.write_text(json.dumps({
+        "outputSha256": "0" * 64,
+        "mappingsSha256": hashlib.sha256(mappings.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
+    with pytest.raises(ValueError, match="SHA mismatch"):
+        evaluate(
+            folder, mappings, prices,
+            price_source_description="synthetic comparison",
+            price_manifest=manifest,
+        )
