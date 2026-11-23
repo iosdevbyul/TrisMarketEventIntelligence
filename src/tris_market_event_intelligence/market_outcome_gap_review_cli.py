@@ -53,7 +53,7 @@ def analyze_gaps(report_path: Path) -> tuple[dict[str, object], list[dict[str, o
     for impact in impacts:
         status = impact.get("status")
         if not isinstance(status, str):
-            raise ValueError("Missing impact status")
+            raise TypeError("Missing impact status")
         if status not in ALLOWED and status not in {
             "NO_ENTRY_SESSION", "BENCHMARK_ENTRY_MISSING",
         }:
@@ -70,7 +70,7 @@ def analyze_gaps(report_path: Path) -> tuple[dict[str, object], list[dict[str, o
             raise ValueError("Missing article identity or target")
         gate = impact.get("sourceAuditStatus", "SOURCE_DB_NOT_REQUESTED")
         if not isinstance(gate, str):
-            raise ValueError("Invalid source status")
+            raise TypeError("Invalid source status")
         status_counts[status] += 1
         sources[gate] += 1
         if status == "NEWS_SOURCE_NOT_ADMITTED":
