@@ -321,3 +321,67 @@ intermediate classification, exact source quotation and limitations.
 Compare with the saved v3 one-stage evidence **on the identical article
 IDs**, examine both stability and whether the event fact and market
 reasoning make sense. No comparisons to stock prices or returns occur.
+
+## Post-pilot reality check: 75% apparent stability was mostly empty outputs
+
+Actual developer-run staged pilot against the five original FOMC articles
+(2026-11-23) produced:
+
+- Run A: 5 completed, **all five classified POLICY_DECISION**, four with
+  zero impacts, one with one impact.
+- Run B: 4 completed, **all five classified POLICY_DECISION**, three
+  completed articles with zero impacts, and article #4 failed with
+  `NON_MARKET_TARGET`.
+- Original repeatability audit: 4 comparable, 3 exact matches (75%),
+  **zero shared market targets**, 0 conflicting direction pairs.
+
+This **does not demonstrate improved economic judgment**. The three
+matching results were empty/empty abstentions. Article #1 is explicitly
+titled a revised *FOMC meeting schedule* but was classified as
+`POLICY_DECISION` in both runs, a source-level mistake. Article #4
+is titled FOMC *minutes*, not necessarily a newly enacted policy decision.
+Do not promote this pilot into the production automatic worker based on 75%.
+
+### Safeguards added after inspecting these results
+
+- Independent `news_event_source_review.assess_event` flags only narrow,
+  source-supported conflicts: a meeting-calendar heading **and matching
+  article text** contradicted by a non-schedule event kind; FOMC/discount
+  meeting minutes classified as a fresh policy decision without careful
+  timing interpretation. The raw Gemma event is kept unchanged.
+- If such a conflict is detected, second-stage market-impact inference is
+  **withheld**, `impactDecisionStatus=WITHHELD_EVENT_REVIEW`,
+  `eventAssessment.status=REVIEW_REQUIRED`, with original evidence
+  available for review. An empty impact list in this situation means
+  **no trusted decision was produced**, not proof of zero economic impact.
+- Explicit `SCHEDULE_ONLY` or `RETROSPECTIVE_MARKET` is recorded
+  as `ABSTAINED_EVENT_SCOPE`; no direction is inferred.
+- Pilot console and summary distinguish completed model outputs from
+  `reviewRequired`, `abstainedEventScope`, and
+  `articlesWithMarketImpacts`.
+- The read-only repeatability audit now separately counts
+  `stableEmptyArticles`, `stableNonEmptyArticles`,
+  `mixedEmptyNonEmptyArticles`, `matchingEventKindArticles`,
+  and `eventReviewRequiredArticles`. A matching pair of empty impact
+  sets must **not** headline as successful directional reasoning.
+
+**Diagnose the already saved pilot without a single extra Gemma call:**
+
+```bash
+DATA="$HOME/Library/Application Support/TrisMarketEventIntelligence"
+python -m tris_market_event_intelligence.news_collection_semantic_audit_cli \\
+  --db "$DATA/news.sqlite3" \\
+  --run "$DATA/news-staged-reasoning-run-1" \\
+  --run "$DATA/news-staged-reasoning-run-2" \\
+  --output "$DATA/news-staged-reasoning-audit-diagnostic-v2.json"
+```
+
+Old pilot files predate source-review annotations, so
+`eventReviewRequiredArticles` will be zero in that *historical*
+report; this does **not** mean the old extractions were source-verified.
+The new source gate applies only to future runs in new output folders.
+Original v1/v2/v3 saved outputs are intentionally never rewritten.
+
+The next actual model investigation should focus on the *event fact and
+classification* of articles #1–#5, not on increasing the proportion
+of `impacts=[]` responses or making 75% appear higher.
