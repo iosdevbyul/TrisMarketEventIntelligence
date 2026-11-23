@@ -275,3 +275,32 @@ Existing output files cannot be overwritten.
 **Stage 1 remains incomplete** until the actual machine report is inspected
 and independently supported publication, issuer and price-source evidence
 is available. This avoids claiming progress because test fixtures passed.
+
+
+## 2026-11-23 real Mac source audit and automatic ledger distinction
+
+The read-only CLI ran successfully on the operator's local news.sqlite3:
+858 scanned / 858 available, with reported flags for 72 incomplete
+original bodies, 83 exact URL repeats and 87 articles grouped with
+earlier story candidates. These counts overlap and are not a sum of
+independent excluded cases. The audit reported 858
+`NO_COMPLETED_AUTOMATIC_GEMMA_ANALYSIS` flags, but this is **not**
+evidence that Gemma never processed the articles: the initial implementation
+counted absence of the optional `automatic_news_analyses` table as
+absence of completed model results.
+
+The repaired audit now distinguishes:
+- `automaticAnalysisLedgerCoverage=TABLE_NOT_PRESENT`:
+  optional #261 pipeline table is not in this DB. Individual rows say
+  `LEDGER_NOT_PRESENT`, and completion count is null, not zero.
+- `TABLE_PRESENT` with a missing completed row:
+  `NO_COMPLETED_AUTOMATIC_GEMMA_ANALYSIS` is a valid,
+  **pipeline-specific** diagnostic only.
+- Completed #261 ledger entries do not account for separate historical
+  Gemma JSON research outputs, including the manual original-article
+  batch workflow.
+
+Only the user's prior **unrepaired** report is available in the current
+investigation. Re-run the updated audit to establish actual ledger status;
+no inference about model quality or market price is permitted from the
+original 858 flags. The output remains read-only and training-ineligible.
