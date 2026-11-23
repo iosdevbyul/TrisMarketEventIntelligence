@@ -28,6 +28,7 @@ def _run(path: Path, digest: str, *, direction: str = "UP") -> Path:
         },
         "analysis": {
             "summary": "Policy decision",
+            "limitations": "Source alone cannot prove a market outcome.",
             "impacts": [{
                 "target": "Financial Markets",
                 "direction": direction,
@@ -92,6 +93,7 @@ def test_repeatability_identifies_divergent_direction(tmp_path: Path) -> None:
     assert result["stableArticles"] == 0
     assert result["agreement"] == 0
     assert result["cases"][0]["status"] == "DIVERGENT_TARGET_DIRECTIONS"
+    assert result["cases"][0]["analysisByRun"][0]["impacts"][0]["evidenceQuote"]
 
 
 def test_missing_run_does_not_count_as_agreement(tmp_path: Path) -> None:
