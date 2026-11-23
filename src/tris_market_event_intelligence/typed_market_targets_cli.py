@@ -13,10 +13,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from tris_market_event_intelligence.market_outcome_gap_review_cli import (
-    QUEUE_COLUMNS,
-    _hash as _unused_hash,
-)
+from tris_market_event_intelligence.market_outcome_gap_review_cli import QUEUE_COLUMNS
 from tris_market_event_intelligence.market_outcome_validation_cli import _csv
 
 MAX_BYTES = 8 * 1024 * 1024
