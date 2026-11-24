@@ -380,7 +380,7 @@ def collect_full_text(
         newest = db.execute(base.format(order="DESC", scope=scope), (newest_slots,)).fetchall()
         oldest = db.execute(base.format(order="ASC", scope=scope), (oldest_slots,)).fetchall()
         retry_query = f"""
-            SELECT a.id, a.url FROM articles a
+            SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
             WHERE f.status='INCOMPLETE' AND {scope}
               AND (f.retry_after <= ? OR (a.source GLOB 'sec_8k_[0-9]*'
@@ -428,8 +428,10 @@ def collect_full_text(
                           AND article_id IN (SELECT id FROM articles WHERE url=?)
                         LIMIT 1
                     """, (url,)).fetchone()
-                if existing and (not source.startswith("sec_8k_") or existing[6] == "SEC_BUNDLE") and classify(existing[5], url=url, digest=existing[2],
-                                         sparse=existing[7]) == "TEXT_CANDIDATE":
+                if (existing
+                        and (not source.startswith("sec_8k_") or existing[6] == "SEC_BUNDLE")
+                        and classify(existing[5], url=url, digest=existing[2],
+                                     sparse=existing[7]) == "TEXT_CANDIDATE"):
                     row = dict(zip(("status","source_url","body_sha256",
                                     "raw_sha256","raw_payload","body",
                                     "format","sparse_pages"), existing))
