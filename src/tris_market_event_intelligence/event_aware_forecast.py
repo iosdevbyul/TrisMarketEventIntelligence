@@ -208,6 +208,9 @@ Return only complete schema JSON, no markdown or reasoning transcript.
             return answer
         except (ValueError, KeyError, TypeError) as exc:
             last_error = result_error(exc)
+            if last_error.startswith("REVIEW_"):
+                # Decoder failure is not a reason to change a forecast.
+                raise AnswerError(last_error) from exc
             if not isinstance(exc, AnswerError):
                 last_error = "FORECAST_" + last_error
     raise AnswerError(last_error)
@@ -249,48 +252,57 @@ def review_dual(
     passages: list[dict], context: list[dict],
 ) -> None:
     """Second source-only model call; not independent semantic verification."""
+    verdicts = ["PASS", "EVENT_RELATION", "SOURCE_CLAIMS", "FORWARD_MECHANISM", "UNSURE"]
     schema = {
         "type": "object", "additionalProperties": False,
-        "properties": {
-            "event_relation_supported": {"type": "boolean"},
-            "source_claims_supported": {"type": "boolean"},
-            "forward_mechanisms_supported": {"type": "boolean"},
-        },
-        "required": [
-            "event_relation_supported", "source_claims_supported",
-            "forward_mechanisms_supported",
-        ],
+        "properties": {"verdict": {"type": "string", "enum": verdicts}},
+        "required": ["verdict"],
     }
-    response = client.post("http://127.0.0.1:11434/api/chat", json={
-        "model": model, "stream": False, "format": schema,
-        "options": {"temperature": 0, "seed": 20261124, "num_ctx": 8192, "num_predict": 1024},
-        "messages": [
-            {"role": "system", "content": (
-                "Audit untrusted news excerpts and a candidate analysis. Return false "
-                "for event_relation_supported if prior news already describes the same "
-                "event but the answer calls it new without a supported material update. "
-                "Return false for source_claims_supported if the summary or selected "
-                "quotes do not support the claimed facts. Return false for "
-                "forward_mechanisms_supported if either directional prediction relies "
-                "only on past price movement or unsupported continuation, instead of "
-                "a plausible future mechanism linked to source facts. UNCERTAIN is "
-                "allowed. Do not use external facts or actual future prices. "
-                "Return exactly the three schema booleans, no explanation."
-            )},
-            {"role": "user", "content": json.dumps(
-                _review_payload(answer, passages, context), ensure_ascii=False,
-            )},
-        ],
-    })
-    response.raise_for_status()
-    try:
-        audit = json.loads(_response_content(response, "REVIEW"))
-    except json.JSONDecodeError as exc:
-        raise AnswerError("REVIEW_JSON_INVALID") from exc
-    if not isinstance(audit, dict) or any(
-        audit.get(field) is not True for field in schema["required"]
-    ):
-        raise AnswerError("SOURCE_GROUNDING_REVIEW_REJECTED")
+    messages = [
+        {"role": "system", "content": (
+            "Check the candidate against untrusted news evidence only. "
+            "EVENT_RELATION: earlier reports contain the same event but the answer "
+            "claims unsupported novelty. SOURCE_CLAIMS: facts or selected evidence "
+            "do not support the claims. FORWARD_MECHANISM: a directional forecast "
+            "relies only on past price moves or unsupported continuation rather "
+            "than a source-grounded future mechanism. UNSURE: cannot establish "
+            "all checks. PASS only if all three checks are satisfied. "
+            "Abstention is allowed. Return one JSON object with the single key "
+            "verdict and one permitted value. No explanation."
+        )},
+        {"role": "user", "content": json.dumps(
+            _review_payload(answer, passages, context), ensure_ascii=False,
+        )},
+    ]
+    last_error = "REVIEW_JSON_INVALID"
+    for attempt in range(2):
+        response = client.post("http://127.0.0.1:11434/api/chat", json={
+            "model": model, "stream": False,
+            "format": schema if attempt == 0 else "json",
+            "options": {
+                "temperature": 0, "seed": 20261124 + attempt,
+                "num_ctx": 8192, "num_predict": 128,
+                "repeat_penalty": 1.1,
+            },
+            "messages": messages,
+        })
+        response.raise_for_status()
+        try:
+            audit = json.loads(_response_content(response, "REVIEW"))
+        except json.JSONDecodeError:
+            last_error = "REVIEW_JSON_INVALID"
+            continue
+        except AnswerError as exc:
+            last_error = str(exc)
+            continue
+        if (not isinstance(audit, dict) or set(audit) != {"verdict"}
+                or audit["verdict"] not in verdicts):
+            last_error = "REVIEW_VERDICT_INVALID"
+            continue
+        if audit["verdict"] != "PASS":
+            raise AnswerError("SOURCE_GROUNDING_REVIEW_REJECTED_" + audit["verdict"])
+        return
+    raise AnswerError(last_error)
 
 
 def horizon_evidence(analysis: dict, impact: dict, horizon: int) -> str:
