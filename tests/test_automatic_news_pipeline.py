@@ -164,3 +164,53 @@ def test_newest_news_not_starved_by_existing_historical_backlog(tmp_path):
     assert 12 in selected
     assert 1 in selected
     assert len(set(selected)) == 3
+
+
+def test_sec_only_analyses_include_partial_scope_and_exclude_news(tmp_path):
+    path = tmp_path / "news.sqlite3"
+    body = "The issuer announced a material contract."
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+        CREATE TABLE articles (
+          id INTEGER PRIMARY KEY, source TEXT, url TEXT, title TEXT, summary TEXT,
+          published_at TEXT, detected_at TEXT
+        );
+        CREATE TABLE article_full_text (
+          article_id INTEGER PRIMARY KEY, status TEXT, body TEXT, body_sha256 TEXT,
+          sparse_pages TEXT, format TEXT, error_code TEXT
+        );
+        """)
+        for article_id, source, fmt, error in (
+            (1, "bbc_business", "HTML", None),
+            (2, "sec_8k_789019", "SEC_BUNDLE_PARTIAL", "SEC_EXHIBIT_EMPTY_CONTENT"),
+            (3, "sec_8k_1045810", "SEC_BUNDLE", None),
+            (4, "sec_8k_2488", "HTML", None),
+        ):
+            db.execute("INSERT INTO articles VALUES (?,?,?,?,?,?,?)", (
+                article_id, source, "https://example.org/filing", "Disclosure", None,
+                "2026-11-20T10:00:00+00:00", "2026-11-20T10:01:00+00:00",
+            ))
+            db.execute("INSERT INTO article_full_text VALUES (?,'COMPLETE',?,?,?,?,?)",
+                       (article_id, body, digest, "[]", fmt, error))
+    def answer(_client, _model, request):
+        assert request["article"]["source"].startswith("sec_8k_")
+        return {"summary": "Material contract", "limitations": "Limited", "impacts": []}
+    with patch(
+        "tris_market_event_intelligence.automatic_news_pipeline.ask_gemma",
+        side_effect=answer,
+    ) as ask:
+        first = process(path, collect=False, sec_only=True, limit=24)
+        second = process(path, collect=False, sec_only=True, limit=24)
+    assert first["completed"] == 2
+    assert second["completed"] == 0
+    assert ask.call_count == 2
+    assert not first["forecastPrecommitmentsEnabled"]
+    with sqlite3.connect(path) as db:
+        raw = db.execute(
+            "SELECT analysis_json FROM automatic_news_analyses WHERE article_id=2"
+        ).fetchone()[0]
+    scope = json.loads(raw)["_sourceScope"]
+    assert scope["scope"] == "PRIMARY_WITH_PARTIAL_EXHIBITS"
+    assert scope["missingEvidence"] == "SEC_EXHIBIT_EMPTY_CONTENT"
+    assert scope["historicalResearchOnly"]
