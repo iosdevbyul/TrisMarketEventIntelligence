@@ -19,10 +19,10 @@ from tris_market_event_intelligence.listing_research_workflow import (
 RSS = (
     "<rss><channel>"
     "<item><guid>meta-1</guid><title>Italy fines Meta €805m over users' photos</title>"
-    "<link>https://example.org/meta?utm_source=feed</link></item>"
+    "<link>https://www.bbc.co.uk/news/meta?utm_source=feed</link></item>"
     "<item><guid>ms-1</guid>"
     "<title>Microsoft says services fully restored after day-long global outage</title>"
-    "<link>https://example.org/ms</link></item>"
+    "<link>https://www.bbc.co.uk/news/ms</link></item>"
     "</channel></rss>"
 ).encode()
 

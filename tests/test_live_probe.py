@@ -13,7 +13,7 @@ def test_probe_records_real_collection_metrics_without_claiming_mac_success() ->
             }]})
         return httpx.Response(200, content=b"""<rss><channel><item>
         <title>Consumer Price Index CPI released</title>
-        <link>https://example.org/cpi</link><guid>1</guid></item></channel></rss>""")
+        <link>https://www.bbc.co.uk/news/cpi</link><guid>1</guid></item></channel></rss>""")
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as client:
         result = run_probe(client)
