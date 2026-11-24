@@ -12,7 +12,11 @@ from tris_market_event_intelligence.sec_operational_content import (
     documents,
     index_identity,
 )
-from tris_market_event_intelligence.source_article_content import capture, capture_sec, collect_full_text
+from tris_market_event_intelligence.source_article_content import (
+    capture,
+    capture_sec,
+    collect_full_text,
+)
 
 ROOT = "https://www.sec.gov/Archives/edgar/data/789019/000078901926000001/"
 INDEX = ROOT + "0000789019-26-000001-index.htm"
