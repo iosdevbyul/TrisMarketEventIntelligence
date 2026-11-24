@@ -56,7 +56,7 @@ def discover(store: NewsStore, client: httpx.Client, *, cik: int, start: date,
                     raise ValueError("SEC_SUBMISSIONS_TOO_LARGE")
         packet = json.loads(raw)
         if not isinstance(packet, dict):
-            raise ValueError("SEC_SUBMISSIONS_SCHEMA")
+            raise TypeError("SEC_SUBMISSIONS_SCHEMA")
         return bytes(raw), packet, datetime.now(UTC).isoformat()
 
     raw, main, stamp = fetch_page(name)
