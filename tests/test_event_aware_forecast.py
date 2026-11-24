@@ -1,9 +1,9 @@
+import hashlib
 import json
 import sqlite3
 
-import pytest
-import hashlib
 import httpx
+import pytest
 
 from tris_market_event_intelligence.automatic_forecast_precommitment import (
     initialize,
@@ -108,6 +108,8 @@ def test_review_rejects_unsupported_future_mechanism():
             "event_relation_supported": True, "source_claims_supported": True,
             "forward_mechanisms_supported": False,
         })}})
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(ValueError, match="SOURCE_GROUNDING_REVIEW_REJECTED"):
-            review_dual(client, "gemma4:e2b", answer(), [], [])
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(ValueError, match="SOURCE_GROUNDING_REVIEW_REJECTED"),
+    ):
+        review_dual(client, "gemma4:e2b", answer(), [], [])
