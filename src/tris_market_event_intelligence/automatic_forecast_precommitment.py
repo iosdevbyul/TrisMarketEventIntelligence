@@ -12,7 +12,7 @@ import sqlite3
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from tris_market_event_intelligence.event_aware_forecast import horizon_prediction
+from tris_market_event_intelligence.event_aware_forecast import horizon_evidence, horizon_prediction
 from tris_market_event_intelligence.market_outcome_validation_cli import HORIZONS, ZONES, _timestamp
 
 SCHEMA = """
@@ -131,6 +131,7 @@ def record_new_analysis(
                 status = ELIGIBLE
         for horizon in HORIZONS:
             direction, reason = horizon_prediction(analysis, impact, horizon)
+            quote = horizon_evidence(analysis, impact, horizon)
             if direction not in DIRECTIONS or not isinstance(reason, str) or not reason.strip():
                 raise ValueError("Invalid horizon forecast")
             last = db.execute(
