@@ -114,14 +114,26 @@ def main() -> None:
     parser.add_argument("--discover", action="store_true")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--repair", action="store_true")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="One bounded retry of previously failed text analyses")
     args = parser.parse_args()
     if not args.db.is_file() or args.db.is_symlink():
         parser.error("Existing non-symlink DB required")
     if args.repair and not args.run:
         parser.error("--repair requires --run")
     discovery = run_cycle(args.db, selected_sources=SOURCES) if args.discover else None
-    result = (drain(args.db, args.model, max_batches=args.max_batches, repair=args.repair)
-              if args.run else audit(args.db, args.model))
+    if args.retry_failed:
+        if args.run or args.repair or args.discover:
+            parser.error("--retry-failed is a standalone operation")
+        before = audit(args.db, args.model)
+        ids = tuple(row["articleId"] for row in before["pending"]
+                    if row["category"] == "MODEL_FAILED")[:24]
+        result = {"retry": process(args.db, model=args.model, collect=False, media_only=True,
+                                   limit=24, retry_failed_ids=ids) if ids else None,
+                  "coverage": audit(args.db, args.model)}
+    else:
+        result = (drain(args.db, args.model, max_batches=args.max_batches, repair=args.repair)
+                  if args.run else audit(args.db, args.model))
     print(json.dumps({"discovery": discovery, "result": result}, ensure_ascii=False, indent=2))
 
 

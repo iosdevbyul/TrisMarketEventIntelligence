@@ -62,7 +62,8 @@ def initialize(db: sqlite3.Connection) -> None:
 def pending(db: sqlite3.Connection, model: str, limit: int,
             retry_minutes: int, *, fresh_only_minutes: int | None = None,
             observed_now: datetime | None = None, sec_only: bool = False,
-            media_only: bool = False) -> tuple[list[sqlite3.Row], dict[str, int]]:
+            media_only: bool = False,
+            retry_failed_ids: tuple[int, ...] = ()) -> tuple[list[sqlite3.Row], dict[str, int]]:
     db.row_factory = sqlite3.Row
     tables = {r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
@@ -154,6 +155,9 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
             blocked_quality += 1
             continue
         if row["prior_status"] == "FAILED":
+            if row["id"] in retry_failed_ids:
+                ready_retry.append(row)
+                continue
             if row["prior_attempts"] >= 3:
                 continue
             try:
@@ -164,6 +168,12 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
             ready_retry.append(row)
         else:
             ready_new.append(row)
+    if retry_failed_ids:
+        return [row for row in ready_retry if row["id"] in retry_failed_ids][:limit], {
+            "eligible": len(candidates), "missingFullText": missing,
+            "readyNew": len(ready_new), "readyRetry": len(ready_retry),
+            "contentQualityRejected": blocked_quality,
+        }
     if fresh_only_minutes is not None:
         # Fresh-only mode does not borrow spare slots from past article IDs.
         chosen = (ready_new + ready_retry)[:limit]
@@ -207,8 +217,12 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             mappings_path: Path | None = None,
             fresh_only_minutes: int | None = None,
             event_aware: bool = False, sec_only: bool = False,
-            media_only: bool = False) -> dict:
+            media_only: bool = False,
+            retry_failed_ids: tuple[int, ...] = ()) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
+    if retry_failed_ids and (not media_only or collect or seal_forecasts
+                             or len(retry_failed_ids) > 24):
+        raise ValueError("Explicit failed retry requires bounded historical media-only analysis")
     if sec_only and media_only:
         raise ValueError("SEC and media scopes are mutually exclusive")
     if media_only and collect:
@@ -253,6 +267,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                 db, model, limit, retry_minutes,
                 fresh_only_minutes=fresh_only_minutes,
                 observed_now=datetime.now(UTC), sec_only=sec_only, media_only=media_only,
+                retry_failed_ids=retry_failed_ids,
             )
             owned = client is None
             session = client or httpx.Client(
@@ -284,6 +299,8 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                         request["article"]["missingEvidence"] = row["content_error"]
                     try:
                         analysis = (
+                            ask_gemma(session, model, request, recovery=True)
+                            if row["id"] in retry_failed_ids else
                             ask_dual(session, model, request, prior_context(db, request["article"]))
                             if event_aware else ask_gemma(session, model, request)
                         )

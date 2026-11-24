@@ -126,7 +126,7 @@ def result_error(exc: Exception) -> str:
     return "MODEL_RESPONSE_INVALID"
 
 
-def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
+def ask_gemma(client: httpx.Client, model: str, request: dict, *, recovery: bool = False) -> dict:
     passages = evidence_passages(request["body"])
     evidence = {entry["id"]: entry["text"] for entry in passages}
     if not evidence:
@@ -137,6 +137,8 @@ def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
         "bodyTruncated": request["bodyTruncated"],
         "warning": "Choose evidence_id only; exact quotes are attached by Python",
     }
+    if recovery:
+        payload["warning"] += "; return at most three material impacts, each with short reasoning"
     user_message = json.dumps(payload, ensure_ascii=False)
     last_error = "MODEL_RESPONSE_INVALID"
     for attempt in range(2):
@@ -164,6 +166,14 @@ def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
             },
             "messages": messages,
         }
+        if recovery:
+            settings["options"].update(seed=20261124 + attempt, num_predict=3072)
+            settings["messages"].append({"role": "system", "content": (
+                "Return summary, limitations, and impacts as a JSON ARRAY of at most three objects. "
+                "Use source evidence IDs and short reasons. Do not invent a target or force a direction."
+            )})
+            if attempt:
+                settings["format"] = "json"
         if attempt and last_error in {"MODEL_CONTENT_EMPTY", "MODEL_GENERATION_TRUNCATED"}:
             settings["format"] = "json"
             settings["options"]["num_predict"] = 3072
