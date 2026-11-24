@@ -34,6 +34,20 @@ CANDIDATES = (
               ("www.yna.co.kr", "yna.co.kr", "m.yna.co.kr")),
     Publisher("cnbc_top", "https://www.cnbc.com/id/100003114/device/rss/rss.html",
               ("www.cnbc.com", "cnbc.com")),
+    Publisher("asiaeconomy_all", "https://view.asiae.co.kr/rss/all.htm",
+              ("view.asiae.co.kr", "www.asiae.co.kr", "asiae.co.kr")),
+    Publisher("sedaily_all", "https://www.sedaily.com/rss/newsall",
+              ("www.sedaily.com", "sedaily.com", "m.sedaily.com")),
+    Publisher("edaily_all", "https://rss.edaily.co.kr/edaily_news.xml",
+              ("www.edaily.co.kr", "edaily.co.kr", "m.edaily.co.kr")),
+    Publisher("etnews_economy", "https://rss.etnews.com/02.xml",
+              ("www.etnews.com", "etnews.com", "m.etnews.com")),
+    Publisher("zdnet_kr", "https://feeds.feedburner.com/zdkorea",
+              ("zdnet.co.kr", "www.zdnet.co.kr", "m.zdnet.co.kr")),
+    Publisher("techcrunch_all", "https://techcrunch.com/feed/",
+              ("techcrunch.com", "www.techcrunch.com")),
+    Publisher("marketwatch_top", "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+              ("www.marketwatch.com", "marketwatch.com")),
 )
 PUBLISHERS = {p.source: p for p in (*BBC, *CANDIDATES)}
 MEDIA_SQL = "a.source IN (" + ",".join("'" + key + "'" for key in PUBLISHERS) + ")"

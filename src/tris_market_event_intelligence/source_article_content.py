@@ -448,15 +448,13 @@ def collect_full_text(
             SELECT a.id, a.url, a.source FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
             WHERE f.article_id IS NULL AND {scope}
-              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {media_scope}
               ))
             ORDER BY a.id {order} LIMIT ?
         """
-        newest = db.execute(base.format(order="DESC", scope=scope), (newest_slots,)).fetchall()
-        oldest = db.execute(base.format(order="ASC", scope=scope), (oldest_slots,)).fetchall()
+        newest = db.execute(base.format(order="DESC", scope=scope, media_scope=MEDIA_SQL), (newest_slots,)).fetchall()
+        oldest = db.execute(base.format(order="ASC", scope=scope, media_scope=MEDIA_SQL), (oldest_slots,)).fetchall()
         retry_query = f"""
             SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
@@ -464,10 +462,8 @@ def collect_full_text(
               AND (f.retry_after <= ? OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')
                    AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
                    OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') AND f.error_code='HTTPStatusError'))
-              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {MEDIA_SQL}
               ))
             ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
         """
@@ -476,8 +472,8 @@ def collect_full_text(
         if len(chosen) < limit:
             # Refill unused retries or overlapping newest/oldest slots.
             for query, args in (
-                (base.format(order="DESC", scope=scope), (limit,)),
-                (base.format(order="ASC", scope=scope), (limit,)),
+                (base.format(order="DESC", scope=scope, media_scope=MEDIA_SQL), (limit,)),
+                (base.format(order="ASC", scope=scope, media_scope=MEDIA_SQL), (limit,)),
                 (retry_query, (now, limit)),
             ):
                 for row in db.execute(query, args).fetchall():
@@ -608,10 +604,8 @@ def collect_full_text(
         pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'))
+            WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {MEDIA_SQL}))
               AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED')
                    OR f.format='SEC_BUNDLE_PARTIAL')
         """).fetchone()[0]
@@ -620,10 +614,8 @@ def collect_full_text(
             SELECT COUNT(*) FROM articles a JOIN article_full_text f
             ON f.article_id=a.id WHERE (f.status='REVIEW_REQUIRED'
                   OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
-              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {MEDIA_SQL}
               ))
         """).fetchone()[0]
         missing_or_failed = pending - review_pending
