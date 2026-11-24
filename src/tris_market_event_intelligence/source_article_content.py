@@ -245,34 +245,47 @@ def capture_sec(client: httpx.Client, url: str) -> dict[str, object]:
         raise ContentError("SEC_EXHIBIT_LIMIT_REVIEW")
     originals = []
     texts = []
+    issues: list[str] = []
     for target in (primary, *exhibits):
         time.sleep(0.2)
-        raw, _, resolved = fetch(client, target, 8_000_000)
+        role = "PRIMARY" if target == primary else "EXHIBIT"
+        try:
+            raw, _, resolved = fetch(client, target, 8_000_000)
+        except httpx.HTTPStatusError as exc:
+            code = f"SEC_{role}_HTTP_{exc.response.status_code}"
+            if exc.response.status_code in (403, 429, 503) or target == primary:
+                raise ContentError(code) from exc
+            issues.append(code)
+            continue
         if resolved != target:
             raise ContentError("SEC_DOCUMENT_REDIRECT")
         try:
             body = visible_text(raw, target)
-        except ValueError as exc:
-            raise ContentError("SEC_DOCUMENT_EXTRACTION_FAILED") from exc
-        if classify(body) != "TEXT_CANDIDATE":
-            raise ContentError("SEC_DOCUMENT_TEXT_INVALID")
-        texts.append(body)
+            quality = classify(body)
+        except ValueError:
+            body, quality = "", "EXTRACTION_FAILED"
         originals.append({
             "url": target, "sha256": hashlib.sha256(raw).hexdigest(),
             "rawBase64": base64.b64encode(raw).decode("ascii"),
+            "role": role, "quality": quality,
         })
+        if quality == "TEXT_CANDIDATE":
+            texts.append(body)
+        else:
+            issues.append(f"SEC_{role}_{quality}")
     bundle = json.dumps({
         "schema": "sec_original_bundle_v1", "indexUrl": url,
         "indexSha256": hashlib.sha256(raw_index).hexdigest(),
         "indexRawBase64": base64.b64encode(raw_index).decode("ascii"),
-        "documents": originals,
+        "documents": originals, "issues": issues,
     }, sort_keys=True, separators=(",", ":")).encode()
     body = "\n\n".join(texts)
     return {
-        "status": "COMPLETE", "body": body,
+        "status": "REVIEW_REQUIRED" if issues else "COMPLETE", "body": body,
         "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
         "raw_sha256": hashlib.sha256(bundle).hexdigest(), "raw_payload": bundle,
         "source_url": url, "format": "SEC_BUNDLE", "sparse_pages": "[]",
+        "error_code": ";".join(issues) if issues else None,
     }
 
 
@@ -384,7 +397,8 @@ def collect_full_text(
             JOIN article_full_text f ON f.article_id=a.id
             WHERE f.status='INCOMPLETE' AND {scope}
               AND (f.retry_after <= ? OR (a.source GLOB 'sec_8k_[0-9]*'
-                   AND f.error_code='INSUFFICIENT_ARTICLE_TEXT'))
+                   AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
+                   OR (a.source GLOB 'sec_8k_[0-9]*' AND f.error_code='HTTPStatusError'))
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
@@ -429,7 +443,9 @@ def collect_full_text(
                         LIMIT 1
                     """, (url,)).fetchone()
                 if (existing
-                        and (not source.startswith("sec_8k_") or existing[6] == "SEC_BUNDLE")
+                        and (not source.startswith("sec_8k_") or (
+                            existing[6] == "SEC_BUNDLE" and existing[0] == "COMPLETE"
+                        ))
                         and classify(existing[5], url=url, digest=existing[2],
                                      sparse=existing[7]) == "TEXT_CANDIDATE"):
                     row = dict(zip(("status","source_url","body_sha256",
@@ -460,6 +476,8 @@ def collect_full_text(
                     "sparse_pages": "[]",
                 }
             observed = datetime.now(UTC).isoformat()
+            if row.get("error_code"):
+                error = str(row["error_code"])
             counts[str(row["status"]).lower()] += 1
             retry = ((datetime.now(UTC) + timedelta(hours=RETRY_HOURS)).isoformat()
                      if row["status"] == "INCOMPLETE" else None)

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, urljoin, urlsplit
 
-from tris_market_event_intelligence.sec_primary_content_research_cli import _IndexRows, _text
+from tris_market_event_intelligence.sec_primary_content_research_cli import _IndexRows
 
 _INDEX = re.compile(
     r"/Archives/edgar/data/(?P<cik>\d{1,10})/(?P<folder>\d{18})/"
@@ -89,4 +90,32 @@ def documents(raw: bytes, url: str) -> tuple[str, tuple[str, ...]]:
 
 
 def visible_text(raw: bytes, url: str) -> str:
-    return _text(raw, html=not url.lower().endswith(".txt"))
+    if not raw or len(raw) > 8_000_000:
+        raise ValueError("SEC_DOCUMENT_SIZE_INVALID")
+    decoded = raw.decode("utf-8-sig", errors="replace")
+    if url.lower().endswith(".txt") and not re.search(r"<(?:html|document|text)\b", decoded, re.IGNORECASE):
+        return " ".join(decoded.split())
+
+    class Visible(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.parts: list[str] = []
+            self.hidden: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag in {"script", "style", "ix:hidden", "ix:header", "head"}:
+                self.hidden.append(tag)
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag in self.hidden:
+                while self.hidden.pop() != tag:
+                    pass
+
+        def handle_data(self, data: str) -> None:
+            if not self.hidden:
+                self.parts.append(data)
+
+    parser = Visible()
+    parser.feed(decoded)
+    parser.close()
+    return " ".join(" ".join(parser.parts).split())

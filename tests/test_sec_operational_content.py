@@ -106,3 +106,42 @@ def test_retry_previous_generic_failure_with_direct_document(tmp_path, monkeypat
         result = collect_full_text(store.path, client=client, sec_only=True)
     assert result["complete"] == 1
     assert result["missing_or_failed"] == 0
+
+
+def test_incomplete_exhibit_preserves_original_and_blocks_analysis(monkeypatch):
+    monkeypatch.setattr(
+        "tris_market_event_intelligence.source_article_content.time.sleep", lambda _: None,
+    )
+    payloads = {INDEX: TABLE, PRIMARY: BODY, EXHIBIT: b"<html><body></body></html>"}
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=payloads[str(request.url)])
+    )) as client:
+        row = capture(client, INDEX)
+    assert row["status"] == "REVIEW_REQUIRED"
+    assert row["error_code"] == "SEC_EXHIBIT_EMPTY_CONTENT"
+    assert "Issuer reported" in row["body"]
+    assert len(json.loads(row["raw_payload"])["documents"]) == 2
+
+
+def test_sec_visible_text_excludes_hidden_inline_xbrl():
+    from tris_market_event_intelligence.sec_operational_content import visible_text
+
+    raw = (b"<html><head><title>metadata</title></head><body>"
+           b"<ix:header><ix:hidden>hidden facts</ix:hidden></ix:header>"
+           b"<p>Revenue increased.</p></body></html>")
+    assert visible_text(raw, PRIMARY) == "Revenue increased."
+
+
+def test_sec_http_error_has_document_role_and_status(monkeypatch):
+    from tris_market_event_intelligence.source_article_content import ContentError
+
+    monkeypatch.setattr(
+        "tris_market_event_intelligence.source_article_content.time.sleep", lambda _: None,
+    )
+    def handler(request):
+        if str(request.url) == INDEX:
+            return httpx.Response(200, content=TABLE)
+        return httpx.Response(429)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ContentError, match="SEC_PRIMARY_HTTP_429"):
+            capture(client, INDEX)
