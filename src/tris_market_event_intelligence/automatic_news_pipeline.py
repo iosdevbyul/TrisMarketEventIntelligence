@@ -25,6 +25,7 @@ from tris_market_event_intelligence.automatic_forecast_precommitment import (
     inspect_commitments,
     record_new_analysis,
 )
+from tris_market_event_intelligence.event_aware_forecast import ask_dual, prior_context
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     MODEL_PATTERN,
     ask_gemma,
@@ -185,8 +186,13 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             collect: bool = True, client: httpx.Client | None = None,
             verification_runs: int = 1, seal_forecasts: bool = False,
             mappings_path: Path | None = None,
-            fresh_only_minutes: int | None = None) -> dict:
+            fresh_only_minutes: int | None = None,
+            event_aware: bool = False) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
+    if event_aware and (not seal_forecasts or fresh_only_minutes is None):
+        raise ValueError("Event-aware forecasts require fresh-only sealing")
+    if event_aware and verification_runs != 1:
+        raise ValueError("Event-aware capture requires one verification run")
     if fresh_only_minutes is not None and not seal_forecasts:
         raise ValueError("Fresh-only capture requires explicit forecast sealing")
     if fresh_only_minutes is not None and not 1 <= fresh_only_minutes <= 1440:
@@ -244,7 +250,10 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                         "bodyTruncated": len(body) > 12000,
                     }
                     try:
-                        analysis = ask_gemma(session, model, request)
+                        analysis = (
+                            ask_dual(session, model, request, prior_context(db, request["article"]))
+                            if event_aware else ask_gemma(session, model, request)
+                        )
                         if verification_runs == 2:
                             second = ask_gemma(session, model, request)
                             analysis["_repeatability"] = compare_analyses(analysis, second)
