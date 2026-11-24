@@ -151,6 +151,7 @@ def test_review_retry_reuses_candidate_and_requires_explicit_pass():
     assert len(requests) == 2
     assert requests[0]["messages"] == requests[1]["messages"]
     assert requests[1]["format"] == "json"
+    assert all(request["think"] is False for request in requests)
 
 
 @pytest.mark.parametrize("verdict", ["EVENT_RELATION", "SOURCE_CLAIMS", "UNSURE"])
