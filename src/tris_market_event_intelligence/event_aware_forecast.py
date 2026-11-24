@@ -277,11 +277,11 @@ def review_dual(
     last_error = "REVIEW_JSON_INVALID"
     for attempt in range(2):
         response = client.post("http://127.0.0.1:11434/api/chat", json={
-            "model": model, "stream": False,
+            "model": model, "stream": False, "think": False,
             "format": schema if attempt == 0 else "json",
             "options": {
                 "temperature": 0, "seed": 20261124 + attempt,
-                "num_ctx": 8192, "num_predict": 128,
+                "num_ctx": 8192, "num_predict": 256,
                 "repeat_penalty": 1.1,
             },
             "messages": messages,
