@@ -24,6 +24,7 @@ from pypdf import PdfReader
 from tris_market_event_intelligence.collector import NewsStore
 from tris_market_event_intelligence.news_content_quality import classify, media_page
 from tris_market_event_intelligence.sec_operational_content import (
+    canonical_index,
     documents,
     index_identity,
     visible_text,
@@ -367,7 +368,7 @@ def collect_full_text(
     scope = "a.source GLOB 'sec_8k_[0-9]*'" if sec_only else "1=1"
     with store.connect() as db:
         base = """
-            SELECT a.id, a.url FROM articles a
+            SELECT a.id, a.url, a.source FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
             WHERE f.article_id IS NULL AND {scope}
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
@@ -381,7 +382,9 @@ def collect_full_text(
         retry_query = f"""
             SELECT a.id, a.url FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
-            WHERE f.status='INCOMPLETE' AND f.retry_after <= ? AND {scope}
+            WHERE f.status='INCOMPLETE' AND {scope}
+              AND (f.retry_after <= ? OR (a.source GLOB 'sec_8k_[0-9]*'
+                   AND f.error_code='INSUFFICIENT_ARTICLE_TEXT'))
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
@@ -412,7 +415,7 @@ def collect_full_text(
     counts = {"complete": 0, "review_required": 0, "incomplete": 0,
               "non_article": 0, "reused": 0}
     try:
-        for article_id, url in rows:
+        for article_id, url, source in rows:
             observed = datetime.now(UTC).isoformat()
             error: str | None = None
             try:
@@ -425,18 +428,25 @@ def collect_full_text(
                           AND article_id IN (SELECT id FROM articles WHERE url=?)
                         LIMIT 1
                     """, (url,)).fetchone()
-                if existing and classify(existing[5], url=url, digest=existing[2],
+                if existing and (not source.startswith("sec_8k_") or existing[6] == "SEC_BUNDLE") and classify(existing[5], url=url, digest=existing[2],
                                          sparse=existing[7]) == "TEXT_CANDIDATE":
                     row = dict(zip(("status","source_url","body_sha256",
                                     "raw_sha256","raw_payload","body",
                                     "format","sparse_pages"), existing))
                     counts["reused"] += 1
                 else:
-                    if index_identity(url) is not None and owned and not os.environ.get(
+                    if source.startswith("sec_8k_") and owned and not os.environ.get(
                         "MARKET_EVENT_SEC_USER_AGENT", ""
                     ).strip():
                         raise ContentError("SEC_CONTACT_USER_AGENT_REQUIRED")
-                    row = capture(client, url)
+                    if source.startswith("sec_8k_"):
+                        try:
+                            index_url = canonical_index(url, source)
+                        except ValueError as exc:
+                            raise ContentError(str(exc)) from exc
+                        row = capture_sec(client, index_url)
+                    else:
+                        row = capture(client, url)
             except (ContentError, httpx.HTTPError, OSError) as exc:
                 error = str(exc) if isinstance(exc, ContentError) else type(exc).__name__
                 state = ("NON_ARTICLE" if error == "NON_ARTICLE_MEDIA_PAGE"
