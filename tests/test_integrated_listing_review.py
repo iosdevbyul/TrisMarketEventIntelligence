@@ -39,7 +39,7 @@ def mock_feed() -> httpx.Client:
     content = (
         "<rss><channel><item><guid>news-1</guid>"
         "<title>삼성전자 서비스 장애</title>"
-        "<link>https://example.org/real-event</link>"
+        "<link>https://www.bbc.co.uk/news/real-event</link>"
         "</item></channel></rss>"
     ).encode()
     return httpx.Client(transport=httpx.MockTransport(

@@ -17,7 +17,12 @@ import httpx
 
 MAX_FEED_BYTES = 2_000_000
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
-from tris_market_event_intelligence.news_content_quality import media_page
+from tris_market_event_intelligence.news_source_provider import (
+    PUBLISHERS,
+    NewsSourceProvider,
+    RSSNewsProvider,
+    accepts,
+)
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS, validate_feeds
 
 
@@ -311,9 +316,11 @@ class OfficialNewsCollector:
         store: NewsStore,
         client: httpx.Client | None = None,
         feeds: dict[str, str] | None = None,
+        provider: NewsSourceProvider | None = None,
     ) -> None:
         self.store = store
         self.client = client
+        self.provider = provider or RSSNewsProvider()
         self.feeds = validate_feeds(feeds if feeds is not None else FEEDS)
 
     def collect_once(self) -> dict[str, dict[str, str | int]]:
@@ -339,7 +346,7 @@ class OfficialNewsCollector:
                 if modified:
                     headers["If-Modified-Since"] = modified
                 try:
-                    response = client.get(url, headers=headers)
+                    response = self.provider.fetch(client, url, headers)
                     response_at = utc_now()
                     request_elapsed_ms = max(0.0, (time.monotonic() - started_mono) * 1000)
                     if response.status_code == 304:
@@ -352,8 +359,8 @@ class OfficialNewsCollector:
                             raise ValueError("RSS response exceeds maximum size")
                         articles = parse_rss(source, payload, response_at)
                         returned = len(articles)
-                        if source.startswith("bbc_"):
-                            articles = [article for article in articles if not media_page(article.url)]
+                        if source in PUBLISHERS:
+                            articles = [article for article in articles if accepts(source, article.url)]
                         inserted = self.store.save(
                             source, url, payload, articles, response_at,
                             response.headers.get("etag"), response.headers.get("last-modified"),

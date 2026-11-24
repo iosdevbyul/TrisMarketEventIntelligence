@@ -34,6 +34,7 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
 from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
 from tris_market_event_intelligence.news_content_quality import classify
 from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
+from tris_market_event_intelligence.news_source_provider import MEDIA_SQL
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
 SCHEMA = """
@@ -72,7 +73,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         return [], {"eligible": 0, "missingFullText": 0}
     if sec_only and media_only:
         raise ValueError("SEC and media scopes are mutually exclusive")
-    scope = ("a.source IN ('bbc_business','bbc_technology','bbc_world')" if media_only
+    scope = (MEDIA_SQL if media_only
              else "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')"
              if sec_only else "1=1")
     missing = db.execute(

@@ -1,0 +1,4 @@
+# Local multi-publisher text collection
+
+Explicit candidate discovery: `python -m tris_market_event_intelligence.media_news_batch_cli --db PATH --discover --sources hankyung_all mk_all yna_economy cnbc_top`.
+Then run the existing bounded media batch with --run. BBC remains the default. Source registry is shared by capture, discovery and analysis. Candidate feed URLs are public RSS endpoints; actual local HTTP/body availability and applicable terms must be checked before enabling ongoing collection. No paywall, authentication or access-control bypass. RSS provenance is retained. Duplicate groups are exact normalized URL + current body hash, not event-level deduplication; old rows and commitments are not deleted or merged. API adapters can implement the provider transport protocol; API response parsing is not yet implemented.

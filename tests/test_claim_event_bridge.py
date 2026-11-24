@@ -16,7 +16,7 @@ from tris_market_event_intelligence.operations import run_cycle
 
 FEED = b"""<rss><channel><item><guid>case</guid>
 <title>Consumer Price Index increased. CEO resignation announced.</title>
-<link>https://example.org/1</link>
+<link>https://www.bbc.co.uk/news/1</link>
 <description>Inflation increased. CEO resignation announced.</description>
 </item></channel></rss>"""
 
