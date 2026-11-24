@@ -12,7 +12,7 @@ _INDEX = re.compile(
     r"(?P<accession>\d{10}-\d{2}-\d{6})-index\.html?",
     re.IGNORECASE,
 )
-_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:html?|txt|xml)", re.IGNORECASE)
+_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:html?|txt|xml|pdf|xsd|json|csv|jpg|jpeg|png|gif|xlsx|zip)", re.IGNORECASE)
 
 
 def canonical_index(url: str, source: str) -> str:
@@ -32,9 +32,10 @@ def canonical_index(url: str, source: str) -> str:
     if not match or parts.query or parts.fragment:
         raise ValueError("SEC_ARCHIVE_PATH_INVALID")
     cik, folder, name = match.groups()
-    if not source.startswith("sec_8k_") or not source.removeprefix("sec_8k_").isdigit():
+    source_match = re.fullmatch(r"sec_(?:8k|filing)_(\d{1,10})", source)
+    if source_match is None:
         raise ValueError("SEC_SOURCE_ID_INVALID")
-    if int(cik) != int(source.removeprefix("sec_8k_")):
+    if int(cik) != int(source_match[1]):
         raise ValueError("SEC_SOURCE_CIK_MISMATCH")
     if not _FILE.fullmatch(name):
         raise ValueError("SEC_DOCUMENT_NAME_INVALID")
@@ -82,7 +83,7 @@ def documents(raw: bytes, url: str) -> tuple[str, tuple[str, ...]]:
                 continue
             if sequence[0] == "1" and form[0] and not form[0].upper().startswith("EX-"):
                 primary.add(target)
-            elif form[0].upper().startswith(("EX-99", "EX-2", "EX-10")):
+            elif re.match(r"EX-(?:99|2|10)(?:\.|$)", form[0].upper()):
                 exhibits.add(target)
     if len(primary) != 1:
         raise ValueError("SEC_PRIMARY_DOCUMENT_AMBIGUOUS")

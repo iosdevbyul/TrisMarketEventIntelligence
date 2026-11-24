@@ -68,7 +68,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
     )}
     if not {"articles", "article_full_text"}.issubset(tables):
         return [], {"eligible": 0, "missingFullText": 0}
-    scope = "a.source GLOB 'sec_8k_[0-9]*'" if sec_only else "1=1"
+    scope = "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')" if sec_only else "1=1"
     missing = db.execute(
         f"""SELECT COUNT(*) FROM articles a LEFT JOIN article_full_text f
            ON a.id=f.article_id
@@ -265,7 +265,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                         "body": body[:12000],
                         "bodyTruncated": len(body) > 12000,
                     }
-                    if row["source"].startswith("sec_8k_"):
+                    if row["source"].startswith(("sec_8k_", "sec_filing_")):
                         request["article"]["contentScope"] = (
                             "PRIMARY_WITH_PARTIAL_EXHIBITS"
                             if row["content_format"] == "SEC_BUNDLE_PARTIAL"
@@ -287,7 +287,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                                 "semanticCorrectnessVerified": False,
                                 "priceDataUsed": False,
                             }
-                        if row["source"].startswith("sec_8k_"):
+                        if row["source"].startswith(("sec_8k_", "sec_filing_")):
                             analysis["_sourceScope"] = {
                                 "scope": request["article"]["contentScope"],
                                 "missingEvidence": row["content_error"],

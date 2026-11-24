@@ -19,7 +19,7 @@ def coverage(path: Path) -> list[dict]:
             for source, status, error, count in db.execute("""
                 SELECT a.source,COALESCE(f.status,'NOT_CAPTURED'),f.error_code,COUNT(*)
                 FROM articles a LEFT JOIN article_full_text f ON a.id=f.article_id
-                WHERE a.source GLOB 'sec_8k_[0-9]*'
+                WHERE (a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')
                 GROUP BY a.source,COALESCE(f.status,'NOT_CAPTURED'),f.error_code
                 ORDER BY a.source,COALESCE(f.status,'NOT_CAPTURED'),f.error_code
             """)

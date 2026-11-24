@@ -266,12 +266,12 @@ def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = Non
         primary, exhibits = documents(raw_index, url)
     except ValueError as exc:
         raise ContentError(str(exc)) from exc
-    deferred = len(exhibits) > 8
+    deferred = False
     originals = []
     texts = []
     issues: list[str] = ['SEC_EXHIBIT_LIMIT_REVIEW'] if deferred else []
     primary_ready = False
-    for target in (primary, *exhibits[:8]):
+    for target in (primary, *exhibits):
         role = "PRIMARY" if target == primary else "EXHIBIT"
         try:
             raw = original(target, 8_000_000)
@@ -282,9 +282,13 @@ def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = Non
                 break
             continue
         try:
-            body = visible_text(raw, target)
-            quality = classify(body)
-        except ValueError:
+            if raw.startswith(b"%PDF-"):
+                body, sparse = extract_pdf(raw)
+                quality = "PARTIAL_CONTENT" if sparse else classify(body)
+            else:
+                body = visible_text(raw, target)
+                quality = classify(body)
+        except (ValueError, ContentError):
             body, quality = "", "EXTRACTION_FAILED"
         originals.append({
             "url": target, "sha256": hashlib.sha256(raw).hexdigest(),
@@ -376,6 +380,14 @@ def initialize(store: NewsStore) -> None:
             )
         """)
         db.execute("""
+            CREATE TABLE IF NOT EXISTS sec_body_versions (
+                article_id INTEGER NOT NULL, body_sha256 TEXT NOT NULL,
+                raw_sha256 TEXT NOT NULL, raw_payload BLOB NOT NULL,
+                body TEXT NOT NULL, observed_at TEXT NOT NULL, format TEXT NOT NULL,
+                PRIMARY KEY(article_id, body_sha256, raw_sha256)
+            )
+        """)
+        db.execute("""
             CREATE TABLE IF NOT EXISTS article_full_text (
                 article_id INTEGER PRIMARY KEY REFERENCES articles(id),
                 status TEXT NOT NULL CHECK(status IN
@@ -409,13 +421,13 @@ def collect_full_text(
     newest_slots = (limit + 2) // 3
     oldest_slots = (limit + 1) // 3
     retry_slots = limit - newest_slots - oldest_slots
-    scope = "a.source GLOB 'sec_8k_[0-9]*'" if sec_only else "1=1"
+    scope = "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')" if sec_only else "1=1"
     with store.connect() as db:
         base = """
             SELECT a.id, a.url, a.source FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
             WHERE f.article_id IS NULL AND {scope}
-              AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
               ))
@@ -427,10 +439,10 @@ def collect_full_text(
             SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
             WHERE (f.status='INCOMPLETE' OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
-              AND (f.retry_after <= ? OR (a.source GLOB 'sec_8k_[0-9]*'
+              AND (f.retry_after <= ? OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')
                    AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
-                   OR (a.source GLOB 'sec_8k_[0-9]*' AND f.error_code='HTTPStatusError'))
-              AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
+                   OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') AND f.error_code='HTTPStatusError'))
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
               ))
@@ -474,7 +486,7 @@ def collect_full_text(
                         LIMIT 1
                     """, (url,)).fetchone()
                 if (existing
-                        and (not source.startswith("sec_8k_") or (
+                        and (not source.startswith(("sec_8k_", "sec_filing_")) or (
                             existing[6] == "SEC_BUNDLE" and existing[0] == "COMPLETE"
                         ))
                         and classify(existing[5], url=url, digest=existing[2],
@@ -484,11 +496,11 @@ def collect_full_text(
                                     "format","sparse_pages"), existing))
                     counts["reused"] += 1
                 else:
-                    if source.startswith("sec_8k_") and owned and not os.environ.get(
+                    if source.startswith(("sec_8k_", "sec_filing_")) and owned and not os.environ.get(
                         "MARKET_EVENT_SEC_USER_AGENT", ""
                     ).strip():
                         raise ContentError("SEC_CONTACT_USER_AGENT_REQUIRED")
-                    if source.startswith("sec_8k_"):
+                    if source.startswith(("sec_8k_", "sec_filing_")):
                         try:
                             index_url = canonical_index(url, source)
                         except ValueError as exc:
@@ -513,6 +525,12 @@ def collect_full_text(
             retry = ((datetime.now(UTC) + timedelta(hours=RETRY_HOURS)).isoformat()
                      if row["status"] == "INCOMPLETE" or row["format"] == "SEC_BUNDLE_PARTIAL" else None)
             with store.connect() as db:
+                if source.startswith(("sec_8k_", "sec_filing_")):
+                    db.execute("""INSERT OR IGNORE INTO sec_body_versions
+                        SELECT article_id,body_sha256,raw_sha256,raw_payload,body,observed_at,format
+                        FROM article_full_text WHERE article_id=? AND body_sha256 IS NOT NULL
+                        AND raw_sha256 IS NOT NULL AND raw_payload IS NOT NULL AND body IS NOT NULL
+                        AND format IS NOT NULL""", (article_id,))
                 db.execute("""
                     INSERT INTO article_full_text (
                         article_id,status,observed_at,content_url,
@@ -537,7 +555,7 @@ def collect_full_text(
         pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE {scope} AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
+            WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'))
               AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED')
@@ -548,7 +566,7 @@ def collect_full_text(
             SELECT COUNT(*) FROM articles a JOIN article_full_text f
             ON f.article_id=a.id WHERE (f.status='REVIEW_REQUIRED'
                   OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
-              AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
               ))
