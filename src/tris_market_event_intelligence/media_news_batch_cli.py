@@ -49,6 +49,10 @@ def audit(path: Path, model: str) -> dict:
                 category = "NOT_CAPTURED"
             elif status == "NON_ARTICLE":
                 category = "MEDIA_REVIEW_REQUIRED"
+            elif status == "INCOMPLETE" and error in {
+                "ACCESS_RESTRICTED_HTTP_401", "ACCESS_RESTRICTED_HTTP_403", "ACCESS_RESTRICTED_HTTP_451",
+            }:
+                category = "ACCESS_RESTRICTED"
             elif status != "COMPLETE":
                 category = "CAPTURE_REVIEW" if status == "REVIEW_REQUIRED" else "CAPTURE_FAILED"
             elif not digest or not isinstance(raw, bytes) or hashlib.sha256(raw).hexdigest() != raw_hash:

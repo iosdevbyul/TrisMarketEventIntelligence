@@ -38,7 +38,7 @@ CANDIDATES = (
               ("view.asiae.co.kr", "www.asiae.co.kr", "asiae.co.kr")),
     Publisher("sedaily_all", "https://www.sedaily.com/rss/newsall",
               ("www.sedaily.com", "sedaily.com", "m.sedaily.com")),
-    Publisher("edaily_all", "https://rss.edaily.co.kr/edaily_news.xml",
+    Publisher("edaily_all", "http://rss.edaily.co.kr/edaily_news.xml",
               ("www.edaily.co.kr", "edaily.co.kr", "m.edaily.co.kr")),
     Publisher("etnews_economy", "https://rss.etnews.com/02.xml",
               ("www.etnews.com", "etnews.com", "m.etnews.com")),
@@ -63,6 +63,9 @@ class NewsSourceProvider(Protocol):
 class RSSNewsProvider:
     def fetch(self, client: httpx.Client, url: str,
               headers: dict[str, str]) -> httpx.Response:
+        if url == PUBLISHERS["edaily_all"].feed:
+            # Public legacy RSS only; never follow redirects from cleartext.
+            return client.get(url, headers=headers, follow_redirects=False)
         return client.get(url, headers=headers)
 
 

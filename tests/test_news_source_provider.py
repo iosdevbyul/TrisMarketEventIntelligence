@@ -1,5 +1,6 @@
 """Provider registration and source-boundary regression."""
 import httpx
+import pytest
 
 from tris_market_event_intelligence.collector import NewsStore, OfficialNewsCollector, parse_rss
 from tris_market_event_intelligence.news_source_provider import (
@@ -68,3 +69,55 @@ def test_registry_drives_backlog_and_coverage(tmp_path):
     assert result["complete"] == 7
     assert result["pending_or_unverified"] == 0
     assert audit(store.path, "gemma4:e2b")["counts"] == {"READY_FOR_ANALYSIS": 7}
+
+
+
+def test_edaily_cleartext_exception_is_exact():
+    from tris_market_event_intelligence.news_source_provider import RSSNewsProvider
+    from tris_market_event_intelligence.source_catalog import validate_feeds
+
+    url = PUBLISHERS["edaily_all"].feed
+    assert validate_feeds({"edaily_all": url}) == {"edaily_all": url}
+    with pytest.raises(ValueError):
+        validate_feeds({"other": url})
+    with pytest.raises(ValueError):
+        validate_feeds({"edaily_all": url + "?other=1"})
+    assert not accepts("edaily_all", "http://www.edaily.co.kr/article/1")
+    with httpx.Client(follow_redirects=True, transport=httpx.MockTransport(
+        lambda _: httpx.Response(302, headers={"location": "https://example.org/"})
+    )) as client:
+        assert RSSNewsProvider().fetch(client, url, {}).status_code == 302
+
+
+def test_zdnet_observed_article_region():
+    payload = b"""<html><div class="news_head">Headline</div>
+    <div id="articleBody"><div class="view_cont"><div id="content-123">
+    <p>Company cuts profit guidance.</p></div></div>
+    <div>Related stories</div></div><div class="right_cont">Other news</div></html>"""
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, content=payload, headers={"content-type": "text/html"})
+    )) as client:
+        row = capture(client, "https://zdnet.co.kr/view/?no=123", source="zdnet_kr")
+    assert row["body"] == "Company cuts profit guidance."
+    assert row["raw_payload"] == payload
+
+
+def test_access_restricted_not_retried_or_analyzed(tmp_path):
+    from tris_market_event_intelligence.media_news_batch_cli import audit
+
+    store = NewsStore(tmp_path / "news.sqlite3")
+    store.initialize()
+    source = "marketwatch_top"
+    raw = b"<rss><channel><item><title>News</title><link>https://www.marketwatch.com/story/1</link></item></channel></rss>"
+    observed = "2026-11-24T12:00:00+00:00"
+    store.save(source, PUBLISHERS[source].feed, raw, parse_rss(source, raw, observed),
+               observed, None, None)
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(401, content=b"Access restricted")
+    )) as client:
+        assert collect_full_text(store.path, client=client, media_only=True)["incomplete"] == 1
+        report = audit(store.path, "gemma4:e2b")
+        assert report["counts"] == {"ACCESS_RESTRICTED": 1}
+        aid = report["pending"][0]["articleId"]
+        assert collect_full_text(store.path, client=client, media_only=True,
+                                 repair_ids=(aid,))["attempted"] == 0

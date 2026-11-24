@@ -73,6 +73,8 @@ def fetch(client: httpx.Client, url: str, limit: int, *, source: str | None = No
                     raise ContentError("MISSING_REDIRECT_LOCATION")
                 url = urljoin(url, location)
                 continue
+            if source == "marketwatch_top" and response.status_code in (401, 403, 451):
+                raise ContentError(f"ACCESS_RESTRICTED_HTTP_{response.status_code}")
             response.raise_for_status()
             payload = bytearray()
             for chunk in response.iter_bytes():
@@ -109,8 +111,10 @@ class ArticleParser(HTMLParser):
         "script", "style", "noscript", "nav", "footer", "aside",
     })
 
-    def __init__(self) -> None:
+    def __init__(self, *, source: str | None = None, page_url: str = "") -> None:
         super().__init__(convert_charrefs=True)
+        self.source = source
+        self.page_url = page_url
         self.frames: list[tuple[str, int | None, bool]] = []
         self.regions: list[tuple[int, list[str]]] = []
         self.links: list[tuple[str, str]] = []
@@ -138,7 +142,13 @@ class ArticleParser(HTMLParser):
             classes = set((attributes.get("class") or "").split())
             identifier = attributes.get("id") or ""
             role = attributes.get("role") or ""
-            if tag == "article":
+            if self.source == "zdnet_kr" and identifier == "articleBody":
+                priority = 5
+            elif self.source == "zdnet_kr" and re.fullmatch(r"content-[0-9]+", identifier) and (
+                "no=" + identifier.removeprefix("content-") in self.page_url.split("?")[-1].split("&")
+            ):
+                priority = 6
+            elif tag == "article":
                 priority = 4
             elif identifier in self.BODY_IDS or bool(classes & self.BODY_CLASSES):
                 priority = 3
@@ -189,10 +199,10 @@ class ArticleParser(HTMLParser):
             self.regions[region][1].append(data.strip())
 
 
-def extract_html(payload: bytes, page_url: str) -> tuple[str, tuple[str, ...]]:
+def extract_html(payload: bytes, page_url: str, *, source: str | None = None) -> tuple[str, tuple[str, ...]]:
     if len(payload) > MAX_HTML_BYTES:
         raise ContentError("HTML_TOO_LARGE")
-    parser = ArticleParser()
+    parser = ArticleParser(source=source, page_url=page_url)
     parser.feed(payload.decode("utf-8-sig", errors="replace"))
     candidates = [
         (priority, re.sub(r"\s+", " ", " ".join(parts)).strip())
@@ -339,7 +349,8 @@ def capture(client: httpx.Client, url: str, *, source: str | None = None) -> dic
     elif ("html" in media_type or payload.lstrip().lower().startswith(
         (b"<html", b"<!doctype html")
     )):
-        body, pdf_links = extract_html(payload, final_url)
+        body, pdf_links = (extract_html(payload, final_url, source=source)
+                           if source == "zdnet_kr" else extract_html(payload, final_url))
         source_data, source_url, kind, sparse = payload, final_url, "HTML", ()
         # Publisher release pages may contain only a short introduction. The
         # complete economic release or FOMC minutes can be in an official PDF.
@@ -459,6 +470,8 @@ def collect_full_text(
             SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
             WHERE (f.status='INCOMPLETE' OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
+              AND COALESCE(f.error_code, '') NOT IN (
+                  'ACCESS_RESTRICTED_HTTP_401','ACCESS_RESTRICTED_HTTP_403','ACCESS_RESTRICTED_HTTP_451')
               AND (f.retry_after <= ? OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')
                    AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
                    OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') AND f.error_code='HTTPStatusError'))
@@ -489,6 +502,8 @@ def collect_full_text(
                 SELECT a.id,a.url,a.source FROM articles a
                 LEFT JOIN article_full_text f ON a.id=f.article_id
                 WHERE {scope} AND a.id IN ({placeholders})
+                  AND COALESCE(f.error_code, '') NOT IN (
+                      'ACCESS_RESTRICTED_HTTP_401','ACCESS_RESTRICTED_HTTP_403','ACCESS_RESTRICTED_HTTP_451')
                   AND (f.article_id IS NULL OR f.status!='COMPLETE'
                        OR f.format='SEC_BUNDLE_PARTIAL')
                 ORDER BY a.id

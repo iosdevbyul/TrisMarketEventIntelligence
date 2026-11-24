@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from tris_market_event_intelligence.news_source_provider import CANDIDATES
+from tris_market_event_intelligence.news_source_provider import CANDIDATES, PUBLISHERS
 
 # Existing IDs remain unchanged; historical SQLite checkpoints depend on them.
 DEFAULT_FEEDS: dict[str, str] = {
@@ -43,7 +43,8 @@ def validate_feeds(feeds: dict[str, str]) -> dict[str, str]:
         if not isinstance(url, str) or len(url) > 2048:
             raise ValueError(f"Invalid feed URL for {name}")
         parsed = urlsplit(url)
-        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+        legacy_rss = name == "edaily_all" and url == PUBLISHERS["edaily_all"].feed
+        if ((parsed.scheme != "https" and not legacy_rss) or not parsed.hostname or parsed.username
                 or parsed.password or parsed.fragment):
             raise ValueError(f"Feed {name} must be a public HTTPS URL without credentials")
         # Custom sources are external trusted configurations, not user-supplied requests.
