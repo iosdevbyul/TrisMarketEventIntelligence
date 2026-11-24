@@ -13,6 +13,7 @@ from tris_market_event_intelligence.automatic_forecast_precommitment import (
 from tris_market_event_intelligence.event_aware_forecast import (
     VERSION,
     _response_content,
+    ask_dual,
     horizon_prediction,
     prior_context,
     review_dual,
@@ -106,8 +107,7 @@ def test_new_fact_cannot_ignore_related_candidates():
 def test_review_rejects_unsupported_future_mechanism():
     def handler(request):
         return httpx.Response(200, json={"message": {"content": json.dumps({
-            "event_relation_supported": True, "source_claims_supported": True,
-            "forward_mechanisms_supported": False,
+            "verdict": "FORWARD_MECHANISM",
         })}})
     with (
         httpx.Client(transport=httpx.MockTransport(handler)) as client,
@@ -133,3 +133,60 @@ def test_invalid_review_json_is_not_accepted():
         pytest.raises(ValueError, match="REVIEW_JSON_INVALID"),
     ):
         review_dual(client, "gemma4:e2b", answer(), [], [])
+
+
+def test_review_retry_reuses_candidate_and_requires_explicit_pass():
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(200, json={
+                "done_reason": "length", "message": {"content": '{"verdict":'},
+            })
+        return httpx.Response(200, json={"message": {"content": '{"verdict":"PASS"}'}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        review_dual(client, "gemma4:e2b", answer(), [], [])
+    assert len(requests) == 2
+    assert requests[0]["messages"] == requests[1]["messages"]
+    assert requests[1]["format"] == "json"
+
+
+@pytest.mark.parametrize("verdict", ["EVENT_RELATION", "SOURCE_CLAIMS", "UNSURE"])
+def test_review_never_accepts_negative_or_uncertain_verdict(verdict):
+    def handler(request):
+        return httpx.Response(200, json={
+            "message": {"content": json.dumps({"verdict": verdict})},
+        })
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(ValueError, match="SOURCE_GROUNDING_REVIEW_REJECTED"),
+    ):
+        review_dual(client, "gemma4:e2b", answer(), [], [])
+
+
+def test_review_decoder_failure_does_not_regenerate_forecast():
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(200, json={
+                "message": {"content": json.dumps(answer())},
+            })
+        return httpx.Response(200, json={
+            "done_reason": "length", "message": {"content": '{"verdict":'},
+        })
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(ValueError, match="REVIEW_GENERATION_TRUNCATED"),
+    ):
+        ask_dual(client, "gemma4:e2b", {
+            "article": {"articleId": 1}, "body": "A company signed a contract.",
+            "bodyTruncated": False,
+        }, [])
+    assert len(requests) == 3
+    assert requests[1]["messages"] == requests[2]["messages"]
