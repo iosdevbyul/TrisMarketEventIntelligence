@@ -26,6 +26,7 @@ def cycle(
     db: Path, mappings: Path, prices: Path, output: Path, *,
     model: str = "gemma4:e2b", limit: int = 10, fresh_minutes: int = 120,
     collect: bool = True, price_manifest: Path | None = None,
+    event_aware: bool = False,
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise ValueError("Immutable result path must not exist")
@@ -40,6 +41,7 @@ def cycle(
         db, model=model, limit=limit, collect=collect, verification_runs=1,
         seal_forecasts=True, mappings_path=mappings,
         fresh_only_minutes=fresh_minutes,
+        **({"event_aware": True} if event_aware else {}),
     )
     if captured["status"] == "ALREADY_RUNNING":
         return {
@@ -72,6 +74,7 @@ def cycle(
         },
         "newMarketPricesFetched": False,
         "freshModelPredictionsOnly": True,
+        "eventAwareForecastEnabled": event_aware,
         "historicalAnalysisCohortExcluded": True,
         "firstPublicAvailabilityIndependentlyVerified": False,
         "externalTimestampAuthenticated": False,
@@ -101,6 +104,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--fresh-minutes", type=int, default=120)
     parser.add_argument("--skip-collection", action="store_true")
+    parser.add_argument("--event-aware", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -108,6 +112,7 @@ def main() -> None:
             args.db, args.mappings, args.prices, args.output,
             model=args.model, limit=args.limit, fresh_minutes=args.fresh_minutes,
             collect=not args.skip_collection, price_manifest=args.price_manifest,
+            event_aware=args.event_aware,
         )
         print(json.dumps({
             "status": report["status"],
