@@ -28,7 +28,6 @@ from tris_market_event_intelligence.market_outcome_validation_cli import (
     _timestamp,
 )
 from tris_market_event_intelligence.market_price_recovery_cli import _observations
-
 from tris_market_event_intelligence.news_content_quality import media_page
 
 MAX_ROWS = 10000
