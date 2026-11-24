@@ -393,8 +393,8 @@ def collect_full_text(
         if len(chosen) < limit:
             # Refill unused retries or overlapping newest/oldest slots.
             for query, args in (
-                (base.format(order="DESC"), (limit,)),
-                (base.format(order="ASC"), (limit,)),
+                (base.format(order="DESC", scope=scope), (limit,)),
+                (base.format(order="ASC", scope=scope), (limit,)),
                 (retry_query, (now, limit)),
             ):
                 for row in db.execute(query, args).fetchall():
