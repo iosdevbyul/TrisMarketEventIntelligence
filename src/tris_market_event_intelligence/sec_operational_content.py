@@ -84,6 +84,7 @@ def documents(raw: bytes, url: str, *,
     parser = _IndexRows()
     parser.feed(raw.decode("utf-8-sig", errors="replace"))
     prefix = url.rsplit("/", 1)[0] + "/"
+    folder = identity[1].replace("-", "")
     primary: set[str] = set()
     exhibits: set[str] = set()
     authoritative: set[str] = set()
@@ -98,12 +99,30 @@ def documents(raw: bytes, url: str, *,
                 docs = parse_qs(parsed.query).get("doc", [])
                 if len(docs) == 1 and docs[0].startswith("/Archives/edgar/data/"):
                     target = "https://www.sec.gov" + docs[0]
+            # Form 4/144 may be indexed under an issuer CIK but stored
+            # under the reporting owner's CIK. Only accept an index-linked,
+            # same-accession SEC archive path matching official metadata.
             if not target.startswith(prefix):
-                continue
-            name = document_name(target.removeprefix(prefix))
+                parts = urlsplit(target)
+                match = re.fullmatch(
+                    rf"/Archives/edgar/data/\d{{1,10}}/{folder}/(.+)", parts.path,
+                )
+                if (primary_name is None or form[0].upper() not in
+                        {"3", "3/A", "4", "4/A", "5", "5/A", "144", "144/A"}
+                        or parts.scheme != "https" or parts.netloc != "www.sec.gov"
+                        or parts.query or parts.fragment or match is None):
+                    continue
+                name = document_name(match[1])
+                if name != primary_name:
+                    continue
+                target = target.rsplit("/", 1)[0] + "/" + name
+                target = re.sub(r"/xsl[A-Za-z0-9_-]+/", "/", target)
+            else:
+                name = document_name(target.removeprefix(prefix))
+                if name is not None:
+                    target = prefix + name
             if name is None or "-index." in name.lower():
                 continue
-            target = prefix + name
             if primary_name == name and form[0] and not form[0].upper().startswith("EX-"):
                 authoritative.add(target)
             if sequence[0] == "1" and form[0] and not form[0].upper().startswith("EX-"):

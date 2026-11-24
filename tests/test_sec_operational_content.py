@@ -200,3 +200,23 @@ def test_ownership_metadata_and_xbrl_roles():
     assert "shares: 100" in body
     with pytest.raises(ValueError, match="METADATA_MISMATCH"):
         documents(index, INDEX, primary_name="unrelated.xml")
+
+
+@pytest.mark.parametrize("form", ["4", "144"])
+def test_reporting_owner_archive_cik_differs_from_issuer(form):
+    owner = ROOT.replace("/789019/", "/1295084/")
+    index = f"""<table>
+    <tr><td>1</td><td></td><td><a href="{owner}xslF345X06/ownership.xml">view</a></td><td>{form}</td></tr>
+    <tr><td>1</td><td></td><td><a href="{owner}ownership.xml">xml</a></td><td>{form}</td></tr>
+    </table>""".encode()
+    assert documents(index, INDEX, primary_name="ownership.xml") == (
+        owner + "ownership.xml", (),
+    )
+    with pytest.raises(ValueError, match="METADATA_MISMATCH"):
+        documents(index, INDEX, primary_name="unrelated.xml")
+    with pytest.raises(ValueError, match="METADATA_MISMATCH"):
+        documents(index.replace(b"000078901926000001/", b"000078901926000002/"),
+                  INDEX, primary_name="ownership.xml")
+    with pytest.raises(ValueError, match="METADATA_MISMATCH"):
+        documents(index.replace(b"www.sec.gov", b"example.com"),
+                  INDEX, primary_name="ownership.xml")
