@@ -12,7 +12,7 @@ from tris_market_event_intelligence.sec_operational_content import (
     documents,
     index_identity,
 )
-from tris_market_event_intelligence.source_article_content import capture, collect_full_text
+from tris_market_event_intelligence.source_article_content import capture, capture_sec, collect_full_text
 
 ROOT = "https://www.sec.gov/Archives/edgar/data/789019/000078901926000001/"
 INDEX = ROOT + "0000789019-26-000001-index.htm"
@@ -117,7 +117,8 @@ def test_incomplete_exhibit_preserves_original_and_blocks_analysis(monkeypatch):
         lambda request: httpx.Response(200, content=payloads[str(request.url)])
     )) as client:
         row = capture(client, INDEX)
-    assert row["status"] == "REVIEW_REQUIRED"
+    assert row["status"] == "COMPLETE"
+    assert row["format"] == "SEC_BUNDLE_PARTIAL"
     assert row["error_code"] == "SEC_EXHIBIT_EMPTY_CONTENT"
     assert "Issuer reported" in row["body"]
     assert len(json.loads(row["raw_payload"])["documents"]) == 2
@@ -133,8 +134,6 @@ def test_sec_visible_text_excludes_hidden_inline_xbrl():
 
 
 def test_sec_http_error_has_document_role_and_status(monkeypatch):
-    from tris_market_event_intelligence.source_article_content import ContentError
-
     monkeypatch.setattr(
         "tris_market_event_intelligence.source_article_content.time.sleep", lambda _: None,
     )
@@ -142,6 +141,33 @@ def test_sec_http_error_has_document_role_and_status(monkeypatch):
         if str(request.url) == INDEX:
             return httpx.Response(200, content=TABLE)
         return httpx.Response(429)
-    with (httpx.Client(transport=httpx.MockTransport(handler)) as client,
-          pytest.raises(ContentError, match="SEC_PRIMARY_HTTP_429")):
-        capture(client, INDEX)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        row = capture(client, INDEX)
+    assert row["status"] == "REVIEW_REQUIRED"
+    assert row["error_code"] == "SEC_PRIMARY_HTTP_429"
+
+
+def test_sec_original_cache_retains_primary_when_exhibit_unavailable(tmp_path, monkeypatch):
+    from tris_market_event_intelligence.source_article_content import initialize
+
+    monkeypatch.setattr(
+        "tris_market_event_intelligence.source_article_content.time.sleep", lambda _: None,
+    )
+    store = NewsStore(tmp_path / "originals.sqlite3")
+    initialize(store)
+    calls = []
+    def handler(request):
+        url = str(request.url)
+        calls.append(url)
+        if url == EXHIBIT:
+            return httpx.Response(404)
+        return httpx.Response(200, content={INDEX: TABLE, PRIMARY: BODY}[url])
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        first = capture_sec(client, INDEX, store=store)
+        second = capture_sec(client, INDEX, store=store)
+    assert first["status"] == second["status"] == "COMPLETE"
+    assert first["format"] == "SEC_BUNDLE_PARTIAL"
+    assert calls.count(INDEX) == calls.count(PRIMARY) == 1
+    assert calls.count(EXHIBIT) == 2
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM sec_document_originals").fetchone()[0] == 2

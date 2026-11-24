@@ -231,34 +231,56 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
     return "\n\n".join(parts), tuple(sparse)
 
 
-def capture_sec(client: httpx.Client, url: str) -> dict[str, object]:
+def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = None) -> dict[str, object]:
     if index_identity(url) is None:
         raise ContentError("SEC_INDEX_IDENTITY_INVALID")
-    raw_index, _, resolved = fetch(client, url, MAX_HTML_BYTES)
-    if resolved != url:
-        raise ContentError("SEC_INDEX_REDIRECT")
+    def original(target: str, limit: int) -> bytes:
+        if store is not None:
+            with store.connect() as db:
+                saved = db.execute(
+                    "SELECT payload,sha256 FROM sec_document_originals WHERE url=?", (target,),
+                ).fetchone()
+            if saved:
+                if hashlib.sha256(saved[0]).hexdigest() != saved[1]:
+                    raise ContentError("SEC_STORED_ORIGINAL_DIGEST_MISMATCH")
+                return bytes(saved[0])
+        time.sleep(0.25)
+        raw, _, resolved = fetch(client, target, limit)
+        if resolved != target:
+            raise ContentError("SEC_DOCUMENT_REDIRECT")
+        if store is not None:
+            with store.connect() as db:
+                db.execute(
+                    """INSERT OR IGNORE INTO sec_document_originals
+                       (url,sha256,payload,observed_at) VALUES (?,?,?,?)""",
+                    (target, hashlib.sha256(raw).hexdigest(), raw,
+                     datetime.now(UTC).isoformat()),
+                )
+        return raw
+
+    try:
+        raw_index = original(url, MAX_HTML_BYTES)
+    except httpx.HTTPStatusError as exc:
+        raise ContentError(f"SEC_INDEX_HTTP_{exc.response.status_code}") from exc
     try:
         primary, exhibits = documents(raw_index, url)
     except ValueError as exc:
         raise ContentError(str(exc)) from exc
-    if len(exhibits) > 8:
-        raise ContentError("SEC_EXHIBIT_LIMIT_REVIEW")
+    deferred = len(exhibits) > 8
     originals = []
     texts = []
-    issues: list[str] = []
-    for target in (primary, *exhibits):
-        time.sleep(0.2)
+    issues: list[str] = ['SEC_EXHIBIT_LIMIT_REVIEW'] if deferred else []
+    primary_ready = False
+    for target in (primary, *exhibits[:8]):
         role = "PRIMARY" if target == primary else "EXHIBIT"
         try:
-            raw, _, resolved = fetch(client, target, 8_000_000)
+            raw = original(target, 8_000_000)
         except httpx.HTTPStatusError as exc:
             code = f"SEC_{role}_HTTP_{exc.response.status_code}"
-            if exc.response.status_code in (403, 429, 503) or target == primary:
-                raise ContentError(code) from exc
             issues.append(code)
+            if exc.response.status_code in (403, 429, 503) or target == primary:
+                break
             continue
-        if resolved != target:
-            raise ContentError("SEC_DOCUMENT_REDIRECT")
         try:
             body = visible_text(raw, target)
             quality = classify(body)
@@ -271,6 +293,8 @@ def capture_sec(client: httpx.Client, url: str) -> dict[str, object]:
         })
         if quality == "TEXT_CANDIDATE":
             texts.append(body)
+            if target == primary:
+                primary_ready = True
         else:
             issues.append(f"SEC_{role}_{quality}")
     bundle = json.dumps({
@@ -281,10 +305,11 @@ def capture_sec(client: httpx.Client, url: str) -> dict[str, object]:
     }, sort_keys=True, separators=(",", ":")).encode()
     body = "\n\n".join(texts)
     return {
-        "status": "REVIEW_REQUIRED" if issues else "COMPLETE", "body": body,
+        "status": "COMPLETE" if primary_ready else "REVIEW_REQUIRED", "body": body,
         "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
         "raw_sha256": hashlib.sha256(bundle).hexdigest(), "raw_payload": bundle,
-        "source_url": url, "format": "SEC_BUNDLE", "sparse_pages": "[]",
+        "source_url": url, "format": "SEC_BUNDLE_PARTIAL" if issues else "SEC_BUNDLE",
+        "sparse_pages": "[]",
         "error_code": ";".join(issues) if issues else None,
     }
 
@@ -345,6 +370,12 @@ def initialize(store: NewsStore) -> None:
     store.initialize()
     with store.connect() as db:
         db.execute("""
+            CREATE TABLE IF NOT EXISTS sec_document_originals (
+                url TEXT PRIMARY KEY, sha256 TEXT NOT NULL,
+                payload BLOB NOT NULL, observed_at TEXT NOT NULL
+            )
+        """)
+        db.execute("""
             CREATE TABLE IF NOT EXISTS article_full_text (
                 article_id INTEGER PRIMARY KEY REFERENCES articles(id),
                 status TEXT NOT NULL CHECK(status IN
@@ -395,7 +426,7 @@ def collect_full_text(
         retry_query = f"""
             SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
-            WHERE f.status='INCOMPLETE' AND {scope}
+            WHERE (f.status='INCOMPLETE' OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
               AND (f.retry_after <= ? OR (a.source GLOB 'sec_8k_[0-9]*'
                    AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
                    OR (a.source GLOB 'sec_8k_[0-9]*' AND f.error_code='HTTPStatusError'))
@@ -438,7 +469,7 @@ def collect_full_text(
                         SELECT status,content_url,body_sha256,raw_sha256,
                                raw_payload,body,format,sparse_pages
                         FROM article_full_text
-                        WHERE status IN ('COMPLETE','REVIEW_REQUIRED')
+                        WHERE status IN ('COMPLETE','REVIEW_REQUIRED') AND format != 'SEC_BUNDLE_PARTIAL'
                           AND article_id IN (SELECT id FROM articles WHERE url=?)
                         LIMIT 1
                     """, (url,)).fetchone()
@@ -462,7 +493,7 @@ def collect_full_text(
                             index_url = canonical_index(url, source)
                         except ValueError as exc:
                             raise ContentError(str(exc)) from exc
-                        row = capture_sec(client, index_url)
+                        row = capture_sec(client, index_url, store=store)
                     else:
                         row = capture(client, url)
             except (ContentError, httpx.HTTPError, OSError) as exc:
@@ -480,7 +511,7 @@ def collect_full_text(
                 error = str(row["error_code"])
             counts[str(row["status"]).lower()] += 1
             retry = ((datetime.now(UTC) + timedelta(hours=RETRY_HOURS)).isoformat()
-                     if row["status"] == "INCOMPLETE" else None)
+                     if row["status"] == "INCOMPLETE" or row["format"] == "SEC_BUNDLE_PARTIAL" else None)
             with store.connect() as db:
                 db.execute("""
                     INSERT INTO article_full_text (
@@ -509,12 +540,14 @@ def collect_full_text(
             WHERE {scope} AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'))
-              AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED'))
+              AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED')
+                   OR f.format='SEC_BUNDLE_PARTIAL')
         """).fetchone()[0]
     with store.connect() as db:
         review_pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a JOIN article_full_text f
-            ON f.article_id=a.id WHERE f.status='REVIEW_REQUIRED' AND {scope}
+            ON f.article_id=a.id WHERE (f.status='REVIEW_REQUIRED'
+                  OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
