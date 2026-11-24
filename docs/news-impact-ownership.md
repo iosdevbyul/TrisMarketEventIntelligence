@@ -1,5 +1,8 @@
 # News impact ownership — revised Stage 3
 
+> **Historical compatibility document — superseded for project scope on 2026-11-24.** The news-pressure-only schema and its restrictions remain valid for that legacy output, not for the project as a whole. [PROJECT_CHARTER.md](../PROJECT_CHARTER.md) governs current work: SEC filings + news + economic indicators, separate economic/market-direction predictions, precommitment, actual price and benchmark validation, independent learning. Statements below assigning all price research to DonghakStockVision or prohibiting price evaluation are historical, not active development instructions. Existing APIs and research history are preserved.
+
+
 ## Decided responsibility boundary
 
 **TrisMarketEventIntelligence**: discover and deduplicate financial news,

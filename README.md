@@ -1,12 +1,15 @@
 # TrisMarketEventIntelligence
 
-An independent, local-first market-event research service that collects news and economic indicators, analyzes economic meaning, predicts subsequent market direction at a sealed point in time, and evaluates those predictions against **real observed stock, sector, index and ETF prices**. This project is independent of DonghakStockVision and does not execute trades.
+An independent, local-first market-event research service that collects SEC filings, news and economic indicators, analyzes economic meaning, predicts subsequent market direction at a sealed point in time, and evaluates those predictions against **real observed stock, sector, index and ETF prices**. This project is independent of DonghakStockVision and does not execute trades.
 
 **Project mission, six-stage roadmap, acceptance gates and change control:** [PROJECT_CHARTER.md](PROJECT_CHARTER.md). The charter governs future development when older documentation conflicts.
 
 ## Principles
 
-- Keep financial event ingestion and news-only impact analysis independent from consumers.\n- TrisMarketEventIntelligence estimates whether a news event exerts positive, negative or mixed pressure and how strongly; it does **not** predict stock returns, targets or prices.\n- DonghakStockVision owns price collection, market forecasts, and any calibration of news pressure against realized returns.
+- Independently collect SEC filings, publisher news and official economic releases; link them by event and time.
+- Separate conditional economic impact from subsequent market-direction forecasts, seal predictions before outcome access, and evaluate against actual stock and benchmark prices within this project.
+- DonghakStockVision is an optional consumer, not the owner of this project's market evaluation.
+- Admit information by validity and scope, not minimum character count; distinguish factual short alerts from extraction failures and media shells.
 - Store original source provenance and separate observed facts from AI hypotheses.
 - Record publication, detection and processing times separately to avoid look-ahead bias.
 - Treat event IDs as durable, deduplicated delivery cursors.
@@ -41,9 +44,9 @@ Optional settings: `MARKET_EVENT_HOST` (loopback-only) and `MARKET_EVENT_PORT` (
 7. **DonghakStockVision integration:** consume verified events without rewriting existing KRX pipelines.
 8. **v1.0 verification:** live-source end-to-end, historical leakage checks and release criteria.
 
-No real-world news collection or AI analysis is implemented in the foundation phase. The health endpoint alone is not a production-readiness signal.
+The eight milestones above are historical groundwork, not the current implementation status or development order. See the charter for current acceptance gates.
 
-## Project responsibility boundary (Stage 3 revised)\n\nSee [docs/news-impact-ownership.md](docs/news-impact-ownership.md) for the ownership contract and migration notes. The first additive `news_impact_signal_v1` schema accepts directional strength (`LOW`, `MODERATE`, `HIGH`, or `UNASSESSED`), an optional **news pressure index from 0 to 100, not a price percentage**, and provenance. Existing `market-impact-v8` records are adapted with `UNASSESSED` rather than inventing a strength score. Producing genuinely evidence-supported strength estimates is a separate model upgrade and evaluation task. Legacy minute-price utilities remain for compatibility; real price validation is now in the project's research scope under PROJECT_CHARTER.md.\n
+## Legacy news-pressure compatibility contract\n\nSee [docs/news-impact-ownership.md](docs/news-impact-ownership.md) for the ownership contract and migration notes. The first additive `news_impact_signal_v1` schema accepts directional strength (`LOW`, `MODERATE`, `HIGH`, or `UNASSESSED`), an optional **news pressure index from 0 to 100, not a price percentage**, and provenance. Existing `market-impact-v8` records are adapted with `UNASSESSED` rather than inventing a strength score. Producing genuinely evidence-supported strength estimates is a separate model upgrade and evaluation task. Legacy minute-price utilities remain for compatibility; real price validation is now in the project's research scope under PROJECT_CHARTER.md.\n
 
 ## Current market-learning roadmap (2026-11-23)
 
