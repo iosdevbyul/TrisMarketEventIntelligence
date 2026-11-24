@@ -46,6 +46,9 @@ NEUTRAL requires an explicit reason why effects are immaterial, and UNCERTAIN
 is appropriate when the evidence does not support a defensible direction.
 Include only material, distinct, source-supported targets, normally 0-3; do not
 fill a quota. When evidence is insufficient, use UNCERTAIN or impacts: [].
+For SEC filings, distinguish issuer disclosures from market direction. If contentScope
+is PRIMARY_WITH_PARTIAL_EXHIBITS, state that attachments are incomplete and never
+invent their contents. An administrative filing may have no material impact.
 No realized returns, ex-post information, price assumptions, or investing advice.
 Choose evidence_id only from the supplied E-numbers. NEVER invent quotations;
 the application attaches the exact original text. Return JSON only."""
