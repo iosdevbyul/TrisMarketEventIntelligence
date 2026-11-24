@@ -240,3 +240,33 @@ def test_oversized_source_has_bounded_deterministic_passages() -> None:
     assert first == evidence_passages(source)
     assert 1 <= len(first) <= 24
     assert all(item["text"] in source[:12000] for item in first)
+
+
+@pytest.mark.parametrize("done_reason", ["length", "stop"])
+def test_empty_generation_retries_with_thinking_disabled(tmp_path, done_reason):
+    db = database(tmp_path / "news.sqlite3")
+    attempts = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        attempts.append(payload)
+        assert payload["think"] is False
+        assert payload["options"]["num_ctx"] == 8192
+        if len(attempts) == 1:
+            return httpx.Response(200, json={
+                "done_reason": done_reason, "message": {"content": "", "thinking": "internal"},
+            })
+        return httpx.Response(200, json={
+            "done_reason": "stop", "message": {"content": json.dumps({
+                "summary": "Source-based review", "limitations": "Limited evidence", "impacts": [],
+            })},
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = analyze(db, tmp_path / "reviews", client=client)
+    assert result["completed"] == 1
+    assert len(attempts) == 2
+    assert attempts[1]["format"] == "json"
+    assert attempts[1]["options"]["num_predict"] > attempts[0]["options"]["num_predict"]
+    assert attempts[0]["messages"][1] == attempts[1]["messages"][1]
+    assert attempts[0]["options"]["seed"] != attempts[1]["options"]["seed"]

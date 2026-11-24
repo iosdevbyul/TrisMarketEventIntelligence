@@ -156,10 +156,17 @@ def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
         settings = {
             "model": model,
             "stream": False,
+            "think": False,
             "format": output_schema(list(evidence)),
-            "options": {"temperature": 0, "seed": 20261123, "num_predict": 1536},
+            "options": {
+                "temperature": 0, "seed": 20261123 + attempt,
+                "num_ctx": 8192, "num_predict": 2048,
+            },
             "messages": messages,
         }
+        if attempt and last_error in {"MODEL_CONTENT_EMPTY", "MODEL_GENERATION_TRUNCATED"}:
+            settings["format"] = "json"
+            settings["options"]["num_predict"] = 3072
         response = client.post(
             "http://127.0.0.1:11434/api/chat", json=settings,
         )
@@ -171,6 +178,8 @@ def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
         response.raise_for_status()
         try:
             result = response.json()
+            if result.get("done_reason") == "length":
+                raise AnswerError("MODEL_GENERATION_TRUNCATED")
             content = result["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise AnswerError("MODEL_CONTENT_EMPTY")
