@@ -21,7 +21,7 @@ from tris_market_event_intelligence.automatic_forecast_precommitment import (
     ELIGIBLE,
     verify_chain,
 )
-from tris_market_event_intelligence.event_aware_forecast import horizon_prediction
+from tris_market_event_intelligence.event_aware_forecast import horizon_evidence, horizon_prediction
 from tris_market_event_intelligence.market_outcome_validation_cli import (
     NEUTRAL_THRESHOLD,
     ZONES,
@@ -92,7 +92,7 @@ def _source_identity(db: sqlite3.Connection, commit: sqlite3.Row) -> str | None:
     direction, reason = horizon_prediction(payload, impact, commit["horizon_sessions"])
     if (direction != commit["direction"] or reason != commit["rationale"]
             or impact["target"] != commit["target"]
-            or impact["evidence_quote"] != commit["evidence_quote"]):
+            or horizon_evidence(payload, impact, commit["horizon_sessions"]) != commit["evidence_quote"]):
         return "COMMITTED_FORECAST_DOES_NOT_MATCH_ORIGINAL_MODEL"
     return None
 
