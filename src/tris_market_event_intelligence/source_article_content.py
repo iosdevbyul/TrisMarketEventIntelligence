@@ -389,6 +389,14 @@ def initialize(store: NewsStore) -> None:
             )
         """)
         db.execute("""
+            CREATE TABLE IF NOT EXISTS media_body_versions (
+                article_id INTEGER NOT NULL, body_sha256 TEXT NOT NULL,
+                raw_sha256 TEXT NOT NULL, raw_payload BLOB NOT NULL,
+                body TEXT NOT NULL, observed_at TEXT NOT NULL, format TEXT NOT NULL,
+                PRIMARY KEY(article_id, body_sha256, raw_sha256)
+            )
+        """)
+        db.execute("""
             CREATE TABLE IF NOT EXISTS article_full_text (
                 article_id INTEGER PRIMARY KEY REFERENCES articles(id),
                 status TEXT NOT NULL CHECK(status IN
@@ -411,12 +419,13 @@ def collect_full_text(
     db_path: Path, *, client: httpx.Client | None = None,
     limit: int = MAX_PER_CYCLE, sec_only: bool = False,
     repair_ids: tuple[int, ...] | None = None,
+    media_only: bool = False,
 ) -> dict[str, object]:
     """Catch up on previously discovered RSS rows without mutating them."""
     if not 1 <= limit <= MAX_PER_CYCLE:
         raise ValueError("limit must be 1..12")
-    if repair_ids is not None and (not sec_only or not 1 <= len(repair_ids) <= limit):
-        raise ValueError("Explicit SEC repair requires a bounded SEC-only ID list")
+    if repair_ids is not None and (not (sec_only or media_only) or not 1 <= len(repair_ids) <= limit):
+        raise ValueError("Explicit repair requires a bounded source-scoped ID list")
     store = NewsStore(db_path)
     initialize(store)
     now = datetime.now(UTC).isoformat()
@@ -425,7 +434,11 @@ def collect_full_text(
     newest_slots = (limit + 2) // 3
     oldest_slots = (limit + 1) // 3
     retry_slots = limit - newest_slots - oldest_slots
-    scope = "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')" if sec_only else "1=1"
+    if sec_only and media_only:
+        raise ValueError("SEC and media scopes are mutually exclusive")
+    scope = ("a.source IN ('bbc_business','bbc_technology','bbc_world')" if media_only
+             else "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')"
+             if sec_only else "1=1")
     with store.connect() as db:
         base = """
             SELECT a.id, a.url, a.source FROM articles a
@@ -552,6 +565,12 @@ def collect_full_text(
             with store.connect() as db:
                 if source.startswith(("sec_8k_", "sec_filing_")):
                     db.execute("""INSERT OR IGNORE INTO sec_body_versions
+                        SELECT article_id,body_sha256,raw_sha256,raw_payload,body,observed_at,format
+                        FROM article_full_text WHERE article_id=? AND body_sha256 IS NOT NULL
+                        AND raw_sha256 IS NOT NULL AND raw_payload IS NOT NULL AND body IS NOT NULL
+                        AND format IS NOT NULL""", (article_id,))
+                if media_only:
+                    db.execute("""INSERT OR IGNORE INTO media_body_versions
                         SELECT article_id,body_sha256,raw_sha256,raw_payload,body,observed_at,format
                         FROM article_full_text WHERE article_id=? AND body_sha256 IS NOT NULL
                         AND raw_sha256 IS NOT NULL AND raw_payload IS NOT NULL AND body IS NOT NULL

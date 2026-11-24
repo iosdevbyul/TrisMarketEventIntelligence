@@ -61,14 +61,19 @@ def initialize(db: sqlite3.Connection) -> None:
 
 def pending(db: sqlite3.Connection, model: str, limit: int,
             retry_minutes: int, *, fresh_only_minutes: int | None = None,
-            observed_now: datetime | None = None, sec_only: bool = False) -> tuple[list[sqlite3.Row], dict[str, int]]:
+            observed_now: datetime | None = None, sec_only: bool = False,
+            media_only: bool = False) -> tuple[list[sqlite3.Row], dict[str, int]]:
     db.row_factory = sqlite3.Row
     tables = {r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     )}
     if not {"articles", "article_full_text"}.issubset(tables):
         return [], {"eligible": 0, "missingFullText": 0}
-    scope = "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')" if sec_only else "1=1"
+    if sec_only and media_only:
+        raise ValueError("SEC and media scopes are mutually exclusive")
+    scope = ("a.source IN ('bbc_business','bbc_technology','bbc_world')" if media_only
+             else "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')"
+             if sec_only else "1=1")
     missing = db.execute(
         f"""SELECT COUNT(*) FROM articles a LEFT JOIN article_full_text f
            ON a.id=f.article_id
@@ -201,8 +206,13 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             verification_runs: int = 1, seal_forecasts: bool = False,
             mappings_path: Path | None = None,
             fresh_only_minutes: int | None = None,
-            event_aware: bool = False, sec_only: bool = False) -> dict:
+            event_aware: bool = False, sec_only: bool = False,
+            media_only: bool = False) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
+    if sec_only and media_only:
+        raise ValueError("SEC and media scopes are mutually exclusive")
+    if media_only and collect:
+        raise ValueError("Media-only analysis requires explicit collection")
     if sec_only and collect:
         raise ValueError("SEC-only analysis requires explicit collection or skip-collection")
     if event_aware and (not seal_forecasts or fresh_only_minutes is None):
@@ -242,7 +252,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             rows, coverage = pending(
                 db, model, limit, retry_minutes,
                 fresh_only_minutes=fresh_only_minutes,
-                observed_now=datetime.now(UTC), sec_only=sec_only,
+                observed_now=datetime.now(UTC), sec_only=sec_only, media_only=media_only,
             )
             owned = client is None
             session = client or httpx.Client(
