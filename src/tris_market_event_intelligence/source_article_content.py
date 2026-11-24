@@ -23,7 +23,11 @@ from pypdf import PdfReader
 
 from tris_market_event_intelligence.collector import NewsStore
 from tris_market_event_intelligence.news_content_quality import classify, media_page
-from tris_market_event_intelligence.sec_operational_content import documents, index_identity, visible_text
+from tris_market_event_intelligence.sec_operational_content import (
+    documents,
+    index_identity,
+    visible_text,
+)
 
 # Only publishers configured for operational RSS. Never fetch arbitrary hosts
 # advertised inside RSS, attachments or redirects.
@@ -347,7 +351,7 @@ def initialize(store: NewsStore) -> None:
 
 def collect_full_text(
     db_path: Path, *, client: httpx.Client | None = None,
-    limit: int = MAX_PER_CYCLE,
+    limit: int = MAX_PER_CYCLE, sec_only: bool = False,
 ) -> dict[str, object]:
     """Catch up on previously discovered RSS rows without mutating them."""
     if not 1 <= limit <= MAX_PER_CYCLE:
@@ -360,23 +364,24 @@ def collect_full_text(
     newest_slots = (limit + 2) // 3
     oldest_slots = (limit + 1) // 3
     retry_slots = limit - newest_slots - oldest_slots
+    scope = "a.source GLOB 'sec_8k_[0-9]*'" if sec_only else "1=1"
     with store.connect() as db:
         base = """
             SELECT a.id, a.url FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE f.article_id IS NULL
+            WHERE f.article_id IS NULL AND {scope}
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
               ))
             ORDER BY a.id {order} LIMIT ?
         """
-        newest = db.execute(base.format(order="DESC"), (newest_slots,)).fetchall()
-        oldest = db.execute(base.format(order="ASC"), (oldest_slots,)).fetchall()
-        retry_query = """
+        newest = db.execute(base.format(order="DESC", scope=scope), (newest_slots,)).fetchall()
+        oldest = db.execute(base.format(order="ASC", scope=scope), (oldest_slots,)).fetchall()
+        retry_query = f"""
             SELECT a.id, a.url FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
-            WHERE f.status='INCOMPLETE' AND f.retry_after <= ?
+            WHERE f.status='INCOMPLETE' AND f.retry_after <= ? AND {scope}
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
@@ -442,6 +447,7 @@ def collect_full_text(
                     "raw_payload": None, "body": None, "format": None,
                     "sparse_pages": "[]",
                 }
+            observed = datetime.now(UTC).isoformat()
             counts[str(row["status"]).lower()] += 1
             retry = ((datetime.now(UTC) + timedelta(hours=RETRY_HOURS)).isoformat()
                      if row["status"] == "INCOMPLETE" else None)
@@ -467,18 +473,18 @@ def collect_full_text(
         if owned:
             client.close()
     with store.connect() as db:
-        pending = db.execute("""
+        pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
+            WHERE {scope} AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'))
               AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED'))
         """).fetchone()[0]
     with store.connect() as db:
-        review_pending = db.execute("""
+        review_pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a JOIN article_full_text f
-            ON f.article_id=a.id WHERE f.status='REVIEW_REQUIRED'
+            ON f.article_id=a.id WHERE f.status='REVIEW_REQUIRED' AND {scope}
               AND (a.source GLOB 'sec_8k_[0-9]*' OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
