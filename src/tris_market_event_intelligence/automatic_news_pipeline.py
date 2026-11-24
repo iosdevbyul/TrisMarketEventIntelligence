@@ -32,6 +32,7 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     result_error,
 )
 from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
+from tris_market_event_intelligence.news_content_quality import classify
 from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
@@ -107,6 +108,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         if fresh_only_minutes is not None else None
     )
     blocked_fresh = 0
+    blocked_quality = 0
     ready_new = []
     ready_retry = []
     for row in candidates:
@@ -134,7 +136,9 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
             continue
         if hashlib.sha256(body.encode()).hexdigest() != digest:
             continue
-        if row["sparse_pages"] not in (None, "[]"):
+        if classify(body, url=row["url"], title=row["title"],
+                    sparse=row["sparse_pages"]) != "TEXT_CANDIDATE":
+            blocked_quality += 1
             continue
         if row["prior_status"] == "FAILED":
             if row["prior_attempts"] >= 3:
@@ -153,6 +157,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         return chosen, {
             "eligible": len(candidates), "missingFullText": missing,
             "readyNew": len(ready_new), "readyRetry": len(ready_retry),
+            "contentQualityRejected": blocked_quality,
             "freshOnlyMinutes": fresh_only_minutes,
             "freshClockRejected": blocked_fresh,
             "freshAdmissible": len(ready_new) + len(ready_retry),
