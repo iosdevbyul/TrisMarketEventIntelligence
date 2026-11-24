@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 
+from tris_market_event_intelligence.news_content_quality import classify
 from tris_market_event_intelligence.news_impact_target_policy import (
     target_error,
     target_key,
@@ -60,7 +61,7 @@ def evidence_passages(body: str, *, max_items: int = 24) -> list[dict[str, str]]
     for piece in pieces:
         for start in range(0, len(piece), 280):
             fragment = piece[start:start + 280].strip()
-            if len(fragment) >= 18 and fragment not in spans:
+            if fragment and fragment not in spans:
                 spans.append(fragment)
     if len(spans) > max_items:
         indices = sorted({
@@ -195,7 +196,7 @@ def verified_articles(db_path: Path, limit: int) -> tuple[list[dict], dict]:
         article_id, source, title, url, published, detected, body, digest, sparse = row
         if (not isinstance(body, str) or not isinstance(digest, str)
                 or hashlib.sha256(body.encode()).hexdigest() != digest
-                or sparse not in (None, "[]")):
+                or classify(body, url=url, title=title, sparse=sparse) != "TEXT_CANDIDATE"):
             invalid += 1
             continue
         articles.append({
