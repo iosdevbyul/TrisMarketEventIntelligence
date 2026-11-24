@@ -23,6 +23,7 @@ from pypdf import PdfReader
 
 from tris_market_event_intelligence.collector import NewsStore
 from tris_market_event_intelligence.news_content_quality import classify, media_page
+from tris_market_event_intelligence.news_source_provider import MEDIA_SQL, PUBLISHERS, accepts
 from tris_market_event_intelligence.sec_operational_content import (
     canonical_index,
     documents,
@@ -38,7 +39,7 @@ PUBLISHER_HOSTS = frozenset({
     "www.bok.or.kr", "bok.or.kr", "file-cdn.bok.or.kr",
     "www.bbc.com", "bbc.com", "www.bbc.co.uk", "bbc.co.uk",
     "feeds.bbci.co.uk", "www.sec.gov", "www.bls.gov",
-})
+}) | frozenset(host for publisher in PUBLISHERS.values() for host in publisher.hosts)
 MAX_HTML_BYTES = 2_000_000
 MAX_PDF_BYTES = 20_000_000
 MAX_PAGES = 250
@@ -61,9 +62,9 @@ def allowed(url: str) -> bool:
         return False
 
 
-def fetch(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str, str]:
+def fetch(client: httpx.Client, url: str, limit: int, *, source: str | None = None) -> tuple[bytes, str, str]:
     for _ in range(4):
-        if not allowed(url):
+        if not allowed(url) or (source is not None and not accepts(source, url)):
             raise ContentError("UNTRUSTED_URL")
         with client.stream("GET", url, follow_redirects=False, timeout=20) as response:
             if response.is_redirect:
@@ -319,14 +320,15 @@ def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = Non
     }
 
 
-def capture(client: httpx.Client, url: str) -> dict[str, object]:
+def capture(client: httpx.Client, url: str, *, source: str | None = None) -> dict[str, object]:
     # RSS can link to programmes, galleries and index pages rather than a
     # written article. Do not mislabel their template text as article content.
     if index_identity(url) is not None:
         return capture_sec(client, url)
     if media_page(url):
         raise ContentError("NON_ARTICLE_MEDIA_PAGE")
-    payload, media_type, final_url = fetch(client, url, MAX_PDF_BYTES)
+    payload, media_type, final_url = (fetch(client, url, MAX_PDF_BYTES, source=source)
+                                      if source is not None else fetch(client, url, MAX_PDF_BYTES))
     if media_page(final_url):
         raise ContentError("NON_ARTICLE_MEDIA_PAGE")
     if payload.startswith(b"%PDF-"):
@@ -343,7 +345,7 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
         # complete economic release or FOMC minutes can be in an official PDF.
         # Inspect explicitly linked, same-trust-boundary PDFs even if the HTML
         # is substantial; do not mistake a teaser for the full report.
-        for pdf_url in pdf_links:
+        for pdf_url in (() if source in PUBLISHERS else pdf_links):
             try:
                 candidate, _, resolved = fetch(client, pdf_url, MAX_PDF_BYTES)
                 extracted, candidate_sparse = extract_pdf(candidate)
@@ -436,7 +438,7 @@ def collect_full_text(
     retry_slots = limit - newest_slots - oldest_slots
     if sec_only and media_only:
         raise ValueError("SEC and media scopes are mutually exclusive")
-    scope = ("a.source IN ('bbc_business','bbc_technology','bbc_world')" if media_only
+    scope = (MEDIA_SQL if media_only
              else "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')"
              if sec_only else "1=1")
     if media_only:
@@ -448,7 +450,8 @@ def collect_full_text(
             WHERE f.article_id IS NULL AND {scope}
               AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world'
+                'bok_corrections','bbc_business','bbc_technology','bbc_world',
+                'hankyung_all','mk_all','yna_economy','cnbc_top'
               ))
             ORDER BY a.id {order} LIMIT ?
         """
@@ -463,7 +466,8 @@ def collect_full_text(
                    OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') AND f.error_code='HTTPStatusError'))
               AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world'
+                'bok_corrections','bbc_business','bbc_technology','bbc_world',
+                'hankyung_all','mk_all','yna_economy','cnbc_top'
               ))
             ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
         """
@@ -549,7 +553,8 @@ def collect_full_text(
                         row = capture_sec(client, index_url, store=store,
                                           primary_name=primary_name)
                     else:
-                        row = capture(client, url)
+                        row = (capture(client, url, source=source)
+                               if source in PUBLISHERS else capture(client, url))
             except (ContentError, httpx.HTTPError, OSError) as exc:
                 error = str(exc) if isinstance(exc, ContentError) else type(exc).__name__
                 state = ("NON_ARTICLE" if error == "NON_ARTICLE_MEDIA_PAGE"
@@ -605,7 +610,8 @@ def collect_full_text(
             LEFT JOIN article_full_text f ON f.article_id=a.id
             WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world'))
+                'bok_corrections','bbc_business','bbc_technology','bbc_world',
+                'hankyung_all','mk_all','yna_economy','cnbc_top'))
               AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED')
                    OR f.format='SEC_BUNDLE_PARTIAL')
         """).fetchone()[0]
@@ -616,7 +622,8 @@ def collect_full_text(
                   OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
               AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world'
+                'bok_corrections','bbc_business','bbc_technology','bbc_world',
+                'hankyung_all','mk_all','yna_economy','cnbc_top'
               ))
         """).fetchone()[0]
         missing_or_failed = pending - review_pending

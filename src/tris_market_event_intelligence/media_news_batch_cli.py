@@ -11,11 +11,12 @@ from pathlib import Path
 
 from tris_market_event_intelligence.automatic_news_pipeline import process
 from tris_market_event_intelligence.news_content_quality import classify, media_page
+from tris_market_event_intelligence.news_source_provider import MEDIA_SQL, PUBLISHERS, canonical_url
 from tris_market_event_intelligence.operations import run_cycle
 from tris_market_event_intelligence.source_article_content import collect_full_text
 
 SOURCES = ("bbc_business", "bbc_technology", "bbc_world")
-SCOPE = "a.source IN ('bbc_business','bbc_technology','bbc_world')"
+SCOPE = MEDIA_SQL
 
 
 def audit(path: Path, model: str) -> dict:
@@ -33,6 +34,7 @@ def audit(path: Path, model: str) -> dict:
         by_source: dict[str, Counter[str]] = {}
         pending = []
         excluded = []
+        identities: dict[tuple[str, str], list[int]] = {}
         for row in db.execute(f"""
             SELECT a.id,a.source,a.title,a.url,f.status,f.body,f.body_sha256,
                    f.raw_payload,f.raw_sha256,f.sparse_pages,f.error_code,{fields}
@@ -57,6 +59,8 @@ def audit(path: Path, model: str) -> dict:
                 category = "MODEL_FAILED" if state == "FAILED" else "READY_FOR_ANALYSIS"
             else:
                 category = "ANALYZED"
+            if category == "ANALYZED":
+                identities.setdefault((canonical_url(url), digest), []).append(aid)
             counts[category] += 1
             by_source.setdefault(source, Counter())[category] += 1
             if category == "EXCLUDED_AUDIO_VIDEO":
@@ -71,6 +75,9 @@ def audit(path: Path, model: str) -> dict:
                 "bySource": by_source, "pending": pending,
                 "excludedAudioVideo": excluded,
                 "textScopeCount": sum(counts.values()) - len(excluded),
+                "uniqueAnalyzedArticleVersions": len(identities),
+                "duplicateAnalyzedRecords": sum(len(ids) - 1 for ids in identities.values()),
+                "duplicateGroups": [ids for ids in identities.values() if len(ids) > 1],
                 "semanticCorrectnessVerified": False, "marketPricesAnalyzed": False}
 
 
@@ -112,6 +119,8 @@ def main() -> None:
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--max-batches", type=int, choices=range(1, 101), default=30)
     parser.add_argument("--discover", action="store_true")
+    parser.add_argument("--sources", nargs="+", choices=tuple(PUBLISHERS),
+                        help="Explicit discovery sources; default remains BBC")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--repair", action="store_true")
     parser.add_argument("--retry-failed", action="store_true",
@@ -121,7 +130,8 @@ def main() -> None:
         parser.error("Existing non-symlink DB required")
     if args.repair and not args.run:
         parser.error("--repair requires --run")
-    discovery = run_cycle(args.db, selected_sources=SOURCES) if args.discover else None
+    discovery = (run_cycle(args.db, selected_sources=tuple(args.sources or SOURCES))
+                 if args.discover else None)
     if args.retry_failed:
         if args.run or args.repair or args.discover:
             parser.error("--retry-failed is a standalone operation")

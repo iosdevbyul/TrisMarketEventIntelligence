@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from tris_market_event_intelligence.news_source_provider import CANDIDATES
+
 # Existing IDs remain unchanged; historical SQLite checkpoints depend on them.
 DEFAULT_FEEDS: dict[str, str] = {
     "fed_monetary": "https://www.federalreserve.gov/feeds/press_monetary.xml",
@@ -26,6 +28,7 @@ DEFAULT_FEEDS: dict[str, str] = {
     "bbc_world": "https://feeds.bbci.co.uk/news/world/rss.xml",
     "bbc_technology": "https://feeds.bbci.co.uk/news/technology/rss.xml",
 }
+DEFAULT_FEEDS.update({p.source: p.feed for p in CANDIDATES})
 SOURCE_ID = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 MAX_SOURCES = 50
 MAX_CONFIG_BYTES = 65536
