@@ -17,6 +17,8 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     validate_answer,
 )
 
+from tris_market_event_intelligence.news_content_quality import classify
+
 VERSION = "event_aware_dual_v1"
 DIRECTIONS = ["UP", "DOWN", "NEUTRAL", "UNCERTAIN"]
 NOVELTY = ["NEW_FACT_CANDIDATE", "FOLLOW_UP_CANDIDATE", "UNKNOWN"]
@@ -63,6 +65,8 @@ def prior_context(db: sqlite3.Connection, article: dict) -> list[dict]:
         if not pub <= det <= obs <= cutoff or pub >= cutoff:
             continue
         if not isinstance(body, str) or hashlib.sha256(body.encode()).hexdigest() != digest:
+            continue
+        if classify(body, title=title) != "TEXT_CANDIDATE":
             continue
         overlap = len(current & _tokens(title))
         if overlap < 2:
