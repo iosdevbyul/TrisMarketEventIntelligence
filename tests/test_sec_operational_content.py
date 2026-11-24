@@ -7,7 +7,11 @@ import httpx
 import pytest
 
 from tris_market_event_intelligence.collector import Article, NewsStore
-from tris_market_event_intelligence.sec_operational_content import documents, index_identity
+from tris_market_event_intelligence.sec_operational_content import (
+    canonical_index,
+    documents,
+    index_identity,
+)
 from tris_market_event_intelligence.source_article_content import capture, collect_full_text
 
 ROOT = "https://www.sec.gov/Archives/edgar/data/789019/000078901926000001/"
@@ -68,3 +72,37 @@ def test_sec_queue_isolated_and_idempotent(tmp_path: Path, monkeypatch):
     assert second["attempted"] == 0
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM article_full_text").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("url", [PRIMARY, INDEX, "https://www.sec.gov/ix?doc=" + PRIMARY.removeprefix("https://www.sec.gov")])
+def test_canonical_index_for_operational_feed_links(url):
+    assert canonical_index(url, "sec_8k_789019") == INDEX
+    with pytest.raises(ValueError, match="CIK_MISMATCH"):
+        canonical_index(url, "sec_8k_1045810")
+
+
+def test_retry_previous_generic_failure_with_direct_document(tmp_path, monkeypatch):
+    from tris_market_event_intelligence.source_article_content import initialize
+
+    monkeypatch.setattr("tris_market_event_intelligence.source_article_content.time.sleep", lambda _: None)
+    store = NewsStore(tmp_path / "retry.sqlite3")
+    initialize(store)
+    article = Article(source="sec_8k_789019", external_id="direct", url=PRIMARY,
+                      title="Disclosure", summary=None, published_at=None,
+                      detected_at="2026-11-21T00:00:00+00:00")
+    store.save(article.source, "https://example.com/feed", b"<rss/>", [article],
+               article.detected_at, None, None)
+    with store.connect() as db:
+        db.execute("""
+            INSERT INTO article_full_text
+                (article_id,status,observed_at,error_code,retry_after)
+            VALUES (1,'INCOMPLETE','2026-11-21T00:00:00+00:00',
+                    'INSUFFICIENT_ARTICLE_TEXT','2099-01-01T00:00:00+00:00')
+        """)
+    payloads = {INDEX: TABLE, PRIMARY: BODY, EXHIBIT: RELEASE}
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=payloads[str(request.url)])
+    )) as client:
+        result = collect_full_text(store.path, client=client, sec_only=True)
+    assert result["complete"] == 1
+    assert result["missing_or_failed"] == 0
