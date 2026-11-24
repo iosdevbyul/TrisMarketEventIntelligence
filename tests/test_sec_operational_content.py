@@ -142,6 +142,6 @@ def test_sec_http_error_has_document_role_and_status(monkeypatch):
         if str(request.url) == INDEX:
             return httpx.Response(200, content=TABLE)
         return httpx.Response(429)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(ContentError, match="SEC_PRIMARY_HTTP_429"):
-            capture(client, INDEX)
+    with (httpx.Client(transport=httpx.MockTransport(handler)) as client,
+          pytest.raises(ContentError, match="SEC_PRIMARY_HTTP_429")):
+        capture(client, INDEX)
