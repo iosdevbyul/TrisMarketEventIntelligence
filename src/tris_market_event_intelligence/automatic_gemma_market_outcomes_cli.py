@@ -15,6 +15,7 @@ from pathlib import Path
 
 from tris_market_event_intelligence.gemma_original_article_batch_cli import MODEL_PATTERN
 from tris_market_event_intelligence.market_outcome_validation_cli import evaluate
+from tris_market_event_intelligence.news_content_quality import media_page
 from tris_market_event_intelligence.operational_news_pit_readiness_cli import (
     inspect_live_news,
 )
@@ -62,8 +63,12 @@ def _automatically_analyzed(
         reports = []
         invalid = []
         dual_excluded = []
+        media_excluded = []
         for row in selected:
             article_id = row["id"]
+            if media_page(row["url"]):
+                media_excluded.append(article_id)
+                continue
             source = status.get(article_id)
             body = row["body"]
             if (source is None or not source["sourceIntegrityReviewed"]
@@ -113,6 +118,7 @@ def _automatically_analyzed(
         "selectedCompletedRows": len(selected),
         "excludedCorruptSourceIds": invalid,
         "excludedDualForecastArticleIds": dual_excluded,
+        "excludedAudioVideoArticleIds": media_excluded,
         "sourceArticleCount": audit["totalArticlesAtScan"],
         "sourceBlockerCounts": audit["blockerCounts"],
         "truncated": len(rows) > limit,

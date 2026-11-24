@@ -17,6 +17,7 @@ import httpx
 
 MAX_FEED_BYTES = 2_000_000
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
+from tris_market_event_intelligence.news_content_quality import media_page
 from tris_market_event_intelligence.source_catalog import DEFAULT_FEEDS, validate_feeds
 
 
@@ -351,6 +352,8 @@ class OfficialNewsCollector:
                             raise ValueError("RSS response exceeds maximum size")
                         articles = parse_rss(source, payload, response_at)
                         returned = len(articles)
+                        if source.startswith("bbc_"):
+                            articles = [article for article in articles if not media_page(article.url)]
                         inserted = self.store.save(
                             source, url, payload, articles, response_at,
                             response.headers.get("etag"), response.headers.get("last-modified"),

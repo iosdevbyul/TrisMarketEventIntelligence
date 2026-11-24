@@ -27,7 +27,8 @@ _ACCESS = re.compile(
 
 def media_page(url: str) -> bool:
     path = urlsplit(url).path.lower()
-    return path.startswith(("/iplayer/", "/news/videos/", "/news/av/"))
+    return path.startswith(("/iplayer/", "/sounds/", "/news/videos/", "/news/av/",
+                            "/video/", "/videos/", "/audio/", "/podcasts/"))
 
 
 def classify(body: object, *, url: str = "", title: str = "",

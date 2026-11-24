@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 from tris_market_event_intelligence.automatic_news_pipeline import process
-from tris_market_event_intelligence.news_content_quality import classify
+from tris_market_event_intelligence.news_content_quality import classify, media_page
 from tris_market_event_intelligence.operations import run_cycle
 from tris_market_event_intelligence.source_article_content import collect_full_text
 
@@ -32,6 +32,7 @@ def audit(path: Path, model: str) -> dict:
         counts: Counter[str] = Counter()
         by_source: dict[str, Counter[str]] = {}
         pending = []
+        excluded = []
         for row in db.execute(f"""
             SELECT a.id,a.source,a.title,a.url,f.status,f.body,f.body_sha256,
                    f.raw_payload,f.raw_sha256,f.sparse_pages,f.error_code,{fields}
@@ -40,7 +41,9 @@ def audit(path: Path, model: str) -> dict:
         """, (model,) if has_analysis else ()):
             aid, source, title, url, status, body, digest, raw, raw_hash, sparse, error, state, reason, attempts = row
             quality = classify(body, title=title, url=url, digest=digest, sparse=sparse)
-            if status is None:
+            if media_page(url):
+                category = "EXCLUDED_AUDIO_VIDEO"
+            elif status is None:
                 category = "NOT_CAPTURED"
             elif status == "NON_ARTICLE":
                 category = "MEDIA_REVIEW_REQUIRED"
@@ -56,13 +59,18 @@ def audit(path: Path, model: str) -> dict:
                 category = "ANALYZED"
             counts[category] += 1
             by_source.setdefault(source, Counter())[category] += 1
-            if category != "ANALYZED":
+            if category == "EXCLUDED_AUDIO_VIDEO":
+                excluded.append({"articleId": aid, "source": source, "url": url,
+                                 "existingAnalysisCompleted": state == "COMPLETED"})
+            elif category != "ANALYZED":
                 pending.append({"articleId": aid, "source": source, "title": title,
                                 "url": url, "category": category, "captureError": error,
                                 "analysisError": reason, "attempts": attempts,
                                 "existingAnalysisCompleted": state == "COMPLETED"})
         return {"discovered": sum(counts.values()), "counts": dict(counts),
                 "bySource": by_source, "pending": pending,
+                "excludedAudioVideo": excluded,
+                "textScopeCount": sum(counts.values()) - len(excluded),
                 "semanticCorrectnessVerified": False, "marketPricesAnalyzed": False}
 
 

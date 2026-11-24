@@ -439,6 +439,8 @@ def collect_full_text(
     scope = ("a.source IN ('bbc_business','bbc_technology','bbc_world')" if media_only
              else "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')"
              if sec_only else "1=1")
+    if media_only:
+        scope += (" AND a.url NOT LIKE '%/iplayer/%' AND a.url NOT LIKE '%/sounds/%'\n             AND a.url NOT LIKE '%/news/videos/%' AND a.url NOT LIKE '%/news/av/%'\n             AND a.url NOT LIKE '%/video/%' AND a.url NOT LIKE '%/videos/%'\n             AND a.url NOT LIKE '%/audio/%' AND a.url NOT LIKE '%/podcasts/%'")
     with store.connect() as db:
         base = """
             SELECT a.id, a.url, a.source FROM articles a
@@ -491,6 +493,8 @@ def collect_full_text(
                        OR f.format='SEC_BUNDLE_PARTIAL')
                 ORDER BY a.id
             """, repair_ids).fetchall()
+    if media_only:
+        rows = [row for row in rows if not media_page(row[1])]
     owned = client is None
     client = client or httpx.Client(
         trust_env=False, follow_redirects=False,

@@ -33,4 +33,4 @@ def test_media_scope_and_audit(tmp_path):
         assert [row["id"] for row in rows] == [1]
     report = audit(path, "gemma4:e2b")
     assert report["discovered"] == 2
-    assert report["counts"] == {"READY_FOR_ANALYSIS": 1, "MEDIA_REVIEW_REQUIRED": 1}
+    assert report["counts"] == {"READY_FOR_ANALYSIS": 1, "EXCLUDED_AUDIO_VIDEO": 1}
