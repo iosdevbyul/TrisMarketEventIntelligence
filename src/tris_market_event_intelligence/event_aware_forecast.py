@@ -16,7 +16,6 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     result_error,
     validate_answer,
 )
-
 from tris_market_event_intelligence.news_content_quality import classify
 
 VERSION = "event_aware_dual_v1"
@@ -44,9 +43,11 @@ def prior_context(db: sqlite3.Connection, article: dict) -> list[dict]:
     cutoff = _clock(article.get("publishedAt"))
     if cutoff is None:
         return []
+    columns = {row[1] for row in db.execute("PRAGMA table_info(articles)")}
+    url_expr = "a.url" if "url" in columns else "NULL"
     rows = db.execute(
-        """SELECT a.id, a.title, a.published_at, a.detected_at,
-                  f.observed_at, f.body, f.body_sha256
+        f"""SELECT a.id, a.title, a.published_at, a.detected_at,
+                  f.observed_at, f.body, f.body_sha256, {url_expr}
            FROM articles a JOIN article_full_text f ON a.id=f.article_id
            WHERE a.id != ? AND f.status='COMPLETE'
              AND f.body IS NOT NULL AND a.published_at < ?
@@ -55,7 +56,7 @@ def prior_context(db: sqlite3.Connection, article: dict) -> list[dict]:
     ).fetchall()
     current = _tokens(article["title"])
     candidates = []
-    for article_id, title, published, detected, observed, body, digest in rows:
+    for article_id, title, published, detected, observed, body, digest, url in rows:
         clocks = [_clock(t) for t in (published, detected, observed)]
         if any(t is None for t in clocks):
             continue
@@ -66,7 +67,7 @@ def prior_context(db: sqlite3.Connection, article: dict) -> list[dict]:
             continue
         if not isinstance(body, str) or hashlib.sha256(body.encode()).hexdigest() != digest:
             continue
-        if classify(body, title=title) != "TEXT_CANDIDATE":
+        if classify(body, title=title, url=url or "") != "TEXT_CANDIDATE":
             continue
         overlap = len(current & _tokens(title))
         if overlap < 2:
