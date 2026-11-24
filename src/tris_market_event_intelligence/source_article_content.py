@@ -6,10 +6,13 @@ durably recorded in a separate table.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
+import os
 import re
+import time
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
@@ -19,6 +22,14 @@ import httpx
 from pypdf import PdfReader
 
 from tris_market_event_intelligence.collector import NewsStore
+from tris_market_event_intelligence.news_content_quality import classify, media_page
+from tris_market_event_intelligence.sec_operational_content import (
+    canonical_index,
+    documents,
+    index_identity,
+    primary_from_submissions,
+    visible_text,
+)
 
 # Only publishers configured for operational RSS. Never fetch arbitrary hosts
 # advertised inside RSS, attachments or redirects.
@@ -32,7 +43,6 @@ MAX_HTML_BYTES = 2_000_000
 MAX_PDF_BYTES = 20_000_000
 MAX_PAGES = 250
 MAX_PER_CYCLE = 12
-MIN_TEXT_LENGTH = 250
 RETRY_HOURS = 6
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
 
@@ -191,7 +201,7 @@ def extract_html(payload: bytes, page_url: str) -> tuple[str, tuple[str, ...]]:
     # Prefer a specific article region, but allow the general main container
     # when the publisher does not mark its body explicitly.
     body = next(
-        (text for _, text in candidates if len(text) >= MIN_TEXT_LENGTH),
+        (text for _, text in candidates if classify(text) == "TEXT_CANDIDATE"),
         candidates[0][1] if candidates else "",
     )
     links = tuple(dict.fromkeys(
@@ -212,7 +222,7 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
         sparse: list[int] = []
         for number, page in enumerate(reader.pages, 1):
             page_text = page.extract_text(extraction_mode="layout") or ""
-            if len(page_text.strip()) < 50:
+            if not page_text.strip():
                 sparse.append(number)
             parts.append(f"[PDF PAGE {number}]\n{page_text.rstrip()}")
     except ContentError:
@@ -222,12 +232,103 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
     return "\n\n".join(parts), tuple(sparse)
 
 
+def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = None,
+                primary_name: str | None = None) -> dict[str, object]:
+    if index_identity(url) is None:
+        raise ContentError("SEC_INDEX_IDENTITY_INVALID")
+    def original(target: str, limit: int) -> bytes:
+        if store is not None:
+            with store.connect() as db:
+                saved = db.execute(
+                    "SELECT payload,sha256 FROM sec_document_originals WHERE url=?", (target,),
+                ).fetchone()
+            if saved:
+                if hashlib.sha256(saved[0]).hexdigest() != saved[1]:
+                    raise ContentError("SEC_STORED_ORIGINAL_DIGEST_MISMATCH")
+                return bytes(saved[0])
+        time.sleep(0.25)
+        raw, _, resolved = fetch(client, target, limit)
+        if resolved != target:
+            raise ContentError("SEC_DOCUMENT_REDIRECT")
+        if store is not None:
+            with store.connect() as db:
+                db.execute(
+                    """INSERT OR IGNORE INTO sec_document_originals
+                       (url,sha256,payload,observed_at) VALUES (?,?,?,?)""",
+                    (target, hashlib.sha256(raw).hexdigest(), raw,
+                     datetime.now(UTC).isoformat()),
+                )
+        return raw
+
+    try:
+        raw_index = original(url, MAX_HTML_BYTES)
+    except httpx.HTTPStatusError as exc:
+        raise ContentError(f"SEC_INDEX_HTTP_{exc.response.status_code}") from exc
+    try:
+        primary, exhibits = documents(raw_index, url, primary_name=primary_name)
+    except ValueError as exc:
+        raise ContentError(str(exc)) from exc
+    originals = []
+    texts = []
+    issues: list[str] = []
+    primary_ready = False
+    for target in (primary, *exhibits):
+        role = "PRIMARY" if target == primary else "EXHIBIT"
+        try:
+            raw = original(target, 8_000_000)
+        except httpx.HTTPStatusError as exc:
+            code = f"SEC_{role}_HTTP_{exc.response.status_code}"
+            issues.append(code)
+            if exc.response.status_code in (403, 429, 503) or target == primary:
+                break
+            continue
+        try:
+            if raw.startswith(b"%PDF-"):
+                body, sparse = extract_pdf(raw)
+                quality = "PARTIAL_CONTENT" if sparse else classify(body)
+            else:
+                body = visible_text(raw, target)
+                quality = classify(body)
+        except (ValueError, ContentError):
+            body, quality = "", "EXTRACTION_FAILED"
+        originals.append({
+            "url": target, "sha256": hashlib.sha256(raw).hexdigest(),
+            "rawBase64": base64.b64encode(raw).decode("ascii"),
+            "role": role, "quality": quality,
+        })
+        if quality == "TEXT_CANDIDATE":
+            texts.append(body)
+            if target == primary:
+                primary_ready = True
+        else:
+            issues.append(f"SEC_{role}_{quality}")
+    bundle = json.dumps({
+        "schema": "sec_original_bundle_v1", "indexUrl": url,
+        "indexSha256": hashlib.sha256(raw_index).hexdigest(),
+        "indexRawBase64": base64.b64encode(raw_index).decode("ascii"),
+        "documents": originals, "issues": issues,
+    }, sort_keys=True, separators=(",", ":")).encode()
+    body = "\n\n".join(texts)
+    return {
+        "status": "COMPLETE" if primary_ready else "REVIEW_REQUIRED", "body": body,
+        "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+        "raw_sha256": hashlib.sha256(bundle).hexdigest(), "raw_payload": bundle,
+        "source_url": url, "format": "SEC_BUNDLE_PARTIAL" if issues else "SEC_BUNDLE",
+        "sparse_pages": "[]",
+        "error_code": ";".join(issues) if issues else None,
+    }
+
+
 def capture(client: httpx.Client, url: str) -> dict[str, object]:
     # RSS can link to programmes, galleries and index pages rather than a
     # written article. Do not mislabel their template text as article content.
-    if urlsplit(url).path.startswith("/iplayer/"):
+    if index_identity(url) is not None:
+        return capture_sec(client, url)
+    if media_page(url):
         raise ContentError("NON_ARTICLE_MEDIA_PAGE")
     payload, media_type, final_url = fetch(client, url, MAX_PDF_BYTES)
+    if media_page(final_url):
+        raise ContentError("NON_ARTICLE_MEDIA_PAGE")
     if payload.startswith(b"%PDF-"):
         body, sparse = extract_pdf(payload)
         source_data = payload
@@ -241,14 +342,12 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
         # Publisher release pages may contain only a short introduction. The
         # complete economic release or FOMC minutes can be in an official PDF.
         # Inspect explicitly linked, same-trust-boundary PDFs even if the HTML
-        # exceeds MIN_TEXT_LENGTH; do not mistake a teaser for the full report.
+        # is substantial; do not mistake a teaser for the full report.
         for pdf_url in pdf_links:
             try:
                 candidate, _, resolved = fetch(client, pdf_url, MAX_PDF_BYTES)
                 extracted, candidate_sparse = extract_pdf(candidate)
-                if len(extracted.strip()) >= max(
-                    1000, int(len(body.strip()) * 1.5)
-                ):
+                if classify(extracted) == "TEXT_CANDIDATE" and len(extracted) > len(body):
                     body, sparse = extracted, candidate_sparse
                     source_data, source_url, kind = candidate, resolved, "PDF"
                     # Prefer the largest validated attachment, not an arbitrary
@@ -257,7 +356,8 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
                 continue
     else:
         raise ContentError("UNSUPPORTED_MEDIA_TYPE")
-    if len(body.strip()) < MIN_TEXT_LENGTH:
+    quality = classify(body, url=source_url)
+    if quality != "TEXT_CANDIDATE":
         raise ContentError("INSUFFICIENT_ARTICLE_TEXT")
     return {
         "status": "REVIEW_REQUIRED" if sparse else "COMPLETE",
@@ -274,6 +374,20 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
 def initialize(store: NewsStore) -> None:
     store.initialize()
     with store.connect() as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS sec_document_originals (
+                url TEXT PRIMARY KEY, sha256 TEXT NOT NULL,
+                payload BLOB NOT NULL, observed_at TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS sec_body_versions (
+                article_id INTEGER NOT NULL, body_sha256 TEXT NOT NULL,
+                raw_sha256 TEXT NOT NULL, raw_payload BLOB NOT NULL,
+                body TEXT NOT NULL, observed_at TEXT NOT NULL, format TEXT NOT NULL,
+                PRIMARY KEY(article_id, body_sha256, raw_sha256)
+            )
+        """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS article_full_text (
                 article_id INTEGER PRIMARY KEY REFERENCES articles(id),
@@ -295,11 +409,14 @@ def initialize(store: NewsStore) -> None:
 
 def collect_full_text(
     db_path: Path, *, client: httpx.Client | None = None,
-    limit: int = MAX_PER_CYCLE,
+    limit: int = MAX_PER_CYCLE, sec_only: bool = False,
+    repair_ids: tuple[int, ...] | None = None,
 ) -> dict[str, object]:
     """Catch up on previously discovered RSS rows without mutating them."""
     if not 1 <= limit <= MAX_PER_CYCLE:
         raise ValueError("limit must be 1..12")
+    if repair_ids is not None and (not sec_only or not 1 <= len(repair_ids) <= limit):
+        raise ValueError("Explicit SEC repair requires a bounded SEC-only ID list")
     store = NewsStore(db_path)
     initialize(store)
     now = datetime.now(UTC).isoformat()
@@ -308,27 +425,31 @@ def collect_full_text(
     newest_slots = (limit + 2) // 3
     oldest_slots = (limit + 1) // 3
     retry_slots = limit - newest_slots - oldest_slots
+    scope = "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')" if sec_only else "1=1"
     with store.connect() as db:
         base = """
-            SELECT a.id, a.url FROM articles a
+            SELECT a.id, a.url, a.source FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE f.article_id IS NULL
-              AND a.source IN (
+            WHERE f.article_id IS NULL AND {scope}
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
-              )
+              ))
             ORDER BY a.id {order} LIMIT ?
         """
-        newest = db.execute(base.format(order="DESC"), (newest_slots,)).fetchall()
-        oldest = db.execute(base.format(order="ASC"), (oldest_slots,)).fetchall()
-        retry_query = """
-            SELECT a.id, a.url FROM articles a
+        newest = db.execute(base.format(order="DESC", scope=scope), (newest_slots,)).fetchall()
+        oldest = db.execute(base.format(order="ASC", scope=scope), (oldest_slots,)).fetchall()
+        retry_query = f"""
+            SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
-            WHERE f.status='INCOMPLETE' AND f.retry_after <= ?
-              AND a.source IN (
+            WHERE (f.status='INCOMPLETE' OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
+              AND (f.retry_after <= ? OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')
+                   AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
+                   OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') AND f.error_code='HTTPStatusError'))
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
-              )
+              ))
             ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
         """
         retries = db.execute(retry_query, (now, retry_slots)).fetchall()
@@ -336,8 +457,8 @@ def collect_full_text(
         if len(chosen) < limit:
             # Refill unused retries or overlapping newest/oldest slots.
             for query, args in (
-                (base.format(order="DESC"), (limit,)),
-                (base.format(order="ASC"), (limit,)),
+                (base.format(order="DESC", scope=scope), (limit,)),
+                (base.format(order="ASC", scope=scope), (limit,)),
                 (retry_query, (now, limit)),
             ):
                 for row in db.execute(query, args).fetchall():
@@ -347,15 +468,25 @@ def collect_full_text(
                 if len(chosen) >= limit:
                     break
         rows = list(chosen.values())
+        if repair_ids is not None:
+            placeholders = ",".join("?" for _ in repair_ids)
+            rows = db.execute(f"""
+                SELECT a.id,a.url,a.source FROM articles a
+                LEFT JOIN article_full_text f ON a.id=f.article_id
+                WHERE {scope} AND a.id IN ({placeholders})
+                  AND (f.article_id IS NULL OR f.status!='COMPLETE'
+                       OR f.format='SEC_BUNDLE_PARTIAL')
+                ORDER BY a.id
+            """, repair_ids).fetchall()
     owned = client is None
     client = client or httpx.Client(
         trust_env=False, follow_redirects=False,
-        headers={"User-Agent": USER_AGENT},
+        headers={"User-Agent": os.environ.get("MARKET_EVENT_SEC_USER_AGENT", USER_AGENT)},
     )
     counts = {"complete": 0, "review_required": 0, "incomplete": 0,
               "non_article": 0, "reused": 0}
     try:
-        for article_id, url in rows:
+        for article_id, url, source in rows:
             observed = datetime.now(UTC).isoformat()
             error: str | None = None
             try:
@@ -364,17 +495,44 @@ def collect_full_text(
                         SELECT status,content_url,body_sha256,raw_sha256,
                                raw_payload,body,format,sparse_pages
                         FROM article_full_text
-                        WHERE status IN ('COMPLETE','REVIEW_REQUIRED')
+                        WHERE status IN ('COMPLETE','REVIEW_REQUIRED') AND format != 'SEC_BUNDLE_PARTIAL'
                           AND article_id IN (SELECT id FROM articles WHERE url=?)
                         LIMIT 1
                     """, (url,)).fetchone()
-                if existing:
+                if (existing
+                        and (not source.startswith(("sec_8k_", "sec_filing_")) or (
+                            existing[6] == "SEC_BUNDLE" and existing[0] == "COMPLETE"
+                        ))
+                        and classify(existing[5], url=url, digest=existing[2],
+                                     sparse=existing[7]) == "TEXT_CANDIDATE"):
                     row = dict(zip(("status","source_url","body_sha256",
                                     "raw_sha256","raw_payload","body",
                                     "format","sparse_pages"), existing))
                     counts["reused"] += 1
                 else:
-                    row = capture(client, url)
+                    if source.startswith(("sec_8k_", "sec_filing_")) and owned and not os.environ.get(
+                        "MARKET_EVENT_SEC_USER_AGENT", ""
+                    ).strip():
+                        raise ContentError("SEC_CONTACT_USER_AGENT_REQUIRED")
+                    if source.startswith(("sec_8k_", "sec_filing_")):
+                        try:
+                            index_url = canonical_index(url, source)
+                        except ValueError as exc:
+                            raise ContentError(str(exc)) from exc
+                        primary_name = None
+                        if source.startswith("sec_filing_"):
+                            with store.connect() as db:
+                                captured = db.execute("""
+                                    SELECT c.payload,c.sha256,a.external_id
+                                    FROM articles a JOIN captures c ON a.capture_id=c.id
+                                    WHERE a.id=? AND c.source=a.source
+                                """, (article_id,)).fetchone()
+                            if captured and hashlib.sha256(captured[0]).hexdigest() == captured[1]:
+                                primary_name = primary_from_submissions(captured[0], captured[2])
+                        row = capture_sec(client, index_url, store=store,
+                                          primary_name=primary_name)
+                    else:
+                        row = capture(client, url)
             except (ContentError, httpx.HTTPError, OSError) as exc:
                 error = str(exc) if isinstance(exc, ContentError) else type(exc).__name__
                 state = ("NON_ARTICLE" if error == "NON_ARTICLE_MEDIA_PAGE"
@@ -385,10 +543,19 @@ def collect_full_text(
                     "raw_payload": None, "body": None, "format": None,
                     "sparse_pages": "[]",
                 }
+            observed = datetime.now(UTC).isoformat()
+            if row.get("error_code"):
+                error = str(row["error_code"])
             counts[str(row["status"]).lower()] += 1
             retry = ((datetime.now(UTC) + timedelta(hours=RETRY_HOURS)).isoformat()
-                     if row["status"] == "INCOMPLETE" else None)
+                     if row["status"] == "INCOMPLETE" or row["format"] == "SEC_BUNDLE_PARTIAL" else None)
             with store.connect() as db:
+                if source.startswith(("sec_8k_", "sec_filing_")):
+                    db.execute("""INSERT OR IGNORE INTO sec_body_versions
+                        SELECT article_id,body_sha256,raw_sha256,raw_payload,body,observed_at,format
+                        FROM article_full_text WHERE article_id=? AND body_sha256 IS NOT NULL
+                        AND raw_sha256 IS NOT NULL AND raw_payload IS NOT NULL AND body IS NOT NULL
+                        AND format IS NOT NULL""", (article_id,))
                 db.execute("""
                     INSERT INTO article_full_text (
                         article_id,status,observed_at,content_url,
@@ -410,22 +577,24 @@ def collect_full_text(
         if owned:
             client.close()
     with store.connect() as db:
-        pending = db.execute("""
+        pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE a.source IN (
+            WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world')
-              AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED'))
+                'bok_corrections','bbc_business','bbc_technology','bbc_world'))
+              AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED')
+                   OR f.format='SEC_BUNDLE_PARTIAL')
         """).fetchone()[0]
     with store.connect() as db:
-        review_pending = db.execute("""
+        review_pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a JOIN article_full_text f
-            ON f.article_id=a.id WHERE f.status='REVIEW_REQUIRED'
-              AND a.source IN (
+            ON f.article_id=a.id WHERE (f.status='REVIEW_REQUIRED'
+                  OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
                 'fed_monetary','fed_all','bok_all','bok_statistics',
                 'bok_corrections','bbc_business','bbc_technology','bbc_world'
-              )
+              ))
         """).fetchone()[0]
         missing_or_failed = pending - review_pending
     return {

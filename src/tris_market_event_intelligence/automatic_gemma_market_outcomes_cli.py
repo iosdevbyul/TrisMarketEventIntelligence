@@ -61,6 +61,7 @@ def _automatically_analyzed(
         selected = rows[:limit]
         reports = []
         invalid = []
+        dual_excluded = []
         for row in selected:
             article_id = row["id"]
             source = status.get(article_id)
@@ -80,6 +81,9 @@ def _automatically_analyzed(
             if (not isinstance(analysis, dict)
                     or not isinstance(analysis.get("impacts"), list)):
                 raise TypeError(f"Stored Gemma impact schema invalid: {article_id}")
+            if analysis.get("forecastVersion") == "event_aware_dual_v1":
+                dual_excluded.append(article_id)
+                continue  # Scored only by the horizon-aware commitment evaluator.
             for impact in analysis["impacts"]:
                 if (not isinstance(impact, dict)
                         or not isinstance(impact.get("target"), str)
@@ -108,6 +112,7 @@ def _automatically_analyzed(
         "completedCurrentBodyModelRows": len(rows),
         "selectedCompletedRows": len(selected),
         "excludedCorruptSourceIds": invalid,
+        "excludedDualForecastArticleIds": dual_excluded,
         "sourceArticleCount": audit["totalArticlesAtScan"],
         "sourceBlockerCounts": audit["blockerCounts"],
         "truncated": len(rows) > limit,

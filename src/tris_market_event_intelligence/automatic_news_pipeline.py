@@ -25,12 +25,14 @@ from tris_market_event_intelligence.automatic_forecast_precommitment import (
     inspect_commitments,
     record_new_analysis,
 )
+from tris_market_event_intelligence.event_aware_forecast import ask_dual, prior_context
 from tris_market_event_intelligence.gemma_original_article_batch_cli import (
     MODEL_PATTERN,
     ask_gemma,
     result_error,
 )
 from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
+from tris_market_event_intelligence.news_content_quality import classify
 from tris_market_event_intelligence.news_semantic_consistency import compare_analyses
 from tris_market_event_intelligence.operations import OPERATIONAL_SOURCES, run_cycle
 
@@ -59,18 +61,19 @@ def initialize(db: sqlite3.Connection) -> None:
 
 def pending(db: sqlite3.Connection, model: str, limit: int,
             retry_minutes: int, *, fresh_only_minutes: int | None = None,
-            observed_now: datetime | None = None) -> tuple[list[sqlite3.Row], dict[str, int]]:
+            observed_now: datetime | None = None, sec_only: bool = False) -> tuple[list[sqlite3.Row], dict[str, int]]:
     db.row_factory = sqlite3.Row
     tables = {r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     )}
     if not {"articles", "article_full_text"}.issubset(tables):
         return [], {"eligible": 0, "missingFullText": 0}
+    scope = "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')" if sec_only else "1=1"
     missing = db.execute(
-        """SELECT COUNT(*) FROM articles a LEFT JOIN article_full_text f
+        f"""SELECT COUNT(*) FROM articles a LEFT JOIN article_full_text f
            ON a.id=f.article_id
-           WHERE f.article_id IS NULL OR f.status!='COMPLETE'
-              OR f.body IS NULL"""
+           WHERE {scope} AND (f.article_id IS NULL OR f.status!='COMPLETE'
+              OR f.body IS NULL)"""
     ).fetchone()[0]
     fulltext_columns = {
         column[1] for column in db.execute("PRAGMA table_info(article_full_text)")
@@ -79,6 +82,12 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         "f.observed_at AS body_observed_at"
         if "observed_at" in fulltext_columns
         else "NULL AS body_observed_at"
+    )
+    format_expr = "f.format" if "format" in fulltext_columns else "NULL"
+    error_expr = "f.error_code" if "error_code" in fulltext_columns else "NULL"
+    sec_guard = (
+        "AND f.format IN ('SEC_BUNDLE','SEC_BUNDLE_PARTIAL')"
+        if sec_only and "format" in fulltext_columns else ""
     )
     # Forward capture is ordered by the *actual detected clock*, not IDs.
     # The older historical backlog may exceed the 2000-row query bound.
@@ -89,13 +98,14 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
     candidates = db.execute(
         f"""SELECT a.id, a.source, a.title, a.url, a.published_at,
                   a.detected_at, f.body, f.body_sha256, f.sparse_pages,
-                  {body_observed_expr},
+                  {body_observed_expr}, {format_expr} AS content_format,
+                  {error_expr} AS content_error,
                   l.status AS prior_status, l.processed_at AS prior_at,
                   l.attempts AS prior_attempts
            FROM articles a JOIN article_full_text f ON f.article_id=a.id
            LEFT JOIN automatic_news_analyses l ON
                  l.article_id=a.id AND l.body_sha256=f.body_sha256 AND l.model=?
-           WHERE f.status='COMPLETE' AND f.body IS NOT NULL
+           WHERE f.status='COMPLETE' AND f.body IS NOT NULL AND {scope} {sec_guard}
              AND (l.status IS NULL OR l.status='FAILED')
            ORDER BY {order} LIMIT 2000""", (model,)
     ).fetchall()
@@ -106,6 +116,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         if fresh_only_minutes is not None else None
     )
     blocked_fresh = 0
+    blocked_quality = 0
     ready_new = []
     ready_retry = []
     for row in candidates:
@@ -133,7 +144,9 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
             continue
         if hashlib.sha256(body.encode()).hexdigest() != digest:
             continue
-        if row["sparse_pages"] not in (None, "[]"):
+        if classify(body, url=row["url"], title=row["title"],
+                    sparse=row["sparse_pages"]) != "TEXT_CANDIDATE":
+            blocked_quality += 1
             continue
         if row["prior_status"] == "FAILED":
             if row["prior_attempts"] >= 3:
@@ -152,6 +165,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
         return chosen, {
             "eligible": len(candidates), "missingFullText": missing,
             "readyNew": len(ready_new), "readyRetry": len(ready_retry),
+            "contentQualityRejected": blocked_quality,
             "freshOnlyMinutes": fresh_only_minutes,
             "freshClockRejected": blocked_fresh,
             "freshAdmissible": len(ready_new) + len(ready_retry),
@@ -177,6 +191,7 @@ def pending(db: sqlite3.Connection, model: str, limit: int,
     return list(unique.values())[:limit], {
         "eligible": len(candidates), "missingFullText": missing,
         "readyNew": len(ready_new), "readyRetry": len(ready_retry),
+        "contentQualityRejected": blocked_quality,
     }
 
 
@@ -185,8 +200,15 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             collect: bool = True, client: httpx.Client | None = None,
             verification_runs: int = 1, seal_forecasts: bool = False,
             mappings_path: Path | None = None,
-            fresh_only_minutes: int | None = None) -> dict:
+            fresh_only_minutes: int | None = None,
+            event_aware: bool = False, sec_only: bool = False) -> dict:
     """One bounded pass. Failed results are retryable; completed ones immutable."""
+    if sec_only and collect:
+        raise ValueError("SEC-only analysis requires explicit collection or skip-collection")
+    if event_aware and (not seal_forecasts or fresh_only_minutes is None):
+        raise ValueError("Event-aware forecasts require fresh-only sealing")
+    if event_aware and verification_runs != 1:
+        raise ValueError("Event-aware capture requires one verification run")
     if fresh_only_minutes is not None and not seal_forecasts:
         raise ValueError("Fresh-only capture requires explicit forecast sealing")
     if fresh_only_minutes is not None and not 1 <= fresh_only_minutes <= 1440:
@@ -220,7 +242,7 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
             rows, coverage = pending(
                 db, model, limit, retry_minutes,
                 fresh_only_minutes=fresh_only_minutes,
-                observed_now=datetime.now(UTC),
+                observed_now=datetime.now(UTC), sec_only=sec_only,
             )
             owned = client is None
             session = client or httpx.Client(
@@ -243,8 +265,18 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                         "body": body[:12000],
                         "bodyTruncated": len(body) > 12000,
                     }
+                    if row["source"].startswith(("sec_8k_", "sec_filing_")):
+                        request["article"]["contentScope"] = (
+                            "PRIMARY_WITH_PARTIAL_EXHIBITS"
+                            if row["content_format"] == "SEC_BUNDLE_PARTIAL"
+                            else "CAPTURED_FILING_DOCUMENTS"
+                        )
+                        request["article"]["missingEvidence"] = row["content_error"]
                     try:
-                        analysis = ask_gemma(session, model, request)
+                        analysis = (
+                            ask_dual(session, model, request, prior_context(db, request["article"]))
+                            if event_aware else ask_gemma(session, model, request)
+                        )
                         if verification_runs == 2:
                             second = ask_gemma(session, model, request)
                             analysis["_repeatability"] = compare_analyses(analysis, second)
@@ -254,6 +286,13 @@ def process(db_path: Path, *, model: str = "gemma4:e2b",
                                 "runs": 1,
                                 "semanticCorrectnessVerified": False,
                                 "priceDataUsed": False,
+                            }
+                        if row["source"].startswith(("sec_8k_", "sec_filing_")):
+                            analysis["_sourceScope"] = {
+                                "scope": request["article"]["contentScope"],
+                                "missingEvidence": row["content_error"],
+                                "bodyTruncated": request["bodyTruncated"],
+                                "historicalResearchOnly": not seal_forecasts,
                             }
                         status, error_code = "COMPLETED", None
                         encoded = json.dumps(analysis, ensure_ascii=False)
@@ -336,6 +375,7 @@ def main() -> None:
     parser.add_argument("--verification-runs", type=int, choices=(1, 2), default=1,
                         help="1=unverified single analysis; 2=compare independent model calls")
     parser.add_argument("--skip-collection", action="store_true")
+    parser.add_argument("--sec-only", action="store_true")
     parser.add_argument(
         "--fresh-only-minutes", type=int,
         help="With --seal-forecasts, process only genuinely recent first-published, "
@@ -360,7 +400,7 @@ def main() -> None:
                              verification_runs=args.verification_runs,
                              seal_forecasts=args.seal_forecasts,
                              mappings_path=args.mappings,
-                             fresh_only_minutes=args.fresh_only_minutes)
+                             fresh_only_minutes=args.fresh_only_minutes, sec_only=args.sec_only)
         except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
             result = {"status": "ERROR", "errorCode": type(exc).__name__}
         print(json.dumps(result, ensure_ascii=False), flush=True)

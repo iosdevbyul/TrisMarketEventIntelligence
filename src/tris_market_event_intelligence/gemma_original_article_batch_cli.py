@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 
+from tris_market_event_intelligence.news_content_quality import classify
 from tris_market_event_intelligence.news_impact_target_policy import (
     target_error,
     target_key,
@@ -45,6 +46,9 @@ NEUTRAL requires an explicit reason why effects are immaterial, and UNCERTAIN
 is appropriate when the evidence does not support a defensible direction.
 Include only material, distinct, source-supported targets, normally 0-3; do not
 fill a quota. When evidence is insufficient, use UNCERTAIN or impacts: [].
+For SEC filings, distinguish issuer disclosures from market direction. If contentScope
+is PRIMARY_WITH_PARTIAL_EXHIBITS, state that attachments are incomplete and never
+invent their contents. An administrative filing may have no material impact.
 No realized returns, ex-post information, price assumptions, or investing advice.
 Choose evidence_id only from the supplied E-numbers. NEVER invent quotations;
 the application attaches the exact original text. Return JSON only."""
@@ -60,7 +64,7 @@ def evidence_passages(body: str, *, max_items: int = 24) -> list[dict[str, str]]
     for piece in pieces:
         for start in range(0, len(piece), 280):
             fragment = piece[start:start + 280].strip()
-            if len(fragment) >= 18 and fragment not in spans:
+            if fragment and fragment not in spans:
                 spans.append(fragment)
     if len(spans) > max_items:
         indices = sorted({
@@ -152,10 +156,17 @@ def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
         settings = {
             "model": model,
             "stream": False,
+            "think": False,
             "format": output_schema(list(evidence)),
-            "options": {"temperature": 0, "seed": 20261123, "num_predict": 1536},
+            "options": {
+                "temperature": 0, "seed": 20261123 + attempt,
+                "num_ctx": 8192, "num_predict": 2048,
+            },
             "messages": messages,
         }
+        if attempt and last_error in {"MODEL_CONTENT_EMPTY", "MODEL_GENERATION_TRUNCATED"}:
+            settings["format"] = "json"
+            settings["options"]["num_predict"] = 3072
         response = client.post(
             "http://127.0.0.1:11434/api/chat", json=settings,
         )
@@ -167,6 +178,8 @@ def ask_gemma(client: httpx.Client, model: str, request: dict) -> dict:
         response.raise_for_status()
         try:
             result = response.json()
+            if result.get("done_reason") == "length":
+                raise AnswerError("MODEL_GENERATION_TRUNCATED")
             content = result["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise AnswerError("MODEL_CONTENT_EMPTY")
@@ -195,7 +208,7 @@ def verified_articles(db_path: Path, limit: int) -> tuple[list[dict], dict]:
         article_id, source, title, url, published, detected, body, digest, sparse = row
         if (not isinstance(body, str) or not isinstance(digest, str)
                 or hashlib.sha256(body.encode()).hexdigest() != digest
-                or sparse not in (None, "[]")):
+                or classify(body, url=url, title=title, sparse=sparse) != "TEXT_CANDIDATE"):
             invalid += 1
             continue
         articles.append({
