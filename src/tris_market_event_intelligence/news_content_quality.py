@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 POLICY = "content_quality_v1"
 _BLOCK = re.compile(
     r"^(?:close|loading|advertisement|subscribe|sign in|log in|"
-    r"not enough text|summary only|read more|watch the video|"
+    r"not enough text|summary only|only a title|read more|watch the video|"
     r"click here|access denied|page not found|enable javascript|"
     r"로그인|광고|자세히 보기|영상에서 확인하세요)[.!\s]*$", re.IGNORECASE,
 )
