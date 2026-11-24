@@ -19,6 +19,7 @@ import httpx
 from pypdf import PdfReader
 
 from tris_market_event_intelligence.collector import NewsStore
+from tris_market_event_intelligence.news_content_quality import classify, media_page
 
 # Only publishers configured for operational RSS. Never fetch arbitrary hosts
 # advertised inside RSS, attachments or redirects.
@@ -32,7 +33,6 @@ MAX_HTML_BYTES = 2_000_000
 MAX_PDF_BYTES = 20_000_000
 MAX_PAGES = 250
 MAX_PER_CYCLE = 12
-MIN_TEXT_LENGTH = 250
 RETRY_HOURS = 6
 USER_AGENT = "TrisMarketEventIntelligence/0.1 (+local research)"
 
@@ -191,7 +191,7 @@ def extract_html(payload: bytes, page_url: str) -> tuple[str, tuple[str, ...]]:
     # Prefer a specific article region, but allow the general main container
     # when the publisher does not mark its body explicitly.
     body = next(
-        (text for _, text in candidates if len(text) >= MIN_TEXT_LENGTH),
+        (text for _, text in candidates if classify(text) == "TEXT_CANDIDATE"),
         candidates[0][1] if candidates else "",
     )
     links = tuple(dict.fromkeys(
@@ -212,7 +212,7 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
         sparse: list[int] = []
         for number, page in enumerate(reader.pages, 1):
             page_text = page.extract_text(extraction_mode="layout") or ""
-            if len(page_text.strip()) < 50:
+            if not page_text.strip():
                 sparse.append(number)
             parts.append(f"[PDF PAGE {number}]\n{page_text.rstrip()}")
     except ContentError:
@@ -225,9 +225,11 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
 def capture(client: httpx.Client, url: str) -> dict[str, object]:
     # RSS can link to programmes, galleries and index pages rather than a
     # written article. Do not mislabel their template text as article content.
-    if urlsplit(url).path.startswith("/iplayer/"):
+    if media_page(url):
         raise ContentError("NON_ARTICLE_MEDIA_PAGE")
     payload, media_type, final_url = fetch(client, url, MAX_PDF_BYTES)
+    if media_page(final_url):
+        raise ContentError("NON_ARTICLE_MEDIA_PAGE")
     if payload.startswith(b"%PDF-"):
         body, sparse = extract_pdf(payload)
         source_data = payload
@@ -241,14 +243,12 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
         # Publisher release pages may contain only a short introduction. The
         # complete economic release or FOMC minutes can be in an official PDF.
         # Inspect explicitly linked, same-trust-boundary PDFs even if the HTML
-        # exceeds MIN_TEXT_LENGTH; do not mistake a teaser for the full report.
+        # is substantial; do not mistake a teaser for the full report.
         for pdf_url in pdf_links:
             try:
                 candidate, _, resolved = fetch(client, pdf_url, MAX_PDF_BYTES)
                 extracted, candidate_sparse = extract_pdf(candidate)
-                if len(extracted.strip()) >= max(
-                    1000, int(len(body.strip()) * 1.5)
-                ):
+                if classify(extracted) == "TEXT_CANDIDATE" and len(extracted) > len(body):
                     body, sparse = extracted, candidate_sparse
                     source_data, source_url, kind = candidate, resolved, "PDF"
                     # Prefer the largest validated attachment, not an arbitrary
@@ -257,7 +257,8 @@ def capture(client: httpx.Client, url: str) -> dict[str, object]:
                 continue
     else:
         raise ContentError("UNSUPPORTED_MEDIA_TYPE")
-    if len(body.strip()) < MIN_TEXT_LENGTH:
+    quality = classify(body, url=source_url)
+    if quality != "TEXT_CANDIDATE":
         raise ContentError("INSUFFICIENT_ARTICLE_TEXT")
     return {
         "status": "REVIEW_REQUIRED" if sparse else "COMPLETE",
@@ -368,7 +369,8 @@ def collect_full_text(
                           AND article_id IN (SELECT id FROM articles WHERE url=?)
                         LIMIT 1
                     """, (url,)).fetchone()
-                if existing:
+                if existing and classify(existing[5], url=url, digest=existing[2],
+                                         sparse=existing[7]) == "TEXT_CANDIDATE":
                     row = dict(zip(("status","source_url","body_sha256",
                                     "raw_sha256","raw_payload","body",
                                     "format","sparse_pages"), existing))
