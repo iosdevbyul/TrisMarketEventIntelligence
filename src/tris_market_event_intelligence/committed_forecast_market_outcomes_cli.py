@@ -28,6 +28,7 @@ from tris_market_event_intelligence.market_outcome_validation_cli import (
     _timestamp,
 )
 from tris_market_event_intelligence.market_price_recovery_cli import _observations
+from tris_market_event_intelligence.news_content_quality import media_page
 
 MAX_ROWS = 10000
 MAX_BYTES = 40 * 1024 * 1024
@@ -59,6 +60,11 @@ def _clock(raw: str | None) -> datetime | None:
 
 def _source_identity(db: sqlite3.Connection, commit: sqlite3.Row) -> str | None:
     """Fail closed if stored model answer or current original body was replaced."""
+    columns = {row[1] for row in db.execute("PRAGMA table_info(articles)")}
+    if "url" in columns:
+        source = db.execute("SELECT url FROM articles WHERE id=?", (commit["article_id"],)).fetchone()
+        if source and media_page(source[0]):
+            return "EXCLUDED_AUDIO_VIDEO"
     matched = db.execute(
         """SELECT n.status, n.processed_at, n.analysis_json,
                   f.body, f.body_sha256, f.status AS body_status,

@@ -35,3 +35,9 @@ def test_digest_and_partial_content_are_checked():
     assert classify(body, digest=digest) == "TEXT_CANDIDATE"
     assert classify(body, digest="bad") == "DIGEST_MISMATCH"
     assert classify(body, sparse="[1]") == "PARTIAL_CONTENT"
+
+
+@pytest.mark.parametrize("path", ["/sounds/play/episode", "/iplayer/live/bbcnews",
+                                  "/news/videos/clip", "/news/av/clip"])
+def test_audio_video_excluded_from_text_admission(path):
+    assert classify("Publisher programme description.", url="https://www.bbc.co.uk" + path) != "TEXT_CANDIDATE"
