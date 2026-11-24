@@ -16,12 +16,12 @@ _BLOCK = re.compile(
     r"^(?:close|loading|advertisement|subscribe|sign in|log in|"
     r"not enough text|summary only|read more|watch the video|"
     r"click here|access denied|page not found|enable javascript|"
-    r"로그인|광고|자세히 보기|영상에서 확인하세요)[.!\s]*$", re.I,
+    r"로그인|광고|자세히 보기|영상에서 확인하세요)[.!\s]*$", re.IGNORECASE,
 )
 _ACCESS = re.compile(
     r"^(?:please (?:sign in|log in|subscribe|enable javascript)|"
     r"subscribe to (?:read|continue)|sign in to (?:read|continue)|"
-    r"access to this (?:page|article) is denied|로그인 후|구독 후)", re.I,
+    r"access to this (?:page|article) is denied|로그인 후|구독 후)", re.IGNORECASE,
 )
 
 
@@ -48,9 +48,10 @@ def classify(body: object, *, url: str = "", title: str = "",
     # text volume; keep them for source review, including potential short alerts.
     if media_page(url):
         return "MEDIA_REVIEW_REQUIRED"
-    if normalized.endswith("?") or normalized.endswith("？"):
-        if normalized == " ".join(title.split()) or "\n" not in body:
-            return "QUESTION_ONLY_REVIEW"
+    if normalized.endswith(("?", "？")) and (
+        normalized == " ".join(title.split()) or "\n" not in body
+    ):
+        return "QUESTION_ONLY_REVIEW"
     return "TEXT_CANDIDATE"
 
 
