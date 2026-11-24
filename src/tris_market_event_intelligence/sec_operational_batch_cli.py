@@ -53,14 +53,27 @@ def audit(path: Path, model: str) -> dict:
         }
 
 
-def drain(path: Path, model: str, *, max_batches: int, limit: int = 12) -> dict:
+def drain(path: Path, model: str, *, max_batches: int, limit: int = 12,
+          repair: bool = False) -> dict:
     if not 1 <= max_batches <= 30 or not 1 <= limit <= 12:
         raise ValueError("Invalid bounded SEC batch settings")
     completed = 0
     failed = 0
     stop = "BATCH_LIMIT"
+    repair_ids = []
+    if repair:
+        repair_ids = [row["articleId"] for row in audit(path, model)["pending"]
+                      if row["captureStatus"] != "COMPLETE"
+                      or row["format"] == "SEC_BUNDLE_PARTIAL"]
     for index in range(max_batches):
-        capture = collect_full_text(path, limit=limit, sec_only=True)
+        if repair:
+            ids = tuple(repair_ids[index * limit:(index + 1) * limit])
+            if not ids:
+                stop = "REPAIR_PASS_FINISHED"
+                break
+            capture = collect_full_text(path, limit=limit, sec_only=True, repair_ids=ids)
+        else:
+            capture = collect_full_text(path, limit=limit, sec_only=True)
         analysis = process(path, model=model, limit=limit, collect=False, sec_only=True)
         print(json.dumps({"batch": index + 1, "capture": capture, "analysis": analysis}),
               flush=True)
@@ -72,7 +85,8 @@ def drain(path: Path, model: str, *, max_batches: int, limit: int = 12) -> dict:
         if not capture["attempted"] and not analysis["results"]:
             stop = "NO_READY_WORK"
             break
-        if capture["attempted"] and not capture["complete"] and not analysis["completed"]:
+        if (not repair and capture["attempted"] and not capture["complete"]
+                and not analysis["completed"]):
             stop = "CAPTURE_STALLED"
             break
     return {"stopReason": stop, "completedThisRun": completed, "failedThisRun": failed,
@@ -86,12 +100,14 @@ def main() -> None:
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--max-batches", type=int, default=15, choices=range(1, 31))
     parser.add_argument("--run", action="store_true")
+    parser.add_argument("--repair", action="store_true",
+                        help="Retry each pending SEC source once, ignoring old retry timers")
     args = parser.parse_args()
     if not args.db.is_file() or args.db.is_symlink():
         parser.error("Existing non-symlink DB required")
     if args.run and "@" not in os.environ.get("MARKET_EVENT_SEC_USER_AGENT", ""):
         parser.error("Identifying MARKET_EVENT_SEC_USER_AGENT required")
-    result = (drain(args.db, args.model, max_batches=args.max_batches)
+    result = (drain(args.db, args.model, max_batches=args.max_batches, repair=args.repair)
               if args.run else audit(args.db, args.model))
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

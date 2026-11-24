@@ -1,7 +1,9 @@
 """Resolve EDGAR index documents without treating an index as issuer disclosure."""
 from __future__ import annotations
 
+import json
 import re
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urljoin, urlsplit
 
@@ -56,7 +58,26 @@ def index_identity(url: str) -> tuple[str, str] | None:
     return match["cik"], accession
 
 
-def documents(raw: bytes, url: str) -> tuple[str, tuple[str, ...]]:
+def document_name(name: str) -> str | None:
+    # Ownership forms link to an XSL-rendered view, not an archive subdirectory.
+    name = re.sub(r"^xsl[A-Za-z0-9_-]+/", "", name)
+    return name if _FILE.fullmatch(name) else None
+
+
+def primary_from_submissions(raw: bytes, accession: str) -> str | None:
+    packet = json.loads(raw)
+    columns = packet.get("filings", {}).get("recent", packet)
+    numbers = columns.get("accessionNumber", [])
+    names = columns.get("primaryDocument", [])
+    if len(numbers) != len(names):
+        return None
+    matches = {name for number, name in zip(numbers, names, strict=True)
+               if number == accession and isinstance(name, str) and name}
+    return document_name(next(iter(matches))) if len(matches) == 1 else None
+
+
+def documents(raw: bytes, url: str, *,
+              primary_name: str | None = None) -> tuple[str, tuple[str, ...]]:
     identity = index_identity(url)
     if identity is None:
         raise ValueError("SEC_INDEX_IDENTITY_INVALID")
@@ -65,6 +86,7 @@ def documents(raw: bytes, url: str) -> tuple[str, tuple[str, ...]]:
     prefix = url.rsplit("/", 1)[0] + "/"
     primary: set[str] = set()
     exhibits: set[str] = set()
+    authoritative: set[str] = set()
     for row in parser.rows:
         if len(row) < 4:
             continue
@@ -78,21 +100,47 @@ def documents(raw: bytes, url: str) -> tuple[str, tuple[str, ...]]:
                     target = "https://www.sec.gov" + docs[0]
             if not target.startswith(prefix):
                 continue
-            name = target.removeprefix(prefix)
-            if not _FILE.fullmatch(name) or "-index." in name.lower():
+            name = document_name(target.removeprefix(prefix))
+            if name is None or "-index." in name.lower():
                 continue
+            target = prefix + name
+            if primary_name == name and form[0] and not form[0].upper().startswith("EX-"):
+                authoritative.add(target)
             if sequence[0] == "1" and form[0] and not form[0].upper().startswith("EX-"):
                 primary.add(target)
             elif re.match(r"EX-(?:99|2|10)(?:\.|$)", form[0].upper()):
                 exhibits.add(target)
+    if primary_name is not None:
+        if len(authoritative) != 1:
+            raise ValueError("SEC_PRIMARY_DOCUMENT_METADATA_MISMATCH")
+        primary = authoritative
     if len(primary) != 1:
         raise ValueError("SEC_PRIMARY_DOCUMENT_AMBIGUOUS")
-    return next(iter(primary)), tuple(sorted(exhibits))
+    return next(iter(primary)), tuple(sorted(exhibits - primary))
 
 
 def visible_text(raw: bytes, url: str) -> str:
     if not raw or len(raw) > 8_000_000:
         raise ValueError("SEC_DOCUMENT_SIZE_INVALID")
+    if url.lower().endswith(".xml"):
+        if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+            raise ValueError("SEC_XML_DTD_UNSUPPORTED")
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError as exc:
+            raise ValueError("SEC_XML_INVALID") from exc
+        # Keep hierarchical fields and literal values; preserve transaction boundaries.
+        lines: list[str] = []
+
+        def visit(element: ET.Element, parent: str = "") -> None:
+            path = parent + "/" + element.tag.rsplit("}", 1)[-1]
+            if element.text and element.text.strip():
+                lines.append(f"{path}: {element.text.strip()}")
+            for child in element:
+                visit(child, path)
+
+        visit(root)
+        return "\n".join(lines)
     decoded = raw.decode("utf-8-sig", errors="replace")
     if url.lower().endswith(".txt") and not re.search(r"<(?:html|document|text)\b", decoded, re.IGNORECASE):
         return " ".join(decoded.split())

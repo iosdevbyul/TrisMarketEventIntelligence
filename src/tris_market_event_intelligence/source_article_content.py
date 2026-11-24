@@ -27,6 +27,7 @@ from tris_market_event_intelligence.sec_operational_content import (
     canonical_index,
     documents,
     index_identity,
+    primary_from_submissions,
     visible_text,
 )
 
@@ -231,7 +232,8 @@ def extract_pdf(payload: bytes) -> tuple[str, tuple[int, ...]]:
     return "\n\n".join(parts), tuple(sparse)
 
 
-def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = None) -> dict[str, object]:
+def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = None,
+                primary_name: str | None = None) -> dict[str, object]:
     if index_identity(url) is None:
         raise ContentError("SEC_INDEX_IDENTITY_INVALID")
     def original(target: str, limit: int) -> bytes:
@@ -263,13 +265,12 @@ def capture_sec(client: httpx.Client, url: str, *, store: NewsStore | None = Non
     except httpx.HTTPStatusError as exc:
         raise ContentError(f"SEC_INDEX_HTTP_{exc.response.status_code}") from exc
     try:
-        primary, exhibits = documents(raw_index, url)
+        primary, exhibits = documents(raw_index, url, primary_name=primary_name)
     except ValueError as exc:
         raise ContentError(str(exc)) from exc
-    deferred = False
     originals = []
     texts = []
-    issues: list[str] = ['SEC_EXHIBIT_LIMIT_REVIEW'] if deferred else []
+    issues: list[str] = []
     primary_ready = False
     for target in (primary, *exhibits):
         role = "PRIMARY" if target == primary else "EXHIBIT"
@@ -409,10 +410,13 @@ def initialize(store: NewsStore) -> None:
 def collect_full_text(
     db_path: Path, *, client: httpx.Client | None = None,
     limit: int = MAX_PER_CYCLE, sec_only: bool = False,
+    repair_ids: tuple[int, ...] | None = None,
 ) -> dict[str, object]:
     """Catch up on previously discovered RSS rows without mutating them."""
     if not 1 <= limit <= MAX_PER_CYCLE:
         raise ValueError("limit must be 1..12")
+    if repair_ids is not None and (not sec_only or not 1 <= len(repair_ids) <= limit):
+        raise ValueError("Explicit SEC repair requires a bounded SEC-only ID list")
     store = NewsStore(db_path)
     initialize(store)
     now = datetime.now(UTC).isoformat()
@@ -464,6 +468,16 @@ def collect_full_text(
                 if len(chosen) >= limit:
                     break
         rows = list(chosen.values())
+        if repair_ids is not None:
+            placeholders = ",".join("?" for _ in repair_ids)
+            rows = db.execute(f"""
+                SELECT a.id,a.url,a.source FROM articles a
+                LEFT JOIN article_full_text f ON a.id=f.article_id
+                WHERE {scope} AND a.id IN ({placeholders})
+                  AND (f.article_id IS NULL OR f.status!='COMPLETE'
+                       OR f.format='SEC_BUNDLE_PARTIAL')
+                ORDER BY a.id
+            """, repair_ids).fetchall()
     owned = client is None
     client = client or httpx.Client(
         trust_env=False, follow_redirects=False,
@@ -505,7 +519,18 @@ def collect_full_text(
                             index_url = canonical_index(url, source)
                         except ValueError as exc:
                             raise ContentError(str(exc)) from exc
-                        row = capture_sec(client, index_url, store=store)
+                        primary_name = None
+                        if source.startswith("sec_filing_"):
+                            with store.connect() as db:
+                                captured = db.execute("""
+                                    SELECT c.payload,c.sha256,a.external_id
+                                    FROM articles a JOIN captures c ON a.capture_id=c.id
+                                    WHERE a.id=? AND c.source=a.source
+                                """, (article_id,)).fetchone()
+                            if captured and hashlib.sha256(captured[0]).hexdigest() == captured[1]:
+                                primary_name = primary_from_submissions(captured[0], captured[2])
+                        row = capture_sec(client, index_url, store=store,
+                                          primary_name=primary_name)
                     else:
                         row = capture(client, url)
             except (ContentError, httpx.HTTPError, OSError) as exc:

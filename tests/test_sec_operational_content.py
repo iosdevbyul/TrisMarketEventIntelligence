@@ -175,3 +175,28 @@ def test_sec_original_cache_retains_primary_when_exhibit_unavailable(tmp_path, m
     assert calls.count(EXHIBIT) == 2
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM sec_document_originals").fetchone()[0] == 2
+
+
+def test_ownership_metadata_and_xbrl_roles():
+    from tris_market_event_intelligence.sec_operational_content import (
+        primary_from_submissions,
+        visible_text,
+    )
+
+    packet = {"filings": {"recent": {
+        "accessionNumber": ["0000789019-26-000001"],
+        "primaryDocument": ["xslF345X05/ownership.xml"],
+    }}}
+    name = primary_from_submissions(json.dumps(packet).encode(), "0000789019-26-000001")
+    assert name == "ownership.xml"
+    index = b"""<table>
+    <tr><td>1</td><td>Form 4</td><td><a href="xslF345X05/ownership.xml">form</a></td><td>4</td></tr>
+    <tr><td>2</td><td>Data</td><td><a href="report_pre.xml">data</a></td><td>EX-101.PRE</td></tr>
+    </table>"""
+    assert documents(index, INDEX, primary_name=name) == (ROOT + "ownership.xml", ())
+    body = visible_text(b"<ownershipDocument><transactionCode>S</transactionCode>"
+                        b"<shares>100</shares></ownershipDocument>", ROOT + "ownership.xml")
+    assert "transactionCode: S" in body
+    assert "shares: 100" in body
+    with pytest.raises(ValueError, match="METADATA_MISMATCH"):
+        documents(index, INDEX, primary_name="unrelated.xml")
