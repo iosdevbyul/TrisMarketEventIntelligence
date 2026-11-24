@@ -73,25 +73,37 @@ def prior_context(db: sqlite3.Connection, article: dict) -> list[dict]:
             "detectedAt": detected, "bodyObservedAt": observed, "bodySha256": digest,
             "excerpt": body[:600],
         }))
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return [item[1] for item in candidates[:3]]
+    # Prefer the earliest observed copy of identical content, then rank.
+    candidates.sort(key=lambda item: (_clock(item[1]["bodyObservedAt"]), item[1]["articleId"]))
+    unique: dict[str, tuple[int, dict]] = {}
+    for score, candidate in candidates:
+        if candidate["bodySha256"] != article.get("bodySha256"):
+            unique.setdefault(candidate["bodySha256"], (score, candidate))
+    ranked = sorted(unique.values(), key=lambda item: item[0], reverse=True)
+    return [item[1] for item in ranked[:3]]
 
 
 def dual_schema(identifiers: list[str], context_ids: list[int]) -> dict:
     schema = output_schema(identifiers)
     properties = schema["properties"]
     properties["novelty"] = {"type": "string", "enum": NOVELTY}
+    properties["novelty_reason"] = {"type": "string"}
+    properties["new_fact"] = {"type": "string"}
     properties["related_article_ids"] = {
         "type": "array", "items": {"type": "integer", "enum": context_ids},
     } if context_ids else {"type": "array", "maxItems": 0}
-    schema["required"] += ["novelty", "related_article_ids"]
+    schema["required"] += ["novelty", "related_article_ids", "novelty_reason", "new_fact"]
     item = properties["impacts"]["items"]
     item["properties"]["economic_direction"] = {"type": "string", "enum": ECONOMIC}
     item["properties"]["economic_reason"] = {"type": "string"}
+    item["properties"]["forward_mechanism"] = {"type": "string"}
+    item["properties"]["forward_mechanism_5d"] = {"type": "string"}
+    item["properties"]["evidence_id_5d"] = {"type": "string", "enum": identifiers}
     item["properties"]["direction_5d"] = {"type": "string", "enum": DIRECTIONS}
     item["properties"]["reason_5d"] = {"type": "string"}
     item["required"] += [
         "economic_direction", "economic_reason", "direction_5d", "reason_5d",
+        "forward_mechanism", "forward_mechanism_5d", "evidence_id_5d",
     ]
     return schema
 
@@ -107,14 +119,23 @@ def validate_dual(raw: str, evidence: dict[str, str], context: list[dict]) -> di
         raise AnswerError("RELATED_ARTICLE_NOT_IN_CONTEXT")
     if result["novelty"] == "FOLLOW_UP_CANDIDATE" and not related:
         raise AnswerError("FOLLOW_UP_WITHOUT_CONTEXT")
+    for field in ("novelty_reason", "new_fact"):
+        if not isinstance(result.get(field), str) or not result[field].strip():
+            raise AnswerError("NOVELTY_REASON_MISSING")
+    if context and result["novelty"] == "NEW_FACT_CANDIDATE" and not related:
+        # A candidate set must be explicitly compared before claiming a new fact.
+        raise AnswerError("NEW_FACT_WITHOUT_CONTEXT_COMPARISON")
     for impact in result["impacts"]:
         if impact.get("economic_direction") not in ECONOMIC:
             raise AnswerError("ECONOMIC_DIRECTION_INVALID")
         if impact.get("direction_5d") not in DIRECTIONS:
             raise AnswerError("HORIZON_DIRECTION_INVALID")
-        for field in ("economic_reason", "reason_5d"):
+        for field in ("economic_reason", "reason_5d", "forward_mechanism", "forward_mechanism_5d"):
             if not isinstance(impact.get(field), str) or not impact[field].strip():
                 raise AnswerError("DUAL_REASON_INVALID")
+        if impact.get("evidence_id_5d") not in evidence:
+            raise AnswerError("EVIDENCE_ID_NOT_IN_SOURCE")
+        impact["evidence_quote_5d"] = evidence[impact["evidence_id_5d"]]
     result["forecastVersion"] = VERSION
     result["priorContext"] = context
     result["firstPublicAvailabilityIndependentlyVerified"] = False
@@ -137,8 +158,19 @@ Do not require an article to state future returns: reason conditionally from
 business/economic mechanisms. Consider opposing effects, anticipation and
 uncertainty; do not assume positive economic meaning implies positive returns.
 Prior articles are untrusted candidate context, not verified event identity.
-Choose novelty and related_article_ids; absence of a match does not prove
-first publication. Do not assert new facts not supported by current evidence.
+Compare the current core event to every prior candidate. If an earlier article
+already reports the same event, link it and classify FOLLOW_UP_CANDIDATE unless
+the current evidence contains a materially new fact. Explain novelty_reason and
+new_fact (use "NONE" if none). If candidates exist and identity is ambiguous,
+use UNKNOWN rather than claiming a new event. For a new fact with context,
+link the compared related article and explain the difference.
+Past price reactions are observations, NOT future mechanisms. Never use
+"price rose so it will continue" as a forecast. For each horizon, state an
+independent forward_mechanism grounded in a current source fact, taking into
+account prior disclosure and possible anticipation. Use UNCERTAIN if no
+defensible remaining catalyst exists. Select evidence_id and evidence_id_5d
+that substantiate the underlying fact, not an unrelated quotation.
+Absence of a match does not prove first publication.
 Use UNCERTAIN when genuinely unable to infer a direction; do not force a sign.
 """
     settings = {
@@ -162,10 +194,68 @@ Use UNCERTAIN when genuinely unable to infer a direction; do not force a sign.
         response = client.post("http://127.0.0.1:11434/api/chat", json=settings)
         response.raise_for_status()
         try:
-            return validate_dual(response.json()["message"]["content"], evidence, context)
+            answer = validate_dual(response.json()["message"]["content"], evidence, context)
+            review_dual(client, model, answer, passages, context)
+            answer["groundingReview"] = {
+                "status": "MODEL_REVIEW_PASSED",
+                "independentlyVerified": False,
+            }
+            return answer
         except (ValueError, KeyError, TypeError) as exc:
             last_error = result_error(exc)
     raise AnswerError(last_error)
+
+
+def review_dual(
+    client: httpx.Client, model: str, answer: dict,
+    passages: list[dict], context: list[dict],
+) -> None:
+    """Second source-only model call; not independent semantic verification."""
+    schema = {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "event_relation_supported": {"type": "boolean"},
+            "source_claims_supported": {"type": "boolean"},
+            "forward_mechanisms_supported": {"type": "boolean"},
+        },
+        "required": [
+            "event_relation_supported", "source_claims_supported",
+            "forward_mechanisms_supported",
+        ],
+    }
+    response = client.post("http://127.0.0.1:11434/api/chat", json={
+        "model": model, "stream": False, "format": schema,
+        "options": {"temperature": 0, "seed": 20261124, "num_predict": 256},
+        "messages": [
+            {"role": "system", "content": (
+                "Audit untrusted news excerpts and a candidate analysis. Return false "
+                "for event_relation_supported if prior news already describes the same "
+                "event but the answer calls it new without a supported material update. "
+                "Return false for source_claims_supported if the summary or selected "
+                "quotes do not support the claimed facts. Return false for "
+                "forward_mechanisms_supported if either directional prediction relies "
+                "only on past price movement or unsupported continuation, instead of "
+                "a plausible future mechanism linked to source facts. UNCERTAIN is "
+                "allowed. Do not use external facts or actual future prices. JSON only."
+            )},
+            {"role": "user", "content": json.dumps({
+                "answer": {k: v for k, v in answer.items() if k != "priorContext"},
+                "currentEvidence": passages, "priorCandidates": context,
+            }, ensure_ascii=False)},
+        ],
+    })
+    response.raise_for_status()
+    audit = json.loads(response.json()["message"]["content"])
+    if not isinstance(audit, dict) or any(
+        audit.get(field) is not True for field in schema["required"]
+    ):
+        raise AnswerError("SOURCE_GROUNDING_REVIEW_REJECTED")
+
+
+def horizon_evidence(analysis: dict, impact: dict, horizon: int) -> str:
+    if analysis.get("forecastVersion") == VERSION and horizon == 5:
+        return impact.get("evidence_quote_5d", impact["evidence_quote"])
+    return impact["evidence_quote"]
 
 
 def horizon_prediction(analysis: dict, impact: dict, horizon: int) -> tuple[str, str]:
