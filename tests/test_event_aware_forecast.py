@@ -12,6 +12,7 @@ from tris_market_event_intelligence.automatic_forecast_precommitment import (
 )
 from tris_market_event_intelligence.event_aware_forecast import (
     VERSION,
+    _response_content,
     horizon_prediction,
     prior_context,
     review_dual,
@@ -111,5 +112,24 @@ def test_review_rejects_unsupported_future_mechanism():
     with (
         httpx.Client(transport=httpx.MockTransport(handler)) as client,
         pytest.raises(ValueError, match="SOURCE_GROUNDING_REVIEW_REJECTED"),
+    ):
+        review_dual(client, "gemma4:e2b", answer(), [], [])
+
+
+def test_truncated_review_has_stage_specific_error():
+    response = httpx.Response(200, json={
+        "done_reason": "length", "message": {"content": '{"event_relation_supported":'},
+    })
+    with pytest.raises(ValueError, match="REVIEW_GENERATION_TRUNCATED"):
+        _response_content(response, "REVIEW")
+
+
+def test_invalid_review_json_is_not_accepted():
+    def handler(request):
+        return httpx.Response(200, json={"message": {"content": "not JSON"}})
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(ValueError, match="REVIEW_JSON_INVALID"),
     ):
         review_dual(client, "gemma4:e2b", answer(), [], [])
