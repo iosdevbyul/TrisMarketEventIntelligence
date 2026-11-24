@@ -1,8 +1,19 @@
 # TrisMarketEventIntelligence — Project Charter and Development Guardrails
-Status: Proposed governance baseline (2026-11-23). Applies to future work after review/merge.
+Status: User-confirmed mission and unified source architecture (2026-11-24). This documentation revision preserves the existing six acceptance gates; detailed execution process will be agreed separately.
 
 ## Mission
-The project's primary goal is to test and improve point-in-time news/economic-event forecasts against **actual subsequent market prices** for stocks, sectors, indexes and ETFs. News interpretation, source verification, and causal reasoning support this goal; none can substitute for observed-market evaluation. This project's research is independent of DonghakStockVision. Prior README statements excluding stock prices and market evaluation from this project conflict with this charter and must be reconciled in a separate, reviewed documentation change before claiming documentation consistency.
+The project's primary goal is to test and improve point-in-time SEC filing/news/economic-event forecasts against **actual subsequent market prices** for stocks, sectors, indexes and ETFs. News interpretation, source verification, and causal reasoning support this goal; none can substitute for observed-market evaluation. This project's research is independent of DonghakStockVision. DonghakStockVision is an optional consumer and does not own this project's market validation.
+
+## Unified source-to-market architecture (approved 2026-11-24)
+1. Capture SEC filings, publisher news and official economic indicators with traceable originals, hashes, source scope and separate public/detected/observed clocks. Cover all SEC filing types in the explicitly configured universe; retain accession, CIK, form, relevant exhibits and issuer/security mapping. Triage all filings without forcing a directional forecast for immaterial disclosures. Reuse existing historical SEC capture components.
+2. Source admission is based on informational validity and completeness relative to its scope, never a minimum character count. A complete short factual alert, including a source-backed headline, may qualify as limited-scope evidence; never mislabel it as full text. Empty content, paywall/navigation shells, incomplete extraction and media without verified usable text are excluded or held for review. Distinguish discovered records from admitted inputs; preserve original evidence and quarantine rather than erase historical records. Apply eligibility to new inference, context and research scoring/training.
+3. Link sources into event families, identify first disclosure, new facts, repeats and corrections; distinguish uncertain links and unauthenticated clocks.
+4. Generate separate economic meaning and market-direction forecasts for explicit targets/horizons; seal evidence, model/rule version and prediction before outcome access.
+5. Evaluate with actual market prices and benchmarks, minute/hour/day where available, absolute and relative returns; no causal proof from price agreement alone.
+6. Investigate mismatches, learn testable rules, evaluate independently, and expose actual results in a dashboard.
+
+## Verified implementation snapshot (2026-11-24)
+Main includes PR #276; draft #277 at a70c650 passed CI #1455 on Python 3.11/3.12/3.13. Operator read-only audit: 902 discovered, 764 text candidates (semantic completeness unverified), 41 partial, 66 media review, 31 empty (24 SEC). 38 existing completed analyses flagged for media review. Operational SEC full-text integration, limited-scope headline ingestion, exclusion of previously flagged analyses from scoring/training, and actual model grounding and independent learning improvement remain incomplete. Historical SEC originals and price evidence are separate assets, not absent or to be recreated. No runtime changes are implied by this document.
 
 ## Non-negotiable boundaries
 1. Produce two distinct immutable predictions: (A) economic meaning / impact mechanism, (B) subsequent market-direction forecast for explicitly precommitted targets and horizons. Both allow uncertainty/abstention. Positive economic meaning need not imply positive subsequent return.
@@ -21,8 +32,8 @@ The project's primary goal is to test and improve point-in-time news/economic-ev
 - Work outside a stage that is not essential to unblock its acceptance criteria goes to a later backlog. Do not silently redirect into general semantic QA, source taxonomy, API polish, or infrastructure work.
 - A genuine blocker may be fixed only to the minimum extent needed to unblock the stage, with the scope and evidence recorded on the card/PR.
 - Changing mission, phase order, prediction targets/horizons, evidence standards or learning success threshold requires explicit user approval with a recorded change decision.
-- One active implementation workstream unless explicitly authorized; prefer a complete reviewable feature PR over many tiny PRs, but retain risk-based CI and tests.
-- Trello tracks stages and acceptance evidence, GitHub PR tracks implementation, this charter defines mission. All PRs must reference the relevant Trello phase, scope, non-goals, evidence and remaining blockers.
+- One active implementation workstream unless explicitly authorized; a separate documentation-only reconciliation is permitted. prefer a complete reviewable feature PR over many tiny PRs, but retain risk-based CI and tests.
+- Trello tracks stages and acceptance evidence, GitHub PR tracks implementation, this charter defines mission. The manager personally checks the latest commit CI, responds to failures, and provides local validation commands only after success; do not delegate CI checks to the operator. All PRs must reference the relevant Trello phase, scope, non-goals, evidence and remaining blockers.
 - Manager/reviewer must reject "complete" when observed-market validation, precommitted metrics or test evidence is missing. Do not claim AI learned merely because rule memory was stored.
 
 ## Roadmap and stage gates
