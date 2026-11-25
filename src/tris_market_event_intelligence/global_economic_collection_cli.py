@@ -521,8 +521,15 @@ def oecd_numeric(client, db, start, end):
             "seriesCount": len(groups), "observed": sum(map(len, groups.values())), "inserted": added}
 
 
+DEFERRED_RELEASES = frozenset({
+    "customs", "KR_fss", "imf_news", "imf_data_news", "oecd_news", "oecd_statistics",
+})
+
+
 def cycle(args):
     results = []
+    selected = getattr(args, "release_source", None)
+    operational = getattr(args, "operational", False)
     effective_start = max(args.start, args.end - timedelta(days=730)) if args.incremental else args.start
     modules = [
         ("economic_collection_cli", ["--db", str(args.macro_db), "--start", str(args.start),
@@ -531,7 +538,7 @@ def cycle(args):
                                              "--max-batches", "100"]),
         ("korean_official_release_cli", ["--db", str(args.news_db), "--limit", str(args.limit)]),
     ]
-    for module, params in ([] if args.release_source else modules):
+    for module, params in ([] if selected else modules):
         try:
             results.append(run_module(module, params))
         except (OSError, subprocess.SubprocessError) as exc:
@@ -543,7 +550,7 @@ def cycle(args):
             httpx.Client(timeout=30, headers={"User-Agent": "TrisMarketEventIntelligence/0.1"}) as client:
         macro.executescript(SCHEMA)
         news.executescript(RELEASE_SCHEMA)
-        if not args.release_source:
+        if not selected:
             for country in COUNTRIES:
                 for series in KOREA_WB_SERIES:
                     job = {"source": "WORLD_BANK_" + country, "series": series}
@@ -563,7 +570,9 @@ def cycle(args):
                 results.append({"source": "US_TREASURY", "status": "FAILED", "error": str(exc)[:250]})
         for registry, rss in ((FEEDS, True), (BOARDS, False)):
             for source, spec in registry.items():
-                if args.release_source and source not in args.release_source:
+                if selected and source not in selected:
+                    continue
+                if operational and not selected and source in DEFERRED_RELEASES:
                     continue
                 job = {"source": source}
                 try:
@@ -573,7 +582,7 @@ def cycle(args):
                         sqlite3.Error, RuntimeError, ET.ParseError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
                 results.append(job)
-    if args.ocr_db and not args.release_source:
+    if args.ocr_db and not selected and not operational:
         try:
             from tris_market_event_intelligence.economic_pdf_recovery_cli import recover
 
@@ -581,7 +590,9 @@ def cycle(args):
         except (ValueError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
             results.append({"module": "all_official_ocr", "status": "FAILED", "error": str(exc)[:250]})
     return {"observedAt": utc_now(), "results": results,
-            "notConnected": list(NOT_CONNECTED), "mode": "incremental" if args.incremental else "backfill",
+            "notConnected": list(NOT_CONNECTED),
+            "deferredSources": sorted(DEFERRED_RELEASES) if operational else [],
+            "mode": "selected_releases" if selected else ("incremental" if args.incremental else "backfill"),
             "effectiveStart": str(effective_start), "analysisPerformed": False,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}
 
@@ -594,7 +605,9 @@ def main():
     parser.add_argument("--release-source", action="append", choices=sorted(FEEDS.keys() | BOARDS.keys()),
                         help="Collect only selected global release sources; skip numeric and OCR jobs")
     parser.add_argument("--start", type=date.fromisoformat, default=date(2000, 1, 1))
-    parser.add_argument("--end", type=date.fromisoformat, default=date.today())
+    parser.add_argument("--end", type=date.fromisoformat)
+    parser.add_argument("--operational", action="store_true",
+                        help="Incremental core collection; defer known blocked releases and OCR")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--ocr-limit", type=int, default=100)
@@ -606,10 +619,21 @@ def main():
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--interval", type=int, default=3600)
     args = parser.parse_args()
+    rolling_end = args.end is None
+    args.end = args.end or date.today()
+    if args.operational:
+        args.incremental = True
+        args.reuse_captured = True
+        args.archive_pages = 1
+    paths = [args.news_db, args.macro_db, args.output] + ([args.ocr_db] if args.ocr_db else [])
+    if len({path.resolve() for path in paths}) != len(paths):
+        parser.error("Database and report paths must be distinct")
     if (args.start > args.end or not 1 <= args.limit <= 50 or args.interval < 300
             or not 1 <= args.archive_pages <= 50 or not 1 <= args.ocr_limit <= 1000):
         parser.error("Invalid dates, limit or interval")
     while True:
+        if rolling_end:
+            args.end = date.today()
         report = cycle(args)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         temp = args.output.with_suffix(".tmp")
