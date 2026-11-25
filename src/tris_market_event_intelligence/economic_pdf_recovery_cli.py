@@ -39,6 +39,15 @@ def recognize(tesseract: str, png: bytes, languages: str) -> tuple[str, str]:
     return outputs[0], outputs[1]
 
 
+def valid_evidence(digest: str, png: bytes, text: str, tsv: str, status: str) -> bool:
+    return (
+        png.startswith(b"\x89PNG\r\n\x1a\n")
+        and hashlib.sha256(png).hexdigest() == digest
+        and tsv.startswith("level\tpage_num\t")
+        and status == ("OCR_TEXT" if text.strip() else "OCR_NO_TEXT")
+    )
+
+
 def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
     if not news.is_file() or news.resolve() == output.resolve():
         raise ValueError("Separate existing source and recovery database required")
@@ -91,10 +100,11 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
                     raise ValueError("Stored PDF digest mismatch")
                 with pymupdf.open(stream=payload, filetype="pdf") as document:
                     for number in sorted(pages):
-                        if dest.execute("""
-                            SELECT 1 FROM economic_pdf_recovery
+                        existing = dest.execute("""
+                            SELECT image_sha256,image_png,ocr_text,ocr_tsv,status FROM economic_pdf_recovery
                             WHERE raw_sha256=? AND page=? AND engine=? AND dpi=? AND languages=?
-                        """, (digest, number, engine, dpi, languages)).fetchone():
+                        """, (digest, number, engine, dpi, languages)).fetchone()
+                        if existing and valid_evidence(*existing):
                             counts["reused"] += 1
                             continue
                         if attempted >= limit:
@@ -109,9 +119,11 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
                             png = page.get_pixmap(dpi=dpi, alpha=False).tobytes("png")
                             text, tsv = recognize(tesseract, png, languages)
                             status = "OCR_TEXT" if text.strip() else "OCR_NO_TEXT"
+                            if not valid_evidence(hashlib.sha256(png).hexdigest(), png, text, tsv, status):
+                                raise ValueError("Invalid OCR evidence")
                             with dest:
                                 dest.execute("""
-                                    INSERT OR IGNORE INTO economic_pdf_recovery
+                                    INSERT OR REPLACE INTO economic_pdf_recovery
                                     VALUES (?,?,?,?,?,?,?,?,?,?,?)
                                 """, (
                                     digest, number, engine, dpi, languages,

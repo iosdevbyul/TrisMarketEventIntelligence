@@ -23,6 +23,8 @@ def main() -> None:
     parser.add_argument("--region", choices=("korea", "us", "all"), default="korea")
     parser.add_argument("--max-batches", type=int, default=10)
     parser.add_argument("--skip-discovery", action="store_true")
+    parser.add_argument("--ocr-db", type=Path, help="Opt-in local sparse-page recovery database")
+    parser.add_argument("--ocr-limit", type=int, default=100)
     args = parser.parse_args()
     if not 1 <= args.max_batches <= 1000:
         parser.error("max-batches must be 1..1000")
@@ -61,11 +63,19 @@ def main() -> None:
          "missingPublishedAt": missing}
         for source, status, count, missing in rows
     ]
+    recovery = None
+    if args.ocr_db is not None:
+        from tris_market_event_intelligence.economic_pdf_recovery_cli import recover
+
+        recovery = recover(args.db, args.ocr_db, limit=args.ocr_limit)
     print(json.dumps({
         "discovery": discovery, "batches": batches, "coverage": coverage,
+        "ocrRecovery": recovery,
         "analysisPerformed": False, "firstPublicAvailabilityVerified": False,
         "allAttachmentsCaptured": False,
     }, ensure_ascii=False))
+    if recovery is not None and (recovery["failed"] or recovery["remainingPages"]):
+        raise SystemExit(1)
     if (discovery is not None and any(
         result["status"] not in ("ok", "not_modified") for result in discovery.values()
     )) or not coverage or any(row["status"] != "COMPLETE" for row in coverage):
