@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -69,12 +70,15 @@ BOARDS = {
         "/english/PressRelease/",
     ),
     "imf_news": ("https://www.imf.org/en/news", "imf.org", "/en/news/articles/"),
+    "imf_data_news": ("https://data.imf.org/news", "data.imf.org", "/news/"),
+    "oecd_statistics": ("https://www.oecd.org/en/data/insights.html", "oecd.org",
+                        "/en/data/insights/statistical-releases/"),
+    "KR_fss": ("https://dart.fss.or.kr/info/searchBodo.do", "dart.fss.or.kr", "/info/selectBodo.do"),
     "oecd_news": (
         "https://www.oecd.org/en/about/newsroom.html", "oecd.org", "/en/about/news/press-releases/",
     ),
 }
 NOT_CONNECTED = (
-    "KR_fss",
     "CN_pboc", "CN_customs",
 )
 
@@ -211,7 +215,36 @@ def board_links(raw, base, host, prefix):
     return result
 
 
+class PublicationMetadata(HTMLParser):
+    """Keep publisher-declared dates as evidence, not verified first availability."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.values = []
+
+    def handle_starttag(self, tag, attrs):
+        fields = dict(attrs)
+        if tag == "meta":
+            key = fields.get("property") or fields.get("name") or fields.get("itemprop")
+            value = fields.get("content")
+        elif tag == "time":
+            key = fields.get("itemprop") or "time"
+            value = fields.get("datetime")
+        else:
+            return
+        if key and value and key.lower() in {
+            "article:published_time", "article:modified_time", "datepublished",
+            "datemodified", "pubdate", "publication_date", "time",
+        }:
+            self.values.append((key, value))
+
+
 CAPTURE_STATE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS official_release_date_evidence (
+    article_id INTEGER NOT NULL, sha256 TEXT NOT NULL, field TEXT NOT NULL,
+    value TEXT NOT NULL, observed_at TEXT NOT NULL,
+    PRIMARY KEY(article_id,sha256,field,value)
+);
 CREATE TABLE IF NOT EXISTS official_release_capture_state (
     article_id INTEGER PRIMARY KEY, checked_at TEXT NOT NULL,
     status TEXT NOT NULL, errors TEXT NOT NULL
@@ -264,6 +297,24 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False, archiv
         ]
         if records:
             raw, base = home, home_url
+    if not records and source == "customs":
+        # Official detail URLs independently located on the publisher's domain.
+        # A bounded historical seed, not a substitute for live discovery.
+        seeds = (
+            ("10183383", "543e432d867f6dd472a69c7a3cfff59c", "2026년 10월 월간 수출입 현황 [확정치]"),
+            ("10182926", "f245ffc86cc10295d215ed0379c4a630", "2026년 11월 1일 ~ 11월 10일 수출입 현황 [잠정치]"),
+            ("10181824", "4c5427b9707dd3a4c5c0a47f53dbf1c7", "2026년 10월 수출입 현황 [잠정치]"),
+            ("10176444", "8599e04facbad02816d3af783a538778", "2026년 9월 1일 ~ 9월 10일 수출입 현황 [잠정치]"),
+        )
+        for number, token, title in seeds[:limit]:
+            url = urljoin(entry, spec[2]) + "?" + urlencode({
+                "bbsId": "1362", "mi": "2891", "nttSn": number, "nttSnUrl": token,
+            })
+            records.append(Article(source, hashlib.sha256(url.encode()).hexdigest(),
+                                   url, title, None, None, now))
+        seeded = True
+    else:
+        seeded = False
     if not records:
         raise ValueError("No supported release links")
     inserted = store.save(source, base, raw, records, now, None, None)
@@ -334,6 +385,12 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False, archiv
             for payload, final, kind in candidates:
                 with db:
                     digest = save_original(db, final, payload, kind)
+                    if final == url and "html" in kind.lower():
+                        metadata = PublicationMetadata()
+                        metadata.feed(payload.decode("utf-8-sig", errors="replace"))
+                        db.executemany("""INSERT OR IGNORE INTO official_release_date_evidence
+                            VALUES (?,?,?,?,?)""", [(aid, digest, field, value, utc_now())
+                            for field, value in metadata.values])
                 text, sparse, status = None, (), "RAW_ONLY"
                 if payload.startswith(b"%PDF-"):
                     try:
@@ -352,7 +409,8 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False, archiv
         except (ValueError, httpx.HTTPError, OSError, sqlite3.Error) as exc:
             errors.append({"url": article.url, "error": str(exc)[:250]})
         capture_state(db, aid, errors[previous:])
-    return {"status": "PARTIAL" if errors else "CAPTURED", "discovered": len(records),
+    return {"status": "PARTIAL" if errors or seeded else "CAPTURED", "discovered": len(records),
+            "historicalSeedOnly": seeded,
             "inserted": inserted, "documents": documents, "reusedArticles": reused, "errors": errors,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}
 
@@ -466,13 +524,14 @@ def oecd_numeric(client, db, start, end):
 def cycle(args):
     results = []
     effective_start = max(args.start, args.end - timedelta(days=730)) if args.incremental else args.start
-    for module, params in [
+    modules = [
         ("economic_collection_cli", ["--db", str(args.macro_db), "--start", str(args.start),
                                      "--end", str(args.end)] + (["--incremental"] if args.incremental else [])),
         ("economic_release_collection_cli", ["--db", str(args.news_db), "--region", "all",
                                              "--max-batches", "100"]),
         ("korean_official_release_cli", ["--db", str(args.news_db), "--limit", str(args.limit)]),
-    ]:
+    ]
+    for module, params in ([] if args.release_source else modules):
         try:
             results.append(run_module(module, params))
         except (OSError, subprocess.SubprocessError) as exc:
@@ -484,25 +543,28 @@ def cycle(args):
             httpx.Client(timeout=30, headers={"User-Agent": "TrisMarketEventIntelligence/0.1"}) as client:
         macro.executescript(SCHEMA)
         news.executescript(RELEASE_SCHEMA)
-        for country in COUNTRIES:
-            for series in KOREA_WB_SERIES:
-                job = {"source": "WORLD_BANK_" + country, "series": series}
-                try:
-                    job.update(world_bank(client, macro, country, series, effective_start, args.end))
-                except (ValueError, KeyError, TypeError, httpx.HTTPError, ArithmeticError) as exc:
-                    job.update(status="FAILED", error=str(exc)[:250])
-                results.append(job)
-        results.extend(imf_numeric(client, macro, effective_start, args.end))
-        try:
-            results.append(oecd_numeric(client, macro, effective_start, args.end))
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, ArithmeticError) as exc:
-            results.append({"source": "OECD_SDMX", "status": "FAILED", "error": str(exc)[:250]})
-        try:
-            results.append(treasury_numeric(client, macro, effective_start, args.end))
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            results.append({"source": "US_TREASURY", "status": "FAILED", "error": str(exc)[:250]})
+        if not args.release_source:
+            for country in COUNTRIES:
+                for series in KOREA_WB_SERIES:
+                    job = {"source": "WORLD_BANK_" + country, "series": series}
+                    try:
+                        job.update(world_bank(client, macro, country, series, effective_start, args.end))
+                    except (ValueError, KeyError, TypeError, httpx.HTTPError, ArithmeticError) as exc:
+                        job.update(status="FAILED", error=str(exc)[:250])
+                    results.append(job)
+            results.extend(imf_numeric(client, macro, effective_start, args.end))
+            try:
+                results.append(oecd_numeric(client, macro, effective_start, args.end))
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, ArithmeticError) as exc:
+                results.append({"source": "OECD_SDMX", "status": "FAILED", "error": str(exc)[:250]})
+            try:
+                results.append(treasury_numeric(client, macro, effective_start, args.end))
+            except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                results.append({"source": "US_TREASURY", "status": "FAILED", "error": str(exc)[:250]})
         for registry, rss in ((FEEDS, True), (BOARDS, False)):
             for source, spec in registry.items():
+                if args.release_source and source not in args.release_source:
+                    continue
                 job = {"source": source}
                 try:
                     job.update(releases(client, store, news, source, spec, args.limit, rss, reuse=args.reuse_captured,
@@ -511,7 +573,7 @@ def cycle(args):
                         sqlite3.Error, RuntimeError, ET.ParseError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
                 results.append(job)
-    if args.ocr_db:
+    if args.ocr_db and not args.release_source:
         try:
             from tris_market_event_intelligence.economic_pdf_recovery_cli import recover
 
@@ -529,6 +591,8 @@ def main():
     parser.add_argument("--news-db", required=True, type=Path)
     parser.add_argument("--macro-db", required=True, type=Path)
     parser.add_argument("--ocr-db", type=Path)
+    parser.add_argument("--release-source", action="append", choices=sorted(FEEDS.keys() | BOARDS.keys()),
+                        help="Collect only selected global release sources; skip numeric and OCR jobs")
     parser.add_argument("--start", type=date.fromisoformat, default=date(2000, 1, 1))
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--limit", type=int, default=10)
