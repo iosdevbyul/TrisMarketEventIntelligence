@@ -111,7 +111,7 @@ def attachments(payload: bytes, base: str) -> list[str]:
     ))
 
 
-def fetch(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str, str]:
+def fetch_once(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str, str]:
     for _ in range(4):
         if not allowed(url):
             raise ValueError("Untrusted official URL")
@@ -127,6 +127,20 @@ def fetch(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str, str]:
                     raise ValueError("Response too large")
             return bytes(data), url, response.headers.get("content-type", "")
     raise ValueError("Redirect limit")
+
+
+def fetch(client: httpx.Client, url: str, limit: int) -> tuple[bytes, str, str]:
+    for attempt in range(3):
+        try:
+            return fetch_once(client, url, limit)
+        except httpx.TransportError:
+            if attempt == 2:
+                raise
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
+    raise AssertionError("Unreachable retry state")
 
 
 def save_original(db: sqlite3.Connection, url: str, payload: bytes, kind: str) -> str:

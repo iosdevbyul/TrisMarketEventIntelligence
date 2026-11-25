@@ -92,6 +92,25 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
             if not isinstance(pages, list) or any(type(p) is not int or p < 1 for p in pages):
                 raise ValueError("Invalid sparse page metadata")
             pending.setdefault(digest, set()).update(pages)
+        document_failures = []
+        if extra:
+            failed = db.execute("""
+                SELECT DISTINCT d.sha256,o.payload
+                FROM official_release_documents d JOIN official_release_originals o
+                  ON o.sha256=d.sha256 AND o.url=d.url
+                WHERE d.status='EXTRACTION_FAILED'
+            """).fetchall()
+            for digest, payload in failed:
+                try:
+                    if hashlib.sha256(payload).hexdigest() != digest:
+                        raise ValueError("Stored PDF digest mismatch")
+                    with pymupdf.open(stream=payload, filetype="pdf") as document:
+                        if document.needs_pass or not 1 <= len(document) <= 1000:
+                            raise ValueError("Unsupported PDF page count or encryption")
+                        pending.setdefault(digest, set()).update(range(1, len(document) + 1))
+                except (ValueError, RuntimeError, OSError) as exc:
+                    document_failures.append({"sha256": digest, "error": type(exc).__name__,
+                                              "detail": str(exc)[:300]})
         output.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(output)) as dest:
             dest.executescript(SCHEMA)
@@ -156,6 +175,7 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
         **counts, "remainingPages": total - counts["reused"] - counts["recoveredText"]
         - counts["noText"], "failures": failures, "sourceDatabaseModified": False,
         "captureStatusChanged": False, "visualReviewRequired": True,
+        "failedDocuments": document_failures,
         "analysisPerformed": False,
     }
 
@@ -169,7 +189,7 @@ def main() -> None:
     args = parser.parse_args()
     report = recover(args.db, args.output_db, limit=args.limit, dpi=args.dpi)
     print(json.dumps(report, ensure_ascii=False))
-    if report["failed"] or report["remainingPages"]:
+    if report["failed"] or report["remainingPages"] or report["failedDocuments"]:
         raise SystemExit(1)
 
 

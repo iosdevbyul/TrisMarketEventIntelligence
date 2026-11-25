@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 import sqlite3
 import subprocess
 import sys
@@ -187,10 +188,19 @@ def board_links(raw, base, host, prefix):
     parser.feed(raw.decode("utf-8-sig", errors="replace"))
     result = {}
     for href, label in parser.links:
+        if host == "customs.go.kr" and href.lower().startswith("javascript:"):
+            # Only accept an explicit complete detail URL embedded in an anchor.
+            match = re.search(r"""(/kcs/na/ntt/selectNttInfo\.do\?[^'"]+)""", href)
+            if match:
+                href = match.group(1)
         url = urljoin(base, href)
         path = urlsplit(url).path.removeprefix("/index.php")
         if (
             trusted(url, host) and path.startswith(prefix) and label and url != base
+            and (host != "customs.go.kr" or (
+                parse_qs(urlsplit(url).query).get("nttSn", [""])[0].isdigit()
+                and bool(parse_qs(urlsplit(url).query).get("nttSnUrl", [""])[0])
+            ))
             and (path.endswith((".html", ".htm", "/view", "Info.do", ".do"))
                  or "/news/articles/" in path or "/press-releases/" in path
                  or (host == "bea.gov" and len(path.split("/")) > 3
@@ -244,6 +254,16 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False, archiv
             Article(source, hashlib.sha256(url.encode()).hexdigest(), url, title, None, None, now)
             for url, title in list(board_links(raw, base, host, spec[2]).items())[:limit]
         ]
+    if not records and source == "customs":
+        home, home_url, home_media = fetch(client, "https://customs.go.kr/", host)
+        with db:
+            save_original(db, home_url, home, home_media)
+        records = [
+            Article(source, hashlib.sha256(url.encode()).hexdigest(), url, title, None, None, now)
+            for url, title in list(board_links(home, home_url, host, spec[2]).items())[:limit]
+        ]
+        if records:
+            raw, base = home, home_url
     if not records:
         raise ValueError("No supported release links")
     inserted = store.save(source, base, raw, records, now, None, None)
@@ -495,7 +515,7 @@ def cycle(args):
         try:
             from tris_market_event_intelligence.economic_pdf_recovery_cli import recover
 
-            results.append({"module": "all_official_ocr", **recover(args.news_db, args.ocr_db, limit=100)})
+            results.append({"module": "all_official_ocr", **recover(args.news_db, args.ocr_db, limit=args.ocr_limit)})
         except (ValueError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
             results.append({"module": "all_official_ocr", "status": "FAILED", "error": str(exc)[:250]})
     return {"observedAt": utc_now(), "results": results,
@@ -513,6 +533,7 @@ def main():
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--ocr-limit", type=int, default=100)
     parser.add_argument("--archive-pages", type=int, default=1,
                         help="BEA archive pages, where supported")
     parser.add_argument("--incremental", action="store_true", help="Refresh recent two years only")
@@ -521,7 +542,8 @@ def main():
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--interval", type=int, default=3600)
     args = parser.parse_args()
-    if args.start > args.end or not 1 <= args.limit <= 50 or args.interval < 300 or not 1 <= args.archive_pages <= 50:
+    if (args.start > args.end or not 1 <= args.limit <= 50 or args.interval < 300
+            or not 1 <= args.archive_pages <= 50 or not 1 <= args.ocr_limit <= 1000):
         parser.error("Invalid dates, limit or interval")
     while True:
         report = cycle(args)
