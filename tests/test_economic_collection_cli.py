@@ -7,6 +7,7 @@ from tris_market_event_intelligence.economic_collection_cli import (
     SCHEMA,
     bls_collect,
     fred_collect,
+    fred_csv_collect,
     save,
 )
 
@@ -60,3 +61,21 @@ def test_bls_does_not_invent_vintage():
         assert db.execute(
             "SELECT vintage_start, vintage_end FROM macro_observation"
         ).fetchone() == ("", "")
+
+
+def test_fred_csv_without_key_and_without_vintage():
+    def handler(request):
+        assert "api_key" not in request.url.params
+        return httpx.Response(
+            200, text="observation_date,X\n2020-01-01,10\n2020-02-01,.\n2019-12-01,8\n"
+        )
+
+    with sqlite3.connect(":memory:") as db:
+        db.executescript(SCHEMA)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            args = (client, db, "X", date(2020, 1, 1), date(2020, 12, 31))
+            assert fred_csv_collect(*args) == 1
+            assert fred_csv_collect(*args) == 0
+        assert db.execute(
+            "SELECT source, vintage_start, vintage_end, value FROM macro_observation"
+        ).fetchone() == ("FRED_CSV", "", "", "10")
