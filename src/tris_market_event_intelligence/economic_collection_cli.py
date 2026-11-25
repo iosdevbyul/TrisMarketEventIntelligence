@@ -197,7 +197,7 @@ def bls_collect(
         response.raise_for_status()
         payload = response.json()
         if payload["status"] != "REQUEST_SUCCEEDED":
-            raise ValueError("BLS request unsuccessful")
+            raise ValueError("BLS request unsuccessful: " + str(payload.get("message", []))[:200])
         records = payload["Results"]["series"]
         if len(records) != 1 or records[0]["seriesID"] != series:
             raise ValueError("BLS series mismatch")
@@ -319,6 +319,11 @@ def main() -> None:
                 results.append({
                     "source": source, "series": series, "status": "FAILED",
                     "errorType": type(exc).__name__,
+                    "detail": str(exc)[:250] if source == "BLS" and isinstance(exc, ValueError) else None,
+                    "storedObservations": db.execute(
+                        "SELECT COUNT(*) FROM macro_observation WHERE source=? AND series=?",
+                        (source, series),
+                    ).fetchone()[0],
                 })
         print(json.dumps({"results": results, "analysisPerformed": False}, ensure_ascii=False))
     if any(r["status"] != "COLLECTED" for r in results):

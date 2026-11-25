@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import sqlite3
 import subprocess
@@ -44,6 +46,8 @@ FEEDS = {
     "bls_cpi": ("https://www.bls.gov/feed/cpi.rss", "bls.gov"),
     "bls_ppi": ("https://www.bls.gov/feed/ppi.rss", "bls.gov"),
     "bls_employment": ("https://www.bls.gov/feed/empsit.rss", "bls.gov"),
+    "US_census": ("https://www.census.gov/economic-indicators/indicator.xml", "census.gov"),
+    "KR_fiscal": ("https://english.mofe.go.kr/pc/engmosfrss.do?boardCd=N0001", "mofe.go.kr"),
     "eia_news": ("https://www.eia.gov/rss/todayinenergy.xml", "eia.gov"),
 }
 BOARDS = {
@@ -51,7 +55,7 @@ BOARDS = {
         "https://www.customs.go.kr/kcs/na/ntt/selectNttList.do?bbsId=1362&mi=2891",
         "customs.go.kr", "/kcs/na/ntt/selectNttInfo.do",
     ),
-    "bea_news": ("https://www.bea.gov/news", "bea.gov", "/news/"),
+    "bea_news": ("https://www.bea.gov/news/archive", "bea.gov", "/news/"),
     "motir": (
         "https://www.motir.go.kr/kor/article/ATCL3f49a5a8c",
         "motir.go.kr", "/kor/article/ATCL3f49a5a8c/",
@@ -68,15 +72,15 @@ BOARDS = {
     ),
 }
 NOT_CONNECTED = (
-    "KR_fiscal", "KR_fss", "US_census",
-    "CN_pboc", "CN_customs", "OECD_numeric",
+    "KR_fss",
+    "CN_pboc", "CN_customs",
 )
 
 
 def trusted(url: str, host: str) -> bool:
     p = urlsplit(url)
     return (
-        p.scheme == "https" and p.hostname in (host, "www." + host)
+        p.scheme == "https" and p.hostname in (host, "www." + host, "english." + host)
         and not p.username and not p.password and p.port in (None, 443)
     )
 
@@ -188,14 +192,15 @@ def board_links(raw, base, host, prefix):
             trusted(url, host) and path.startswith(prefix) and label and url != base
             and (path.endswith((".html", ".htm", "/view", "Info.do", ".do"))
                  or "/news/articles/" in path or "/press-releases/" in path
-                 or (host == "bea.gov" and path.startswith("/news/") and len(path.split("/")) > 3)
+                 or (host == "bea.gov" and len(path.split("/")) > 3
+                     and path.split("/")[2].isdigit())
                  or (host == "fsc.go.kr" and path.rsplit("/", 1)[-1].isdigit()))
         ):
             result.setdefault(url, label)
     return result
 
 
-def releases(client, store, db, source, spec, limit, rss):
+def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
     entry, host = spec[:2]
     raw, base, media = fetch(client, entry, host)
     with db:
@@ -213,8 +218,16 @@ def releases(client, store, db, source, spec, limit, rss):
     inserted = store.save(source, base, raw, records, now, None, None)
     errors = []
     documents = 0
+    reused = 0
     for article in records:
         try:
+            if reuse and db.execute("""
+                SELECT 1 FROM articles a JOIN official_release_documents d ON d.article_id=a.id
+                WHERE a.source=? AND a.url=? AND d.url=a.url
+                LIMIT 1
+            """, (source, article.url)).fetchone():
+                reused += 1
+                continue
             time.sleep(0.25)
             body, url, media = fetch(client, article.url, host)
             aid = db.execute(
@@ -254,7 +267,7 @@ def releases(client, store, db, source, spec, limit, rss):
         except (ValueError, httpx.HTTPError, OSError, sqlite3.Error) as exc:
             errors.append({"url": article.url, "error": str(exc)[:250]})
     return {"status": "PARTIAL" if errors else "CAPTURED", "discovered": len(records),
-            "inserted": inserted, "documents": documents, "errors": errors,
+            "inserted": inserted, "documents": documents, "reusedArticles": reused, "errors": errors,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}
 
 
@@ -324,6 +337,46 @@ def treasury_numeric(client, db, start, end):
     raise ValueError("Treasury pagination limit")
 
 
+def oecd_numeric(client, db, start, end):
+    flow = "OECD.SDD.TPS,DSD_LFS@DF_IALFS_UNE_M,1.0"
+    key = "KOR+USA+JPN+OECD..._Z.Y._T.Y_GE15..M"
+    url = f"https://sdmx.oecd.org/public/rest/data/{flow}/{key}"
+    response = retry_get(client, url, params={
+        "startPeriod": start.strftime("%Y-%m"), "endPeriod": end.strftime("%Y-%m"),
+        "format": "csvfile",
+    }, headers={"Accept": "text/csv"})
+    reader = csv.DictReader(io.StringIO(response.text.lstrip("\ufeff")))
+    if not {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}.issubset(reader.fieldnames or []):
+        raise ValueError("Unexpected OECD CSV schema")
+    groups = {}
+    for row in reader:
+        country = row["REF_AREA"]
+        if country not in ("KOR", "USA", "JPN", "OECD"):
+            raise ValueError("Unexpected OECD area")
+        period = date.fromisoformat(row["TIME_PERIOD"] + "-01")
+        value = row["OBS_VALUE"]
+        if not value or not start.replace(day=1) <= period <= end:
+            continue
+        if not Decimal(value).is_finite():
+            raise ValueError("Invalid OECD value")
+        # Preserve every dimension; never collapse different statistical series.
+        dimensions = tuple((k, v) for k, v in sorted(row.items())
+                           if k not in ("TIME_PERIOD", "OBS_VALUE") and k in (
+                               "REF_AREA", "MEASURE", "UNIT_MEASURE", "ACTIVITY",
+                               "ADJUSTMENT", "SEX", "AGE", "FREQ", "TRANSFORMATION",
+                               "LABOUR_FORCE_STATUS", "COUNTERPART_AREA",
+                           ))
+        series = json.dumps(dimensions, separators=(",", ":"))
+        groups.setdefault(series, []).append((period.isoformat(), "", "", value))
+    added = 0
+    for series, rows in groups.items():
+        added += save(db, "OECD_SDMX", series, {
+            "url": str(response.request.url), "csv": response.text, "vintageKnown": False,
+        }, rows)
+    return {"source": "OECD_SDMX", "status": "COLLECTED" if groups else "EMPTY",
+            "seriesCount": len(groups), "observed": sum(map(len, groups.values())), "inserted": added}
+
+
 def cycle(args):
     results = []
     for module, params in [
@@ -354,6 +407,10 @@ def cycle(args):
                 results.append(job)
         results.extend(imf_numeric(client, macro, args.start, args.end))
         try:
+            results.append(oecd_numeric(client, macro, args.start, args.end))
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, ArithmeticError) as exc:
+            results.append({"source": "OECD_SDMX", "status": "FAILED", "error": str(exc)[:250]})
+        try:
             results.append(treasury_numeric(client, macro, args.start, args.end))
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             results.append({"source": "US_TREASURY", "status": "FAILED", "error": str(exc)[:250]})
@@ -361,7 +418,7 @@ def cycle(args):
             for source, spec in registry.items():
                 job = {"source": source}
                 try:
-                    job.update(releases(client, store, news, source, spec, args.limit, rss))
+                    job.update(releases(client, store, news, source, spec, args.limit, rss, reuse=args.reuse_captured))
                 except (ValueError, KeyError, TypeError, OSError, httpx.HTTPError,
                         sqlite3.Error, RuntimeError, ET.ParseError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
@@ -387,6 +444,8 @@ def main():
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--reuse-captured", action="store_true",
+                        help="Skip previously captured article URLs; may miss revisions")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--interval", type=int, default=3600)
     args = parser.parse_args()
