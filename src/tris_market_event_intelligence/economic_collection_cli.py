@@ -20,6 +20,18 @@ FRED_SERIES = (
     "DGS2", "DGS10", "DEXKOUS", "M2SL", "HOUST", "PERMIT", "UMCSENT",
     "BOPGSTB",
 )
+KOREA_FRED_SERIES = {
+    "IRLTLT01KRM156N": ("monthly", "OECD", "10-year government bond yield"),
+    "LRUNTTTTKRM156S": ("monthly", "OECD", "Unemployment rate, seasonally adjusted"),
+    "XTEXVA01KRM667N": ("monthly", "OECD", "Merchandise exports, USD"),
+    "XTIMVA01KRM667N": ("monthly", "OECD", "Merchandise imports, USD"),
+    "XTNTVA01KRM667N": ("monthly", "OECD", "Merchandise trade balance, USD"),
+    "KORPRINTO01GYSAM": ("monthly", "OECD", "Industrial production, year-on-year growth"),
+    "IRSTCI01KRM156N": ("monthly", "OECD", "Overnight interbank rate"),
+    "NGDPRSAXDCKRQ": ("quarterly", "IMF", "Real GDP, seasonally adjusted"),
+    "KORLOLITOAASTSAM": ("monthly", "OECD", "Composite leading indicator"),
+    "KORCPICORMINMEI": ("monthly", "OECD", "Core CPI excluding food and energy"),
+}
 KOREA_WB_SERIES = (
     "NY.GDP.MKTP.KD.ZG", "FP.CPI.TOTL.ZG", "SL.UEM.TOTL.ZS",
     "NE.EXP.GNFS.KD.ZG", "NE.IMP.GNFS.KD.ZG", "BN.CAB.XOKA.GD.ZS",
@@ -117,10 +129,19 @@ def fred_csv_collect(
             rows.append((period.isoformat(), "", "", value))
     if not rows:
         raise ValueError("empty FRED CSV observations")
-    return save(db, "FRED_CSV", series, {
+    payload = {
         "url": str(response.request.url), "format": "csv",
         "vintageKnown": False, "csv": response.text,
-    }, rows)
+    }
+    source = "FRED_CSV"
+    if series in KOREA_FRED_SERIES:
+        frequency, publisher, title = KOREA_FRED_SERIES[series]
+        source = "FRED_CSV_KOR"
+        payload.update({
+            "country": "KOR", "frequency": frequency, "publisher": publisher,
+            "title": title, "seriesUrl": f"https://fred.stlouisfed.org/series/{series}",
+        })
+    return save(db, source, series, payload, rows)
 
 
 def korea_world_bank_collect(
@@ -224,7 +245,7 @@ def main() -> None:
     parser.add_argument("--start", type=date.fromisoformat, default=date(2020, 1, 1))
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument(
-        "--source", choices=("all", "fred", "fred-vintage", "bls", "ecos", "korea"),
+        "--source", choices=("all", "fred", "fred-vintage", "bls", "ecos", "korea", "korea-fred"),
         default="all",
     )
     parser.add_argument("--fred-series", action="append", choices=FRED_SERIES)
@@ -264,6 +285,12 @@ def main() -> None:
                 ("WORLD_BANK_KOR", s, lambda s=s: korea_world_bank_collect(
                     client, db, s, args.start, args.end
                 )) for s in KOREA_WB_SERIES
+            )
+        if args.source in ("all", "korea-fred"):
+            jobs.extend(
+                ("FRED_CSV_KOR", s, lambda s=s: fred_csv_collect(
+                    client, db, s, args.start, args.end
+                )) for s in KOREA_FRED_SERIES
             )
         if args.source == "ecos":
             ecos_key = os.getenv("ECOS_API_KEY")
