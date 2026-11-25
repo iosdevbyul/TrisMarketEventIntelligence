@@ -7,7 +7,6 @@ import json
 import shutil
 import sqlite3
 import subprocess
-import tempfile
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +21,22 @@ CREATE TABLE IF NOT EXISTS economic_pdf_recovery (
     PRIMARY KEY(raw_sha256,page,engine,dpi,languages)
 );
 """
+
+
+def recognize(tesseract: str, png: bytes, languages: str) -> tuple[str, str]:
+    """Use explicit output formats on stdout; never depend on generated filenames."""
+    outputs = []
+    for output_format in ("txt", "tsv"):
+        result = subprocess.run(
+            [tesseract, "stdin", "stdout", "-l", languages, "--psm", "3",
+             "-c", "tessedit_create_txt=" + str(int(output_format == "txt")),
+             "-c", "tessedit_create_tsv=" + str(int(output_format == "tsv"))],
+            input=png, capture_output=True, check=True, timeout=120,
+        )
+        outputs.append(result.stdout.decode("utf-8"))
+    if not outputs[1].startswith("level\tpage_num\t"):
+        raise ValueError("OCR TSV output missing header")
+    return outputs[0], outputs[1]
 
 
 def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
@@ -44,7 +59,7 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
     version = subprocess.run(
         [tesseract, "--version"], capture_output=True, text=True, check=True, timeout=30,
     ).stdout.splitlines()[0]
-    engine = version + "; pymupdf " + pymupdf.VersionBind
+    engine = version + "; pymupdf " + pymupdf.VersionBind + "; stdout-v2"
     languages = "kor+eng"
     with closing(sqlite3.connect(news.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         db.execute("PRAGMA query_only=ON")
@@ -92,16 +107,7 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
                             if page.rect.width * dpi / 72 * page.rect.height * dpi / 72 > 20_000_000:
                                 raise ValueError("Page exceeds pixel limit")
                             png = page.get_pixmap(dpi=dpi, alpha=False).tobytes("png")
-                            with tempfile.TemporaryDirectory() as directory:
-                                image = Path(directory) / "page.png"
-                                image.write_bytes(png)
-                                base = Path(directory) / "ocr"
-                                subprocess.run([
-                                    tesseract, str(image), str(base), "-l", languages,
-                                    "--psm", "3", "txt", "tsv",
-                                ], capture_output=True, check=True, timeout=120)
-                                text = base.with_suffix(".txt").read_text(encoding="utf-8")
-                                tsv = base.with_suffix(".tsv").read_text(encoding="utf-8")
+                            text, tsv = recognize(tesseract, png, languages)
                             status = "OCR_TEXT" if text.strip() else "OCR_NO_TEXT"
                             with dest:
                                 dest.execute("""
@@ -117,6 +123,7 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
                             counts["failed"] += 1
                             failures.append({
                                 "sha256": digest, "page": number, "error": type(exc).__name__,
+                                "detail": str(exc)[:300],
                             })
     total = sum(map(len, pending.values()))
     return {
