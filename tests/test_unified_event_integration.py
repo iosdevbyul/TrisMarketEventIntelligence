@@ -30,8 +30,8 @@ def test_readonly_snapshot_and_candidates(tmp_path):
             (1, "bbc_business", "1", "https://bbc.com/1", title, None, STAMP, STAMP),
             (2, "cnbc_top", "2", "https://cnbc.com/2", title, None, STAMP, STAMP),
             (3, "sec_filing_1045810", "0001045810-26-000001",
-             "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000001/"
-             "0001045810-26-000001-index.htm", "NVIDIA quarterly results",
+             ("https://www.sec.gov/Archives/edgar/data/1045810/000104581026000001/"
+              "0001045810-26-000001-index.htm"), "NVIDIA quarterly results",
              '{"form":"8-K"}', STAMP, STAMP),
             (4, "bea_news", "4", "https://bea.gov/news/4", "GDP release",
              None, None, STAMP),
@@ -76,6 +76,6 @@ def test_macro_versions_never_become_verified_releases():
          "series": "CPI", "period": "2025-12-01", "observedAt": STAMP,
          "quality": "NUMERIC_CONTEXT_ONLY"} for i in range(2)
     ]
-    edge = list(links(events))[0]
+    edge = next(links(events))
     assert edge[2] == "OBSERVATION_VERSION_CANDIDATE"
     assert not json.loads(edge[3])["economicEventVerified"]

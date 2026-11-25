@@ -168,7 +168,7 @@ def article_candidates(db, cutoff, limit):
             except ValueError:
                 pass
             if identity:
-                cik, accession = identity
+                cik, _accession = identity
                 cik = str(int(cik))
                 issuers = [{"cik": cik, "tickerCandidate": ISSUERS.get(cik, (None, ""))[0],
                             "basis": "SEC_ARCHIVE_IDENTITY"}]
