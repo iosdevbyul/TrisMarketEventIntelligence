@@ -73,6 +73,8 @@ def fetch(client: httpx.Client, url: str, limit: int, *, source: str | None = No
                     raise ContentError("MISSING_REDIRECT_LOCATION")
                 url = urljoin(url, location)
                 continue
+            if source == "marketwatch_top" and response.status_code in (401, 403, 451):
+                raise ContentError(f"ACCESS_RESTRICTED_HTTP_{response.status_code}")
             response.raise_for_status()
             payload = bytearray()
             for chunk in response.iter_bytes():
@@ -109,8 +111,10 @@ class ArticleParser(HTMLParser):
         "script", "style", "noscript", "nav", "footer", "aside",
     })
 
-    def __init__(self) -> None:
+    def __init__(self, *, source: str | None = None, page_url: str = "") -> None:
         super().__init__(convert_charrefs=True)
+        self.source = source
+        self.page_url = page_url
         self.frames: list[tuple[str, int | None, bool]] = []
         self.regions: list[tuple[int, list[str]]] = []
         self.links: list[tuple[str, str]] = []
@@ -130,7 +134,17 @@ class ArticleParser(HTMLParser):
                 )
                 href = matches[0] if matches else None
             self.anchors.append((href, []))
-        excluded = tag in self.IGNORED_TAGS
+        excluded = tag in self.IGNORED_TAGS or (
+            self.source == "edaily_all" and tag not in self.VOID_TAGS and (
+                bool(set((attributes.get("class") or "").split()) & {
+                    "gg_textshow", "view_ad02", "news_domino", "copyright_s",
+                    "article_newsetc", "aibanner_sm_text", "aibanner_sm_aniimg",
+                }) or (attributes.get("id") or "") in {
+                    "view_ad01", "view_ad02", "AnyMindAvs", "sfBottomArea",
+                    "voteTarget", "read_random_gg",
+                } or (attributes.get("id") or "").startswith("dablewidget_")
+            )
+        )
         if excluded:
             self.ignored += 1
         region: int | None = None
@@ -138,7 +152,15 @@ class ArticleParser(HTMLParser):
             classes = set((attributes.get("class") or "").split())
             identifier = attributes.get("id") or ""
             role = attributes.get("role") or ""
-            if tag == "article":
+            if self.source == "edaily_all" and "articleBody" in (attributes.get("itemprop") or "").split():
+                priority = 6
+            elif self.source == "zdnet_kr" and identifier == "articleBody":
+                priority = 5
+            elif self.source == "zdnet_kr" and re.fullmatch(r"content-[0-9]+", identifier) and (
+                "no=" + identifier.removeprefix("content-") in self.page_url.split("?")[-1].split("&")
+            ):
+                priority = 6
+            elif tag == "article":
                 priority = 4
             elif identifier in self.BODY_IDS or bool(classes & self.BODY_CLASSES):
                 priority = 3
@@ -189,15 +211,19 @@ class ArticleParser(HTMLParser):
             self.regions[region][1].append(data.strip())
 
 
-def extract_html(payload: bytes, page_url: str) -> tuple[str, tuple[str, ...]]:
+def extract_html(payload: bytes, page_url: str, *, source: str | None = None) -> tuple[str, tuple[str, ...]]:
     if len(payload) > MAX_HTML_BYTES:
         raise ContentError("HTML_TOO_LARGE")
-    parser = ArticleParser()
+    parser = ArticleParser(source=source, page_url=page_url)
     parser.feed(payload.decode("utf-8-sig", errors="replace"))
     candidates = [
         (priority, re.sub(r"\s+", " ", " ".join(parts)).strip())
         for priority, parts in parser.regions
     ]
+    if source == "edaily_all":
+        # Fail closed rather than admitting surrounding page furniture.
+        # The observed publisher semantic body must be present and usable.
+        candidates = [item for item in candidates if item[0] == 6]
     candidates.sort(key=lambda item: (item[0], len(item[1])), reverse=True)
     # Prefer a specific article region, but allow the general main container
     # when the publisher does not mark its body explicitly.
@@ -339,7 +365,8 @@ def capture(client: httpx.Client, url: str, *, source: str | None = None) -> dic
     elif ("html" in media_type or payload.lstrip().lower().startswith(
         (b"<html", b"<!doctype html")
     )):
-        body, pdf_links = extract_html(payload, final_url)
+        body, pdf_links = (extract_html(payload, final_url, source=source)
+                           if source in {"zdnet_kr", "edaily_all"} else extract_html(payload, final_url))
         source_data, source_url, kind, sparse = payload, final_url, "HTML", ()
         # Publisher release pages may contain only a short introduction. The
         # complete economic release or FOMC minutes can be in an official PDF.
@@ -448,26 +475,24 @@ def collect_full_text(
             SELECT a.id, a.url, a.source FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
             WHERE f.article_id IS NULL AND {scope}
-              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {media_scope}
               ))
             ORDER BY a.id {order} LIMIT ?
         """
-        newest = db.execute(base.format(order="DESC", scope=scope), (newest_slots,)).fetchall()
-        oldest = db.execute(base.format(order="ASC", scope=scope), (oldest_slots,)).fetchall()
+        newest = db.execute(base.format(order="DESC", scope=scope, media_scope=MEDIA_SQL), (newest_slots,)).fetchall()
+        oldest = db.execute(base.format(order="ASC", scope=scope, media_scope=MEDIA_SQL), (oldest_slots,)).fetchall()
         retry_query = f"""
             SELECT a.id, a.url, a.source FROM articles a
             JOIN article_full_text f ON f.article_id=a.id
             WHERE (f.status='INCOMPLETE' OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
+              AND COALESCE(f.error_code, '') NOT IN (
+                  'ACCESS_RESTRICTED_HTTP_401','ACCESS_RESTRICTED_HTTP_403','ACCESS_RESTRICTED_HTTP_451')
               AND (f.retry_after <= ? OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')
                    AND f.error_code IN ('INSUFFICIENT_ARTICLE_TEXT','SEC_DOCUMENT_TEXT_INVALID'))
                    OR ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') AND f.error_code='HTTPStatusError'))
-              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {MEDIA_SQL}
               ))
             ORDER BY f.retry_after ASC, a.id ASC LIMIT ?
         """
@@ -476,8 +501,8 @@ def collect_full_text(
         if len(chosen) < limit:
             # Refill unused retries or overlapping newest/oldest slots.
             for query, args in (
-                (base.format(order="DESC", scope=scope), (limit,)),
-                (base.format(order="ASC", scope=scope), (limit,)),
+                (base.format(order="DESC", scope=scope, media_scope=MEDIA_SQL), (limit,)),
+                (base.format(order="ASC", scope=scope, media_scope=MEDIA_SQL), (limit,)),
                 (retry_query, (now, limit)),
             ):
                 for row in db.execute(query, args).fetchall():
@@ -493,6 +518,8 @@ def collect_full_text(
                 SELECT a.id,a.url,a.source FROM articles a
                 LEFT JOIN article_full_text f ON a.id=f.article_id
                 WHERE {scope} AND a.id IN ({placeholders})
+                  AND COALESCE(f.error_code, '') NOT IN (
+                      'ACCESS_RESTRICTED_HTTP_401','ACCESS_RESTRICTED_HTTP_403','ACCESS_RESTRICTED_HTTP_451')
                   AND (f.article_id IS NULL OR f.status!='COMPLETE'
                        OR f.format='SEC_BUNDLE_PARTIAL')
                 ORDER BY a.id
@@ -608,10 +635,8 @@ def collect_full_text(
         pending = db.execute(f"""
             SELECT COUNT(*) FROM articles a
             LEFT JOIN article_full_text f ON f.article_id=a.id
-            WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'))
+            WHERE {scope} AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {MEDIA_SQL}))
               AND (f.article_id IS NULL OR f.status IN ('INCOMPLETE','REVIEW_REQUIRED')
                    OR f.format='SEC_BUNDLE_PARTIAL')
         """).fetchone()[0]
@@ -620,10 +645,8 @@ def collect_full_text(
             SELECT COUNT(*) FROM articles a JOIN article_full_text f
             ON f.article_id=a.id WHERE (f.status='REVIEW_REQUIRED'
                   OR f.format='SEC_BUNDLE_PARTIAL') AND {scope}
-              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR a.source IN (
-                'fed_monetary','fed_all','bok_all','bok_statistics',
-                'bok_corrections','bbc_business','bbc_technology','bbc_world',
-                'hankyung_all','mk_all','yna_economy','cnbc_top'
+              AND ((a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*') OR (a.source IN ('fed_monetary','fed_all','bok_all','bok_statistics',
+                'bok_corrections') OR {MEDIA_SQL}
               ))
         """).fetchone()[0]
         missing_or_failed = pending - review_pending
