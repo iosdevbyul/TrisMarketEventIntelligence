@@ -15,13 +15,20 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+from pypdf.errors import PdfReadError
 
 from tris_market_event_intelligence.collector import NewsStore, parse_rss, utc_now
 from tris_market_event_intelligence.economic_collection_cli import (
-    KOREA_WB_SERIES, SCHEMA, save,
+    KOREA_WB_SERIES,
+    SCHEMA,
+    save,
 )
 from tris_market_event_intelligence.korean_official_release_cli import (
-    Links, SCHEMA as RELEASE_SCHEMA, save_original,
+    SCHEMA as RELEASE_SCHEMA,
+)
+from tris_market_event_intelligence.korean_official_release_cli import (
+    Links,
+    save_original,
 )
 from tris_market_event_intelligence.source_article_content import extract_pdf
 
@@ -136,11 +143,12 @@ def board_links(raw, base, host, prefix):
     for href, label in parser.links:
         url = urljoin(base, href)
         path = urlsplit(url).path
-        if trusted(url, host) and path.startswith(prefix) and label and url != base:
-            if path.endswith((".html", ".htm", "/view", "Info.do", ".do")) or (
-                "/news/articles/" in path or "/press-releases/" in path
-            ):
-                result.setdefault(url, label)
+        if (
+            trusted(url, host) and path.startswith(prefix) and label and url != base
+            and (path.endswith((".html", ".htm", "/view", "Info.do", ".do"))
+                 or "/news/articles/" in path or "/press-releases/" in path)
+        ):
+            result.setdefault(url, label)
     return result
 
 
@@ -198,7 +206,7 @@ def releases(client, store, db, source, spec, limit, rss):
                     try:
                         text, sparse = extract_pdf(payload)
                         status = "REVIEW_REQUIRED" if sparse else "TEXT_EXTRACTED"
-                    except Exception as exc:
+                    except (PdfReadError, ValueError, OSError, RuntimeError) as exc:
                         errors.append({"url": final, "error": type(exc).__name__})
                 with db:
                     db.execute("INSERT OR IGNORE INTO official_release_documents VALUES (?,?,?,?,?,?)",
@@ -214,7 +222,7 @@ def releases(client, store, db, source, spec, limit, rss):
 def run_module(module, args):
     result = subprocess.run(
         [sys.executable, "-m", "tris_market_event_intelligence." + module, *args],
-        capture_output=True, text=True, timeout=7200,
+        check=False, capture_output=True, text=True, timeout=7200,
     )
     try:
         report = json.loads(result.stdout)
@@ -257,7 +265,8 @@ def cycle(args):
                 job = {"source": source}
                 try:
                     job.update(releases(client, store, news, source, spec, args.limit, rss))
-                except Exception as exc:
+                except (ValueError, KeyError, TypeError, OSError, httpx.HTTPError,
+                        sqlite3.Error, RuntimeError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
                 results.append(job)
     return {"observedAt": utc_now(), "results": results,
