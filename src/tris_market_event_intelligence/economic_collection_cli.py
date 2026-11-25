@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import os
 import sqlite3
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import httpx
@@ -19,6 +22,7 @@ FRED_SERIES = (
 )
 BLS_SERIES = ("CUUR0000SA0", "CUSR0000SA0", "LNS14000000", "CES0000000001")
 FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 BLS_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 
@@ -84,6 +88,36 @@ def fred_collect(
             raise ValueError("incomplete FRED pagination")
 
 
+def fred_csv_collect(
+    client: httpx.Client, db: sqlite3.Connection, series: str,
+    start: date, end: date,
+) -> int:
+    response = client.get(FRED_CSV_URL, params={
+        "id": series, "cosd": start.isoformat(), "coed": end.isoformat(),
+    })
+    response.raise_for_status()
+    reader = csv.DictReader(io.StringIO(response.text.lstrip("\ufeff")))
+    if reader.fieldnames not in (["observation_date", series], ["DATE", series]):
+        raise ValueError("unexpected FRED CSV columns")
+    rows = []
+    for record in reader:
+        period = date.fromisoformat(record[reader.fieldnames[0]])
+        value = record[series]
+        if start <= period <= end and value not in ("", "."):
+            try:
+                if not Decimal(value).is_finite():
+                    raise ValueError("nonfinite observation")
+            except InvalidOperation as exc:
+                raise ValueError("invalid observation") from exc
+            rows.append((period.isoformat(), "", "", value))
+    if not rows:
+        raise ValueError("empty FRED CSV observations")
+    return save(db, "FRED_CSV", series, {
+        "url": str(response.request.url), "format": "csv",
+        "vintageKnown": False, "csv": response.text,
+    }, rows)
+
+
 def bls_collect(
     client: httpx.Client, db: sqlite3.Connection, series: str,
     start: date, end: date,
@@ -144,7 +178,8 @@ def main() -> None:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--start", type=date.fromisoformat, default=date(2020, 1, 1))
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
-    parser.add_argument("--source", choices=("all", "fred", "bls", "ecos"), default="all")
+    parser.add_argument("--source", choices=("all", "fred", "fred-vintage", "bls", "ecos"), default="all")
+    parser.add_argument("--fred-series", action="append", choices=FRED_SERIES)
     parser.add_argument("--ecos-series", action="append", default=[])
     args = parser.parse_args()
     if args.start > args.end:
@@ -155,12 +190,18 @@ def main() -> None:
         db.executescript(SCHEMA)
         jobs = []
         if args.source in ("all", "fred"):
+            jobs.extend(
+                ("FRED_CSV", s, lambda s=s: fred_csv_collect(
+                    client, db, s, args.start, args.end
+                )) for s in (args.fred_series or FRED_SERIES)
+            )
+        if args.source == "fred-vintage":
             key = os.getenv("FRED_API_KEY")
             if key:
                 jobs.extend(
                     ("FRED", s, lambda s=s: fred_collect(
                         client, db, s, args.start, args.end, key
-                    )) for s in FRED_SERIES
+                    )) for s in (args.fred_series or FRED_SERIES)
                 )
             else:
                 results.append({"source": "FRED", "status": "MISSING_API_KEY"})
@@ -170,7 +211,7 @@ def main() -> None:
                     client, db, s, args.start, args.end
                 )) for s in BLS_SERIES
             )
-        if args.source in ("all", "ecos"):
+        if args.source == "ecos":
             ecos_key = os.getenv("ECOS_API_KEY")
             if ecos_key:
                 jobs.extend(
