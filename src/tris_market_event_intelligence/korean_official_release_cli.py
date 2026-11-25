@@ -9,7 +9,7 @@ import time
 from contextlib import closing
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 import httpx
 
@@ -75,6 +75,29 @@ def discover(payload: bytes, base: str) -> list[tuple[str, str]]:
         if (allowed(url) and p.path == "/board.es" and q.get("act") == ["view"]
                 and q.get("list_no", [""])[0].isdigit() and label):
             results.setdefault(url, label)
+    # Some board templates expose downloads but not clickable detail anchors.
+    # Derive the detail URL only from official attachment IDs.
+    for href, label in parser.links:
+        url = urljoin(base, href)
+        p = urlsplit(url)
+        q = parse_qs(p.query)
+        identifier = q.get("list_no", [""])[0]
+        bid = q.get("bid", [""])[0]
+        if not (allowed(url) and p.path == "/boardDownload.es"
+                and identifier.isdigit() and bid.isdigit()):
+            continue
+        title = label.rsplit("의 ", 1)[0].strip()
+        if not title or title == label:
+            continue
+        if any(parse_qs(urlsplit(key).query).get("list_no") == [identifier]
+               for key in results):
+            continue
+        query = parse_qs(urlsplit(base).query)
+        detail = urljoin(base, "/board.es") + "?" + urlencode({
+            "mid": query.get("mid", [""])[0], "bid": bid,
+            "act": "view", "list_no": identifier,
+        })
+        results[detail] = title
     return list(results.items())
 
 
@@ -127,6 +150,10 @@ def collect(path: Path, sources: tuple[str, ...], limit: int) -> dict:
             reports.append(report)
             try:
                 raw, base, kind = fetch(client, BOARDS[source], 2_000_000)
+                with db:
+                    save_original(db, base, raw, kind)
+                report["responseUrl"] = base
+                report["responseBytes"] = len(raw)
                 items = discover(raw, base)
                 if not items:
                     raise ValueError("No release links discovered")
@@ -150,7 +177,12 @@ def collect(path: Path, sources: tuple[str, ...], limit: int) -> dict:
                         ).fetchone()[0]
                         with db:
                             save_original(db, url, page, kind)
-                        links = attachments(page, url)
+                        identifier = record.external_id
+                        links = list(dict.fromkeys([
+                            *attachments(page, url),
+                            *(link for link in attachments(raw, base)
+                              if parse_qs(urlsplit(link).query).get("list_no") == [identifier]),
+                        ]))
                         if not links:
                             report["errors"].append({"id": article_id, "error": "NO_ATTACHMENT_LINK"})
                         for link in links:
@@ -172,12 +204,12 @@ def collect(path: Path, sources: tuple[str, ...], limit: int) -> dict:
                                     )
                                 report["documents"] += 1
                             except (ValueError, httpx.HTTPError, OSError) as exc:
-                                report["errors"].append({"id": article_id, "error": type(exc).__name__})
+                                report["errors"].append({"id": article_id, "error": type(exc).__name__, "detail": str(exc)[:300]})
                     except (ValueError, httpx.HTTPError, OSError) as exc:
-                        report["errors"].append({"url": record.url, "error": type(exc).__name__})
+                        report["errors"].append({"url": record.url, "error": type(exc).__name__, "detail": str(exc)[:300]})
                 report["status"] = "PARTIAL" if report["errors"] else "COLLECTED"
             except (ValueError, httpx.HTTPError, OSError) as exc:
-                report["errors"].append({"error": type(exc).__name__})
+                report["errors"].append({"error": type(exc).__name__, "detail": str(exc)[:300]})
     return {"sources": reports, "analysisPerformed": False,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}
 
