@@ -121,3 +121,24 @@ def test_access_restricted_not_retried_or_analyzed(tmp_path):
         aid = report["pending"][0]["articleId"]
         assert collect_full_text(store.path, client=client, media_only=True,
                                  repair_ids=(aid,))["attempted"] == 0
+
+
+
+def test_edaily_collector_accepts_legacy_xml(tmp_path):
+    source = "edaily_all"
+    raw = b"<rss><channel><item><title>Profit news</title><link>https://www.edaily.co.kr/news/read?newsId=123</link></item></channel></rss>"
+
+    def transport(request):
+        assert str(request.url) == PUBLISHERS[source].feed
+        if request.headers["accept"] != "*/*":
+            return httpx.Response(406)
+        return httpx.Response(200, content=raw, headers={"content-type": "text/xml"})
+
+    store = NewsStore(tmp_path / "news.sqlite3")
+    with httpx.Client(headers={"Accept": "application/rss+xml, application/xml"},
+                      transport=httpx.MockTransport(transport)) as client:
+        result = OfficialNewsCollector(
+            store, client, {source: PUBLISHERS[source].feed},
+        ).collect_once()
+    assert result[source] == {"status": "ok", "inserted": 1}
+    assert store.stats() == {"articles": 1, "captures": 1}

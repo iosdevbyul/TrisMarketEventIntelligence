@@ -24,3 +24,10 @@ retain HTTPS-only original articles, recognize ZDNet article body, record Market
 401/403/451 as access-restricted and exclude from automatic and explicit repair.
 No access-control bypass. Real recovery remains pending. HTTP RSS is not authenticated
 and must not establish independently verified first-public availability.
+
+Mac recovery at ed8d86c: 30/30 ZDNet captures and analyses completed, all ten
+MarketWatch articles classified ACCESS_RESTRICTED_HTTP_401, 960 analyzed rows,
+878 unique versions, 82 duplicate rows, 93 audio/video exclusions. Edaily
+collector received HTTP 406 despite direct HTTP 200 with default Accept.
+Use the standard wildcard Accept only on the exact Edaily RSS endpoint;
+actual collector acceptance remains pending. No authentication bypass.

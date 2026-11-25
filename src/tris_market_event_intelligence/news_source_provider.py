@@ -65,7 +65,7 @@ class RSSNewsProvider:
               headers: dict[str, str]) -> httpx.Response:
         if url == PUBLISHERS["edaily_all"].feed:
             # Public legacy RSS only; never follow redirects from cleartext.
-            return client.get(url, headers=headers, follow_redirects=False)
+            return client.get(url, headers={**headers, "Accept": "*/*"}, follow_redirects=False)
         return client.get(url, headers=headers)
 
 
