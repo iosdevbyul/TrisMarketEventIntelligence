@@ -8,7 +8,7 @@ import io
 import json
 import os
 import sqlite3
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -44,6 +44,9 @@ BLS_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS macro_source_cooldown (
+    source TEXT PRIMARY KEY, until_at TEXT NOT NULL, reason TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS macro_raw (
     source TEXT NOT NULL, series TEXT NOT NULL, digest TEXT NOT NULL,
     fetched_at TEXT NOT NULL, payload TEXT NOT NULL,
@@ -184,6 +187,10 @@ def korea_world_bank_collect(
         page += 1
 
 
+class BLSQuotaError(ValueError):
+    """Anonymous API daily quota reached."""
+
+
 def bls_collect(
     client: httpx.Client, db: sqlite3.Connection, series: str,
     start: date, end: date,
@@ -197,7 +204,10 @@ def bls_collect(
         response.raise_for_status()
         payload = response.json()
         if payload["status"] != "REQUEST_SUCCEEDED":
-            raise ValueError("BLS request unsuccessful: " + str(payload.get("message", []))[:200])
+            detail = str(payload.get("message", []))[:200]
+            if "daily threshold" in detail.lower():
+                raise BLSQuotaError(detail)
+            raise ValueError("BLS request unsuccessful: " + detail)
         records = payload["Results"]["series"]
         if len(records) != 1 or records[0]["seriesID"] != series:
             raise ValueError("BLS series mismatch")
@@ -248,6 +258,7 @@ def main() -> None:
         "--source", choices=("all", "fred", "fred-vintage", "bls", "ecos", "korea", "korea-fred"),
         default="all",
     )
+    parser.add_argument("--incremental", action="store_true")
     parser.add_argument("--fred-series", action="append", choices=FRED_SERIES)
     parser.add_argument("--ecos-series", action="append", default=[])
     args = parser.parse_args()
@@ -257,6 +268,9 @@ def main() -> None:
     results = []
     with sqlite3.connect(args.db) as db, httpx.Client(timeout=30) as client:
         db.executescript(SCHEMA)
+        requested_start = args.start
+        if args.incremental:
+            args.start = max(args.start, args.end - timedelta(days=730))
         jobs = []
         if args.source in ("all", "fred"):
             jobs.extend(
@@ -303,6 +317,17 @@ def main() -> None:
             else:
                 results.append({"source": "ECOS", "status": "MISSING_API_KEY"})
         for source, series, collect in jobs:
+            if source == "BLS":
+                cooldown = db.execute(
+                    "SELECT until_at FROM macro_source_cooldown WHERE source=?", (source,),
+                ).fetchone()
+                if cooldown and cooldown[0] > datetime.now(UTC).isoformat():
+                    results.append({"source": source, "series": series, "status": "RATE_LIMITED",
+                                    "retryAfter": cooldown[0], "storedObservations": db.execute(
+                                        "SELECT COUNT(*) FROM macro_observation WHERE source=? AND series=?",
+                                        (source, series),
+                                    ).fetchone()[0]})
+                    continue
             try:
                 added = collect()
                 count = db.execute(
@@ -315,9 +340,14 @@ def main() -> None:
                     "newObservations": added, "storedObservations": count,
                 })
             except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                if isinstance(exc, BLSQuotaError):
+                    with db:
+                        db.execute("INSERT OR REPLACE INTO macro_source_cooldown VALUES (?,?,?)",
+                                   ("BLS", (datetime.now(UTC) + timedelta(hours=24)).isoformat(),
+                                    "DAILY_QUOTA"))
                 # Do not print URLs or exception messages containing credentials.
                 results.append({
-                    "source": source, "series": series, "status": "FAILED",
+                    "source": source, "series": series, "status": "RATE_LIMITED" if isinstance(exc, BLSQuotaError) else "FAILED",
                     "errorType": type(exc).__name__,
                     "detail": str(exc)[:250] if source == "BLS" and isinstance(exc, ValueError) else None,
                     "storedObservations": db.execute(
@@ -325,7 +355,8 @@ def main() -> None:
                         (source, series),
                     ).fetchone()[0],
                 })
-        print(json.dumps({"results": results, "analysisPerformed": False}, ensure_ascii=False))
+        print(json.dumps({"results": results, "requestedStart": str(requested_start),
+                          "effectiveStart": str(args.start), "analysisPerformed": False}, ensure_ascii=False))
     if any(r["status"] != "COLLECTED" for r in results):
         raise SystemExit(1)
 

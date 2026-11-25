@@ -12,7 +12,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from contextlib import closing
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -33,7 +33,7 @@ from tris_market_event_intelligence.korean_official_release_cli import (
     Links,
     save_original,
 )
-from tris_market_event_intelligence.source_article_content import extract_pdf
+from tris_market_event_intelligence.source_article_content import ContentError, extract_pdf
 
 COUNTRIES = ("USA", "EMU", "JPN", "CHN", "WLD", "OED")
 FEEDS = {
@@ -200,6 +200,29 @@ def board_links(raw, base, host, prefix):
     return result
 
 
+CAPTURE_STATE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS official_release_capture_state (
+    article_id INTEGER PRIMARY KEY, checked_at TEXT NOT NULL,
+    status TEXT NOT NULL, errors TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS official_release_capture_attempt (
+    id INTEGER PRIMARY KEY, article_id INTEGER NOT NULL, checked_at TEXT NOT NULL,
+    status TEXT NOT NULL, errors TEXT NOT NULL
+);
+"""
+
+
+def capture_state(db, aid, errors):
+    status = "PARTIAL" if errors else "CAPTURED"
+    now = utc_now()
+    with db:
+        db.execute("INSERT OR REPLACE INTO official_release_capture_state VALUES (?,?,?,?)",
+                   (aid, now, status, json.dumps(errors, ensure_ascii=False)))
+        db.execute("""INSERT INTO official_release_capture_attempt
+                   (article_id,checked_at,status,errors) VALUES (?,?,?,?)""",
+                   (aid, now, status, json.dumps(errors, ensure_ascii=False)))
+
+
 def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
     entry, host = spec[:2]
     raw, base, media = fetch(client, entry, host)
@@ -216,23 +239,24 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
     if not records:
         raise ValueError("No supported release links")
     inserted = store.save(source, base, raw, records, now, None, None)
+    db.executescript(CAPTURE_STATE_SCHEMA)
     errors = []
     documents = 0
     reused = 0
     for article in records:
+        aid = db.execute("SELECT id FROM articles WHERE source=? AND url=?",
+                         (source, article.url)).fetchone()[0]
+        previous = len(errors)
         try:
             if reuse and db.execute("""
-                SELECT 1 FROM articles a JOIN official_release_documents d ON d.article_id=a.id
-                WHERE a.source=? AND a.url=? AND d.url=a.url
-                LIMIT 1
-            """, (source, article.url)).fetchone():
+                SELECT 1 FROM official_release_capture_state
+                WHERE article_id=? AND status='CAPTURED'
+                  AND checked_at >= ?
+            """, (aid, (date.today() - timedelta(days=7)).isoformat())).fetchone():
                 reused += 1
                 continue
             time.sleep(0.25)
             body, url, media = fetch(client, article.url, host)
-            aid = db.execute(
-                "SELECT id FROM articles WHERE source=? AND url=?", (source, article.url),
-            ).fetchone()[0]
             candidates = [(body, url, media)]
             if "html" in media.lower():
                 parser = Links()
@@ -244,6 +268,8 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
                         (".pdf", ".hwp", ".hwpx", ".xlsx", ".xls", ".csv", ".zip")
                     ) or (host == "motir.go.kr" and urlsplit(target).path.startswith("/attach/down/")))
                 ))
+                if len(links) > 30:
+                    errors.append({"url": url, "error": "ATTACHMENT_LIMIT"})
                 for link in links[:30]:
                     try:
                         time.sleep(0.25)
@@ -258,14 +284,19 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
                     try:
                         text, sparse = extract_pdf(payload)
                         status = "REVIEW_REQUIRED" if sparse else "TEXT_EXTRACTED"
-                    except (PdfReadError, ValueError, OSError, RuntimeError) as exc:
+                    except (ContentError, PdfReadError, ValueError, OSError, RuntimeError) as exc:
+                        status = "EXTRACTION_FAILED"
                         errors.append({"url": final, "error": type(exc).__name__})
                 with db:
-                    db.execute("INSERT OR IGNORE INTO official_release_documents VALUES (?,?,?,?,?,?)",
+                    db.execute("""INSERT INTO official_release_documents VALUES (?,?,?,?,?,?)
+                               ON CONFLICT(article_id,url,sha256) DO UPDATE SET
+                               body=excluded.body,sparse_pages=excluded.sparse_pages,status=excluded.status
+                               WHERE official_release_documents.status IN ('RAW_ONLY','EXTRACTION_FAILED')""",
                                (aid, final, digest, text, json.dumps(sparse), status))
                 documents += 1
         except (ValueError, httpx.HTTPError, OSError, sqlite3.Error) as exc:
             errors.append({"url": article.url, "error": str(exc)[:250]})
+        capture_state(db, aid, errors[previous:])
     return {"status": "PARTIAL" if errors else "CAPTURED", "discovered": len(records),
             "inserted": inserted, "documents": documents, "reusedArticles": reused, "errors": errors,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}
@@ -379,9 +410,10 @@ def oecd_numeric(client, db, start, end):
 
 def cycle(args):
     results = []
+    effective_start = max(args.start, args.end - timedelta(days=730)) if args.incremental else args.start
     for module, params in [
         ("economic_collection_cli", ["--db", str(args.macro_db), "--start", str(args.start),
-                                     "--end", str(args.end)]),
+                                     "--end", str(args.end)] + (["--incremental"] if args.incremental else [])),
         ("economic_release_collection_cli", ["--db", str(args.news_db), "--region", "all",
                                              "--max-batches", "100"]),
         ("korean_official_release_cli", ["--db", str(args.news_db), "--limit", str(args.limit)]),
@@ -401,17 +433,17 @@ def cycle(args):
             for series in KOREA_WB_SERIES:
                 job = {"source": "WORLD_BANK_" + country, "series": series}
                 try:
-                    job.update(world_bank(client, macro, country, series, args.start, args.end))
+                    job.update(world_bank(client, macro, country, series, effective_start, args.end))
                 except (ValueError, KeyError, TypeError, httpx.HTTPError, ArithmeticError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
                 results.append(job)
-        results.extend(imf_numeric(client, macro, args.start, args.end))
+        results.extend(imf_numeric(client, macro, effective_start, args.end))
         try:
-            results.append(oecd_numeric(client, macro, args.start, args.end))
+            results.append(oecd_numeric(client, macro, effective_start, args.end))
         except (httpx.HTTPError, ValueError, KeyError, TypeError, ArithmeticError) as exc:
             results.append({"source": "OECD_SDMX", "status": "FAILED", "error": str(exc)[:250]})
         try:
-            results.append(treasury_numeric(client, macro, args.start, args.end))
+            results.append(treasury_numeric(client, macro, effective_start, args.end))
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             results.append({"source": "US_TREASURY", "status": "FAILED", "error": str(exc)[:250]})
         for registry, rss in ((FEEDS, True), (BOARDS, False)):
@@ -431,7 +463,8 @@ def cycle(args):
         except (ValueError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
             results.append({"module": "all_official_ocr", "status": "FAILED", "error": str(exc)[:250]})
     return {"observedAt": utc_now(), "results": results,
-            "notConnected": list(NOT_CONNECTED), "analysisPerformed": False,
+            "notConnected": list(NOT_CONNECTED), "mode": "incremental" if args.incremental else "backfill",
+            "effectiveStart": str(effective_start), "analysisPerformed": False,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}
 
 
@@ -444,8 +477,9 @@ def main():
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--incremental", action="store_true", help="Refresh recent two years only")
     parser.add_argument("--reuse-captured", action="store_true",
-                        help="Skip previously captured article URLs; may miss revisions")
+                        help="Reuse successful captures for seven days; failed captures are retried")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--interval", type=int, default=3600)
     args = parser.parse_args()
