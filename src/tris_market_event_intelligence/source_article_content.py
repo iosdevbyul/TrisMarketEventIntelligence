@@ -154,8 +154,6 @@ class ArticleParser(HTMLParser):
             role = attributes.get("role") or ""
             if self.source == "edaily_all" and "articleBody" in (attributes.get("itemprop") or "").split():
                 priority = 6
-            elif self.source == "edaily_all" and "news_body" in classes:
-                priority = 5
             elif self.source == "zdnet_kr" and identifier == "articleBody":
                 priority = 5
             elif self.source == "zdnet_kr" and re.fullmatch(r"content-[0-9]+", identifier) and (
