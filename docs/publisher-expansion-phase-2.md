@@ -31,3 +31,10 @@ MarketWatch articles classified ACCESS_RESTRICTED_HTTP_401, 960 analyzed rows,
 collector received HTTP 406 despite direct HTTP 200 with default Accept.
 Use the standard wildcard Accept only on the exact Edaily RSS endpoint;
 actual collector acceptance remains pending. No authentication bypass.
+
+Mac at 080bd8b: Edaily RSS healthy, 46 new records, all 46 body extraction
+failures; one additional BBC analysis completed (961 analyzed, 879 unique).
+Representative Edaily original returned HTTP 200, UTF-8 HTML, 126848 bytes,
+with news_body and itemprop=articleBody plus ad/recommendation regions.
+Require the observed semantic body, exclude known page furniture, preserve
+raw bytes and fail closed if the body is absent. Real recovery pending.

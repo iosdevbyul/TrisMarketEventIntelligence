@@ -61,7 +61,7 @@ def test_registry_drives_backlog_and_coverage(tmp_path):
         observed = "2026-11-24T12:00:00+00:00"
         store.save(source, publisher.feed, raw, parse_rss(source, raw, observed),
                    observed, None, None)
-    payload = b"<html><article><p>Company cuts profit guidance.</p></article></html>"
+    payload = b'<html><article><div itemprop="articleBody"><p>Company cuts profit guidance.</p></div></article></html>'
     with httpx.Client(transport=httpx.MockTransport(
         lambda _: httpx.Response(200, content=payload, headers={"content-type": "text/html"})
     )) as client:
@@ -142,3 +142,33 @@ def test_edaily_collector_accepts_legacy_xml(tmp_path):
         ).collect_once()
     assert result[source] == {"status": "ok", "inserted": 1}
     assert store.stats() == {"articles": 1, "captures": 1}
+
+
+
+def test_edaily_semantic_body_excludes_page_furniture():
+    payload = b"""<html><main><div class="news_body">
+    <div itemprop="articleBody"><p>Company raises guidance.</p>
+    <div class="gg_textshow">Advertisement</div>
+    <div id="dablewidget_123">Unrelated story</div>
+    <p>Revenue rose ten percent.</p></div>
+    <div class="news_domino">Recommended stories</div></div>
+    <div class="right_cont">Other news</div></main></html>"""
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, content=payload, headers={"content-type": "text/html"})
+    )) as client:
+        row = capture(client, "https://www.edaily.co.kr/News/Read?newsId=123", source="edaily_all")
+    assert row["body"] == "Company raises guidance. Revenue rose ten percent."
+    assert row["raw_payload"] == payload
+
+
+@pytest.mark.parametrize("markup", [
+    b'<main>Other news</main>',
+    b'<main>Other news<div itemprop="articleBody"></div></main>',
+])
+def test_edaily_missing_body_fails_closed(markup):
+    from tris_market_event_intelligence.source_article_content import ContentError
+
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, content=markup, headers={"content-type": "text/html"})
+    )) as client, pytest.raises(ContentError, match="INSUFFICIENT_ARTICLE_TEXT"):
+        capture(client, "https://www.edaily.co.kr/News/Read?newsId=123", source="edaily_all")

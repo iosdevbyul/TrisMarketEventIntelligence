@@ -134,7 +134,17 @@ class ArticleParser(HTMLParser):
                 )
                 href = matches[0] if matches else None
             self.anchors.append((href, []))
-        excluded = tag in self.IGNORED_TAGS
+        excluded = tag in self.IGNORED_TAGS or (
+            self.source == "edaily_all" and tag not in self.VOID_TAGS and (
+                bool(set((attributes.get("class") or "").split()) & {
+                    "gg_textshow", "view_ad02", "news_domino", "copyright_s",
+                    "article_newsetc", "aibanner_sm_text", "aibanner_sm_aniimg",
+                }) or (attributes.get("id") or "") in {
+                    "view_ad01", "view_ad02", "AnyMindAvs", "sfBottomArea",
+                    "voteTarget", "read_random_gg",
+                } or (attributes.get("id") or "").startswith("dablewidget_")
+            )
+        )
         if excluded:
             self.ignored += 1
         region: int | None = None
@@ -142,7 +152,11 @@ class ArticleParser(HTMLParser):
             classes = set((attributes.get("class") or "").split())
             identifier = attributes.get("id") or ""
             role = attributes.get("role") or ""
-            if self.source == "zdnet_kr" and identifier == "articleBody":
+            if self.source == "edaily_all" and "articleBody" in (attributes.get("itemprop") or "").split():
+                priority = 6
+            elif self.source == "edaily_all" and "news_body" in classes:
+                priority = 5
+            elif self.source == "zdnet_kr" and identifier == "articleBody":
                 priority = 5
             elif self.source == "zdnet_kr" and re.fullmatch(r"content-[0-9]+", identifier) and (
                 "no=" + identifier.removeprefix("content-") in self.page_url.split("?")[-1].split("&")
@@ -208,6 +222,10 @@ def extract_html(payload: bytes, page_url: str, *, source: str | None = None) ->
         (priority, re.sub(r"\s+", " ", " ".join(parts)).strip())
         for priority, parts in parser.regions
     ]
+    if source == "edaily_all":
+        # Fail closed rather than admitting surrounding page furniture.
+        # The observed publisher semantic body must be present and usable.
+        candidates = [item for item in candidates if item[0] == 6]
     candidates.sort(key=lambda item: (item[0], len(item[1])), reverse=True)
     # Prefer a specific article region, but allow the general main container
     # when the publisher does not mark its body explicitly.
@@ -350,7 +368,7 @@ def capture(client: httpx.Client, url: str, *, source: str | None = None) -> dic
         (b"<html", b"<!doctype html")
     )):
         body, pdf_links = (extract_html(payload, final_url, source=source)
-                           if source == "zdnet_kr" else extract_html(payload, final_url))
+                           if source in {"zdnet_kr", "edaily_all"} else extract_html(payload, final_url))
         source_data, source_url, kind, sparse = payload, final_url, "HTML", ()
         # Publisher release pages may contain only a short introduction. The
         # complete economic release or FOMC minutes can be in an official PDF.
