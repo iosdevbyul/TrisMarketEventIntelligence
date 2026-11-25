@@ -35,3 +35,7 @@ is not automatically attached to news based on temporal proximity. Explicit
 macro-release-to-series mappings and semantic novelty/follow-up adjudication
 remain necessary before full event integration acceptance. Actual Mac run,
 coverage review and prediction integration still pending.
+
+## v2 evidence-bearing cross-source retrieval
+
+Explicit SEC accession mentions in captured news bodies, shared quoted phrases with bounded declared dates, explicit US indicator and period title matches, and registered source/series/period context. Numeric values are not certified release-time values. No inferred period from fetch date. Correction and follow-up cues are not adjudicated facts. Report includes up to 20 cross-source examples with evidence; full records remain in SQLite. Initial real v1 run: 43,173 records, 144 links, zero new cross-source semantic links. v2 actual coverage pending; no target count is forced.

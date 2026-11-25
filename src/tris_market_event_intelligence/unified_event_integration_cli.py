@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from tris_market_event_intelligence.collector import utc_now
+from tris_market_event_intelligence.event_integration_relations import cross_source_edges, features
 from tris_market_event_intelligence.global_economic_collection_cli import BOARDS, FEEDS
 from tris_market_event_intelligence.korean_official_release_cli import BOARDS as KOREAN_BOARDS
 from tris_market_event_intelligence.multi_events import extract_news_event
@@ -20,7 +21,7 @@ from tris_market_event_intelligence.news_source_provider import PUBLISHERS
 from tris_market_event_intelligence.sec_operational_content import canonical_index, index_identity
 from tris_market_event_intelligence.story_index import canonical_url, title_fingerprint
 
-VERSION = "unified_event_v1"
+VERSION = "unified_event_v2"
 OFFICIAL = set(BOARDS) | set(FEEDS) | set(KOREAN_BOARDS) | {
     "fed_all", "fed_monetary", "bok_all", "bok_monetary", "bok_statistics",
     "bok_corrections", "bls_latest", "sec_press",
@@ -131,8 +132,10 @@ def article_candidates(db, cutoff, limit):
             == "TEXT_CANDIDATE"
         )
         evidence = []
+        relation_text = ""
         if body_valid and cap_ok:
             quality = "TEXT_CANDIDATE"
+            relation_text = body
             evidence.append({"bodySha256": body_sha, "rawSha256": raw_sha,
                              "observedAt": observed, "scope": "CAPTURED_BODY"})
         elif kind == "ECONOMIC_RELEASE" and {
@@ -150,6 +153,8 @@ def article_candidates(db, cutoff, limit):
                         or digest(payload) != sha):
                     continue
                 usable = state == "TEXT_EXTRACTED" and classify(text, sparse=pages) == "TEXT_CANDIDATE"
+                if usable:
+                    relation_text += "\n" + text[:50000]
                 evidence.append({"url": target, "rawSha256": sha, "observedAt": stamp,
                                  "bodySha256": digest(text) if usable else None,
                                  "scope": "ATTACHMENT_TEXT" if usable else "RAW_DOCUMENT"})
@@ -212,6 +217,7 @@ def article_candidates(db, cutoff, limit):
             "secIdentity": list(identity) if identity else None, "secForm": form,
             "titleFingerprint": title_fingerprint(title, published) if pub else None,
             "novelty": "CORRECTION_CUE" if CORRECTION.search(title) else "UNKNOWN",
+            "integrationFeatures": features(kind, source, title, relation_text) if cap_ok else {},
             "predictionEligible": False, "trainingEligible": False,
         }
 
@@ -275,6 +281,15 @@ def links(events):
         for issuer in item["issuers"]:
             indexes[("ISSUER", issuer["cik"])].append(item)
     emitted = set()
+    for left, right, relationship, basis in cross_source_edges(events):
+        pair = tuple(sorted((left["eventId"], right["eventId"])))
+        if pair in emitted:
+            continue
+        emitted.add(pair)
+        yield pair[0], pair[1], relationship, encode({
+            "basis": basis, "referenceId": left["eventId"], "reportId": right["eventId"],
+            "economicEventVerified": False, "firstPublicVerified": False, "causalityVerified": False,
+        })
     for key, group in sorted(indexes.items(), key=lambda entry: str(entry[0])):
         # Bounded direct candidate links, rather than quadratic all-pairs groups.
         ordered = sorted(group, key=lambda e: (e["observedAt"] or "", e["eventId"]))
@@ -341,6 +356,12 @@ def integrate(news, macro, output, *, cutoff, article_limit=10000, macro_limit=5
         "articleScanTruncated": total_articles > article_limit,
         "macroScanTruncated": total_macro > macro_limit,
         "eventCandidates": len(events), "candidateLinks": len(edges),
+        "crossSourceExamples": [
+            {"left": left, "right": right, "relationship": relation, "evidence": json.loads(evidence)}
+            for left, right, relation, evidence in edges
+            if relation in {"SEC_ACCESSION_MENTION_CANDIDATE", "INDICATOR_REPORT_CANDIDATE",
+                            "RELEASE_SERIES_PERIOD_CONTEXT", "SHARED_QUOTATION_CANDIDATE"}
+        ][:20],
         "firstPublicVerified": 0, "predictionEligible": 0, "trainingEligible": 0,
         "sourceDatabasesModified": False, "modelCalls": 0, "marketReturnsAnalyzed": False,
     }
