@@ -20,6 +20,11 @@ FRED_SERIES = (
     "DGS2", "DGS10", "DEXKOUS", "M2SL", "HOUST", "PERMIT", "UMCSENT",
     "BOPGSTB",
 )
+KOREA_WB_SERIES = (
+    "NY.GDP.MKTP.KD.ZG", "FP.CPI.TOTL.ZG", "SL.UEM.TOTL.ZS",
+    "NE.EXP.GNFS.KD.ZG", "NE.IMP.GNFS.KD.ZG", "BN.CAB.XOKA.GD.ZS",
+    "NV.IND.TOTL.KD.ZG", "NE.CON.PRVT.KD.ZG",
+)
 BLS_SERIES = ("CUUR0000SA0", "CUSR0000SA0", "LNS14000000", "CES0000000001")
 FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
@@ -118,6 +123,46 @@ def fred_csv_collect(
     }, rows)
 
 
+def korea_world_bank_collect(
+    client: httpx.Client, db: sqlite3.Connection, series: str,
+    start: date, end: date,
+) -> int:
+    url = f"https://api.worldbank.org/v2/country/KOR/indicator/{series}"
+    page, total, seen = 1, 0, 0
+    while True:
+        response = client.get(url, params={
+            "format": "json", "date": f"{start.year}:{end.year}",
+            "per_page": 100, "page": page, "source": 2,
+        })
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list) or len(payload) != 2:
+            raise ValueError("unexpected World Bank response")
+        metadata, records = payload
+        if not isinstance(records, list) or int(metadata["page"]) != page:
+            raise ValueError("invalid World Bank page")
+        rows = []
+        for record in records:
+            if record["countryiso3code"] != "KOR" or record["indicator"]["id"] != series:
+                raise ValueError("World Bank series mismatch")
+            year = int(record["date"])
+            value = record["value"]
+            if start.year <= year <= end.year and value is not None:
+                rows.append((f"{year:04}-01-01", "", "", str(value)))
+        total += save(db, "WORLD_BANK_KOR", series, {
+            "url": str(response.request.url), "frequency": "annual",
+            "vintageKnown": False, "response": payload,
+        }, rows)
+        seen += len(records)
+        if page >= int(metadata["pages"]):
+            if seen != int(metadata["total"]):
+                raise ValueError("incomplete World Bank pagination")
+            return total
+        if not records:
+            raise ValueError("empty World Bank page")
+        page += 1
+
+
 def bls_collect(
     client: httpx.Client, db: sqlite3.Connection, series: str,
     start: date, end: date,
@@ -178,7 +223,10 @@ def main() -> None:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--start", type=date.fromisoformat, default=date(2020, 1, 1))
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
-    parser.add_argument("--source", choices=("all", "fred", "fred-vintage", "bls", "ecos"), default="all")
+    parser.add_argument(
+        "--source", choices=("all", "fred", "fred-vintage", "bls", "ecos", "korea"),
+        default="all",
+    )
     parser.add_argument("--fred-series", action="append", choices=FRED_SERIES)
     parser.add_argument("--ecos-series", action="append", default=[])
     args = parser.parse_args()
@@ -210,6 +258,12 @@ def main() -> None:
                 ("BLS", s, lambda s=s: bls_collect(
                     client, db, s, args.start, args.end
                 )) for s in BLS_SERIES
+            )
+        if args.source in ("all", "korea"):
+            jobs.extend(
+                ("WORLD_BANK_KOR", s, lambda s=s: korea_world_bank_collect(
+                    client, db, s, args.start, args.end
+                )) for s in KOREA_WB_SERIES
             )
         if args.source == "ecos":
             ecos_key = os.getenv("ECOS_API_KEY")
