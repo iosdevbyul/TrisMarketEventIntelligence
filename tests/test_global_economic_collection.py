@@ -1,4 +1,8 @@
-from tris_market_event_intelligence.global_economic_collection_cli import board_links, feed_records, trusted
+from tris_market_event_intelligence.global_economic_collection_cli import (
+    board_links,
+    feed_records,
+    trusted,
+)
 
 
 def test_exact_host():
