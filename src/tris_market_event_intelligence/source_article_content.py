@@ -449,6 +449,7 @@ def collect_full_text(
     limit: int = MAX_PER_CYCLE, sec_only: bool = False,
     repair_ids: tuple[int, ...] | None = None,
     media_only: bool = False,
+    official_sources: tuple[str, ...] | None = None,
 ) -> dict[str, object]:
     """Catch up on previously discovered RSS rows without mutating them."""
     if not 1 <= limit <= MAX_PER_CYCLE:
@@ -463,11 +464,18 @@ def collect_full_text(
     newest_slots = (limit + 2) // 3
     oldest_slots = (limit + 1) // 3
     retry_slots = limit - newest_slots - oldest_slots
-    if sec_only and media_only:
-        raise ValueError("SEC and media scopes are mutually exclusive")
+    if sum((sec_only, media_only, official_sources is not None)) > 1:
+        raise ValueError("Collection scopes are mutually exclusive")
+    if official_sources is not None and (not official_sources or not set(official_sources) <= {
+        "fed_monetary", "fed_all", "bok_all", "bok_statistics", "bok_corrections",
+    }):
+        raise ValueError("Invalid official release sources")
     scope = (MEDIA_SQL if media_only
              else "(a.source GLOB 'sec_8k_[0-9]*' OR a.source GLOB 'sec_filing_[0-9]*')"
              if sec_only else "1=1")
+    if official_sources is not None:
+        # Values are validated against the fixed allowlist above.
+        scope = "a.source IN (" + ",".join("'" + s + "'" for s in official_sources) + ")"
     if media_only:
         scope += (" AND a.url NOT LIKE '%/iplayer/%' AND a.url NOT LIKE '%/sounds/%'\n             AND a.url NOT LIKE '%/news/videos/%' AND a.url NOT LIKE '%/news/av/%'\n             AND a.url NOT LIKE '%/video/%' AND a.url NOT LIKE '%/videos/%'\n             AND a.url NOT LIKE '%/audio/%' AND a.url NOT LIKE '%/podcasts/%'")
     with store.connect() as db:
