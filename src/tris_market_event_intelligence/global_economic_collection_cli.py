@@ -15,7 +15,7 @@ from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 from pypdf.errors import PdfReadError
@@ -55,7 +55,8 @@ BOARDS = {
         "https://www.customs.go.kr/kcs/na/ntt/selectNttList.do?bbsId=1362&mi=2891",
         "customs.go.kr", "/kcs/na/ntt/selectNttInfo.do",
     ),
-    "bea_news": ("https://www.bea.gov/news/archive", "bea.gov", "/news/"),
+    "bea_news": ("https://www.bea.gov/news/archive?created_1=All&field_related_product_target_id=All&page=0&title=",
+        "bea.gov", "/news/"),
     "motir": (
         "https://www.motir.go.kr/kor/article/ATCL3f49a5a8c",
         "motir.go.kr", "/kor/article/ATCL3f49a5a8c/",
@@ -187,7 +188,7 @@ def board_links(raw, base, host, prefix):
     result = {}
     for href, label in parser.links:
         url = urljoin(base, href)
-        path = urlsplit(url).path
+        path = urlsplit(url).path.removeprefix("/index.php")
         if (
             trusted(url, host) and path.startswith(prefix) and label and url != base
             and (path.endswith((".html", ".htm", "/view", "Info.do", ".do"))
@@ -223,7 +224,14 @@ def capture_state(db, aid, errors):
                    (aid, now, status, json.dumps(errors, ensure_ascii=False)))
 
 
-def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
+def archive_url(entry, page):
+    parsed = urlsplit(entry)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    query["page"] = [str(page)]
+    return urlunsplit(parsed._replace(query=urlencode(query, doseq=True)))
+
+
+def releases(client, store, db, source, spec, limit, rss, *, reuse=False, archive_pages=1):
     entry, host = spec[:2]
     raw, base, media = fetch(client, entry, host)
     with db:
@@ -240,7 +248,34 @@ def releases(client, store, db, source, spec, limit, rss, *, reuse=False):
         raise ValueError("No supported release links")
     inserted = store.save(source, base, raw, records, now, None, None)
     db.executescript(CAPTURE_STATE_SCHEMA)
-    errors = []
+    archive_errors = []
+    if source == "bea_news" and not rss:
+        seen = {record.url for record in records}
+        for index in range(1, archive_pages):
+            try:
+                time.sleep(0.5)
+                page_raw, page_url, page_media = fetch(client, archive_url(entry, index), host)
+                with db:
+                    save_original(db, page_url, page_raw, page_media)
+                found = [Article(source, hashlib.sha256(url.encode()).hexdigest(), url, title,
+                                 None, None, utc_now())
+                         for url, title in board_links(page_raw, page_url, host, spec[2]).items()
+                         if url not in seen][:limit]
+                if not found:
+                    break
+                inserted += store.save(source, page_url, page_raw, found, utc_now(), None, None)
+                records.extend(found)
+                seen.update(record.url for record in found)
+            except (ValueError, httpx.HTTPError, OSError) as exc:
+                archive_errors.append({"page": index, "error": str(exc)[:250]})
+                break
+    current_urls = {record.url for record in records}
+    backlog = db.execute("""SELECT a.external_id,a.url,a.title,a.summary,a.published_at,a.detected_at
+        FROM articles a JOIN official_release_capture_state s ON s.article_id=a.id
+        WHERE a.source=? AND s.status='PARTIAL' ORDER BY s.checked_at LIMIT ?""",
+        (source, limit)).fetchall()
+    records.extend(Article(source, *row) for row in backlog if row[1] not in current_urls)
+    errors = list(archive_errors)
     documents = 0
     reused = 0
     for article in records:
@@ -450,7 +485,8 @@ def cycle(args):
             for source, spec in registry.items():
                 job = {"source": source}
                 try:
-                    job.update(releases(client, store, news, source, spec, args.limit, rss, reuse=args.reuse_captured))
+                    job.update(releases(client, store, news, source, spec, args.limit, rss, reuse=args.reuse_captured,
+                                        archive_pages=args.archive_pages))
                 except (ValueError, KeyError, TypeError, OSError, httpx.HTTPError,
                         sqlite3.Error, RuntimeError, ET.ParseError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
@@ -477,13 +513,15 @@ def main():
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--archive-pages", type=int, default=1,
+                        help="BEA archive pages, where supported")
     parser.add_argument("--incremental", action="store_true", help="Refresh recent two years only")
     parser.add_argument("--reuse-captured", action="store_true",
                         help="Reuse successful captures for seven days; failed captures are retried")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--interval", type=int, default=3600)
     args = parser.parse_args()
-    if args.start > args.end or not 1 <= args.limit <= 50 or args.interval < 300:
+    if args.start > args.end or not 1 <= args.limit <= 50 or args.interval < 300 or not 1 <= args.archive_pages <= 50:
         parser.error("Invalid dates, limit or interval")
     while True:
         report = cycle(args)
