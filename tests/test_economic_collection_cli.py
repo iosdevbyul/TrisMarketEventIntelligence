@@ -104,3 +104,27 @@ def test_korea_world_bank_keyless_collection():
         assert db.execute(
             "SELECT source, period, vintage_start, value FROM macro_observation"
         ).fetchone() == ("WORLD_BANK_KOR", "2021-01-01", "", "2.5")
+
+
+def test_korea_fred_keeps_country_and_frequency():
+    series = "NGDPRSAXDCKRQ"
+
+    def handler(request):
+        assert request.url.params["id"] == series
+        assert "api_key" not in request.url.params
+        return httpx.Response(
+            200, text=f"observation_date,{series}\n2020-01-01,100\n2020-04-01,101\n"
+        )
+
+    with sqlite3.connect(":memory:") as db:
+        db.executescript(SCHEMA)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            args = (client, db, series, date(2020, 1, 1), date(2020, 12, 31))
+            assert fred_csv_collect(*args) == 2
+            assert fred_csv_collect(*args) == 0
+        assert db.execute(
+            "SELECT DISTINCT source, vintage_start FROM macro_observation"
+        ).fetchall() == [("FRED_CSV_KOR", "")]
+        assert db.execute(
+            "SELECT json_extract(payload, '$.frequency') FROM macro_raw"
+        ).fetchone() == ("quarterly",)
