@@ -8,16 +8,17 @@ import sqlite3
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from contextlib import closing
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 from pypdf.errors import PdfReadError
 
-from tris_market_event_intelligence.collector import NewsStore, parse_rss, utc_now
+from tris_market_event_intelligence.collector import Article, NewsStore, parse_rss, utc_now
 from tris_market_event_intelligence.economic_collection_cli import (
     KOREA_WB_SERIES,
     SCHEMA,
@@ -43,7 +44,6 @@ FEEDS = {
     "bls_cpi": ("https://www.bls.gov/feed/cpi.rss", "bls.gov"),
     "bls_ppi": ("https://www.bls.gov/feed/ppi.rss", "bls.gov"),
     "bls_employment": ("https://www.bls.gov/feed/empsit.rss", "bls.gov"),
-    "bea_news": ("https://www.bea.gov/rss/rss.xml", "bea.gov"),
     "eia_news": ("https://www.eia.gov/rss/todayinenergy.xml", "eia.gov"),
 }
 BOARDS = {
@@ -51,10 +51,13 @@ BOARDS = {
         "https://www.customs.go.kr/kcs/na/ntt/selectNttList.do?bbsId=1362&mi=2891",
         "customs.go.kr", "/kcs/na/ntt/selectNttInfo.do",
     ),
+    "bea_news": ("https://www.bea.gov/news", "bea.gov", "/news/"),
     "motir": (
-        "https://www.motir.go.kr/kor/article/ATCL3f49a5a8c/list",
+        "https://www.motir.go.kr/kor/article/ATCL3f49a5a8c",
         "motir.go.kr", "/kor/article/ATCL3f49a5a8c/",
     ),
+    "KR_fsc": ("https://www.fsc.go.kr/no010101", "fsc.go.kr", "/no010101/"),
+    "JP_statistics": ("https://www.stat.go.jp/english/data/index.html", "stat.go.jp", "/english/data/"),
     "china_nbs": (
         "https://www.stats.gov.cn/english/PressRelease/", "stats.gov.cn",
         "/english/PressRelease/",
@@ -65,8 +68,8 @@ BOARDS = {
     ),
 }
 NOT_CONNECTED = (
-    "KR_fiscal", "KR_fsc", "KR_fss", "US_census", "US_treasury",
-    "JP_statistics", "CN_pboc", "CN_customs", "IMF_numeric", "OECD_numeric",
+    "KR_fiscal", "KR_fss", "US_census",
+    "CN_pboc", "CN_customs", "OECD_numeric",
 )
 
 
@@ -96,12 +99,50 @@ def fetch(client, url, host, limit=30_000_000):
     raise ValueError("Redirect limit")
 
 
+def retry_get(client, url, **kwargs):
+    for attempt in range(3):
+        try:
+            response = client.get(url, **kwargs)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except httpx.TransportError:
+            if attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
+    raise AssertionError("Unreachable retry state")
+
+
+def feed_records(source, raw, base, host, now):
+    records = parse_rss(source, raw, now)
+    if not records:
+        # RSS 1.0 / RDF uses namespaced items and Dublin Core dates.
+        root = ET.fromstring(raw)
+        for item in root.findall(".//{http://purl.org/rss/1.0/}item"):
+            title = item.findtext("{http://purl.org/rss/1.0/}title") or ""
+            link = item.findtext("{http://purl.org/rss/1.0/}link") or ""
+            if title and link:
+                records.append(Article(source, link, link, title, None, None, now))
+    result = []
+    for record in records:
+        url = urljoin(base, record.url)
+        parsed = urlsplit(url)
+        if parsed.scheme == "http":
+            url = urlunsplit(parsed._replace(scheme="https"))
+        if trusted(url, host):
+            result.append(Article(source, record.external_id, url, record.title,
+                                  record.summary, record.published_at, record.detected_at))
+    return result
+
+
 def world_bank(client, db, country, series, start, end):
     url = f"https://api.worldbank.org/v2/country/{country}/indicator/{series}"
     page = 1
     added = seen = observed = 0
     while page <= 100:
-        response = client.get(url, params={
+        response = retry_get(client, url, params={
             "format": "json", "source": 2, "date": f"{start.year}:{end.year}",
             "per_page": 100, "page": page,
         })
@@ -146,24 +187,22 @@ def board_links(raw, base, host, prefix):
         if (
             trusted(url, host) and path.startswith(prefix) and label and url != base
             and (path.endswith((".html", ".htm", "/view", "Info.do", ".do"))
-                 or "/news/articles/" in path or "/press-releases/" in path)
+                 or "/news/articles/" in path or "/press-releases/" in path
+                 or (host == "bea.gov" and path.startswith("/news/") and len(path.split("/")) > 3)
+                 or (host == "fsc.go.kr" and path.rsplit("/", 1)[-1].isdigit()))
         ):
             result.setdefault(url, label)
     return result
 
 
 def releases(client, store, db, source, spec, limit, rss):
-    from tris_market_event_intelligence.collector import Article
-
     entry, host = spec[:2]
     raw, base, media = fetch(client, entry, host)
     with db:
         save_original(db, base, raw, media)
     now = utc_now()
     if rss:
-        records = [
-            a for a in parse_rss(source, raw, now) if trusted(a.url, host)
-        ][:limit]
+        records = feed_records(source, raw, base, host, now)[:limit]
     else:
         records = [
             Article(source, hashlib.sha256(url.encode()).hexdigest(), url, title, None, None, now)
@@ -188,9 +227,9 @@ def releases(client, store, db, source, spec, limit, rss):
                 links = list(dict.fromkeys(
                     target for href, _ in parser.links
                     if trusted(target := urljoin(url, href), host)
-                    and urlsplit(target).path.lower().endswith(
+                    and (urlsplit(target).path.lower().endswith(
                         (".pdf", ".hwp", ".hwpx", ".xlsx", ".xls", ".csv", ".zip")
-                    )
+                    ) or (host == "motir.go.kr" and urlsplit(target).path.startswith("/attach/down/")))
                 ))
                 for link in links[:30]:
                     try:
@@ -231,14 +270,67 @@ def run_module(module, args):
     return {"module": module, "exitCode": result.returncode, "report": report}
 
 
+def imf_numeric(client, db, start, end):
+    series = ("NGDP_RPCH", "PCPIPCH", "LUR")
+    for indicator in series:
+        job = {"source": "IMF_DATAMAPPER", "series": indicator}
+        try:
+            url = "https://www.imf.org/external/datamapper/api/v1/" + indicator
+            response = retry_get(client, url)
+            payload = response.json()
+            values = payload["values"][indicator]
+            for country in ("KOR", "USA", "JPN", "CHN"):
+                rows = [
+                    (year + "-01-01", "", "", str(value))
+                    for year, value in values.get(country, {}).items()
+                    if year.isdigit() and start.year <= int(year) < end.year
+                    and value is not None and Decimal(str(value)).is_finite()
+                ]
+                added = save(db, "IMF_DATAMAPPER", indicator + ":" + country, {
+                    "response": payload, "url": url, "vintageKnown": False,
+                    "historicalEstimatesMayIncludeRevisions": True,
+                }, rows)
+                yield {**job, "country": country, "observed": len(rows),
+                       "inserted": added, "status": "COLLECTED" if rows else "EMPTY"}
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, ArithmeticError) as exc:
+            yield {**job, "status": "FAILED", "error": str(exc)[:250]}
+
+
+def treasury_numeric(client, db, start, end):
+    url = ("https://api.fiscaldata.treasury.gov/services/api/fiscal_service/"
+           "v2/accounting/od/debt_to_penny")
+    page = 1
+    added = observed = 0
+    while page <= 100:
+        response = retry_get(client, url, params={
+            "filter": f"record_date:gte:{start},record_date:lte:{end}",
+            "fields": "record_date,tot_pub_debt_out_amt",
+            "sort": "record_date", "page[size]": 1000, "page[number]": page,
+        })
+        payload = response.json()
+        rows = [
+            (r["record_date"], "", "", r["tot_pub_debt_out_amt"])
+            for r in payload["data"] if r["tot_pub_debt_out_amt"] is not None
+        ]
+        observed += len(rows)
+        added += save(db, "US_TREASURY", "TOTAL_PUBLIC_DEBT", {
+            "response": payload, "url": str(response.request.url), "vintageKnown": False,
+        }, rows)
+        if not payload["links"]["next"]:
+            return {"source": "US_TREASURY", "series": "TOTAL_PUBLIC_DEBT",
+                    "observed": observed, "inserted": added,
+                    "status": "COLLECTED" if observed else "EMPTY"}
+        page += 1
+    raise ValueError("Treasury pagination limit")
+
+
 def cycle(args):
     results = []
     for module, params in [
         ("economic_collection_cli", ["--db", str(args.macro_db), "--start", str(args.start),
                                      "--end", str(args.end)]),
         ("economic_release_collection_cli", ["--db", str(args.news_db), "--region", "all",
-                                             "--max-batches", "100"] +
-         (["--ocr-db", str(args.ocr_db)] if args.ocr_db else [])),
+                                             "--max-batches", "100"]),
         ("korean_official_release_cli", ["--db", str(args.news_db), "--limit", str(args.limit)]),
     ]:
         try:
@@ -260,15 +352,27 @@ def cycle(args):
                 except (ValueError, KeyError, TypeError, httpx.HTTPError, ArithmeticError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
                 results.append(job)
+        results.extend(imf_numeric(client, macro, args.start, args.end))
+        try:
+            results.append(treasury_numeric(client, macro, args.start, args.end))
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            results.append({"source": "US_TREASURY", "status": "FAILED", "error": str(exc)[:250]})
         for registry, rss in ((FEEDS, True), (BOARDS, False)):
             for source, spec in registry.items():
                 job = {"source": source}
                 try:
                     job.update(releases(client, store, news, source, spec, args.limit, rss))
                 except (ValueError, KeyError, TypeError, OSError, httpx.HTTPError,
-                        sqlite3.Error, RuntimeError) as exc:
+                        sqlite3.Error, RuntimeError, ET.ParseError) as exc:
                     job.update(status="FAILED", error=str(exc)[:250])
                 results.append(job)
+    if args.ocr_db:
+        try:
+            from tris_market_event_intelligence.economic_pdf_recovery_cli import recover
+
+            results.append({"module": "all_official_ocr", **recover(args.news_db, args.ocr_db, limit=100)})
+        except (ValueError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
+            results.append({"module": "all_official_ocr", "status": "FAILED", "error": str(exc)[:250]})
     return {"observedAt": utc_now(), "results": results,
             "notConnected": list(NOT_CONNECTED), "analysisPerformed": False,
             "firstPublicAvailabilityVerified": False, "allAttachmentsCaptured": False}

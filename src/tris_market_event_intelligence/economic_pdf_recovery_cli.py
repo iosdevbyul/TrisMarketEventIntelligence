@@ -79,6 +79,13 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
               AND f.status='REVIEW_REQUIRED'
             ORDER BY f.raw_sha256
         """, SOURCES).fetchall()
+        extra = db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                           "AND name='official_release_documents'").fetchone()
+        if extra:
+            rows.extend(db.execute("""
+                SELECT DISTINCT sha256,sparse_pages FROM official_release_documents
+                WHERE status='REVIEW_REQUIRED'
+            """).fetchall())
         pending = {}
         for digest, sparse in rows:
             pages = json.loads(sparse)
@@ -92,10 +99,16 @@ def recover(news: Path, output: Path, *, limit: int, dpi: int = 250) -> dict:
             failures = []
             attempted = 0
             for digest, pages in pending.items():
-                payload = db.execute(
+                original = db.execute(
                     "SELECT raw_payload FROM article_full_text WHERE raw_sha256=? LIMIT 1",
                     (digest,),
-                ).fetchone()[0]
+                ).fetchone()
+                if original is None and extra:
+                    original = db.execute(
+                        "SELECT payload FROM official_release_originals WHERE sha256=? LIMIT 1",
+                        (digest,),
+                    ).fetchone()
+                payload = original[0] if original else None
                 if payload is None or hashlib.sha256(payload).hexdigest() != digest:
                     raise ValueError("Stored PDF digest mismatch")
                 with pymupdf.open(stream=payload, filetype="pdf") as document:
