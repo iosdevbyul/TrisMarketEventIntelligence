@@ -36,7 +36,8 @@ INDICATORS = {
 US = re.compile(r"(?i)\b(?:U\.S\.|US|United States|American|BLS|BEA)\b|미국")
 MONTHS = {
     name: i for i, name in enumerate(
-        "january february march april may june july august september october november december".split(), 1
+        ["january", "february", "march", "april", "may", "june",
+         "july", "august", "september", "october", "november", "december"], 1
     )
 }
 MONTH = re.compile(
