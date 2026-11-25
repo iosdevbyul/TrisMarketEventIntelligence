@@ -1,5 +1,6 @@
 """Synthetic-only lifecycle audit regression and privacy checks."""
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,7 +16,7 @@ def setup(db_path: Path, *, model_table: bool = True) -> None:
     processor = EventProcessor(db_path)
     processor.initialize()
     if model_table:
-        with processor.store.connect() as db:
+        with closing(processor.store.connect()) as db, db:
             db.executescript(
                 """CREATE TABLE impact_runs (
                     event_id INTEGER NOT NULL,
@@ -36,7 +37,7 @@ def insert_event(
     publication: str | None = "2026-11-16T10:00:00+00:00",
     copied_first: str | None = None,
 ) -> None:
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         db.execute(
             "INSERT INTO captures(id,source,feed_url,fetched_at,sha256,payload) "
             "VALUES (?,?,'https://example.org/rss',?,'sha',X'00')",
@@ -62,7 +63,7 @@ def insert_checkpoint(
     completed: str = "2026-11-16T10:00:45+00:00",
     model: str = "gemma2:latest", outcome: str = "COMPLETED",
 ) -> None:
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         db.execute(
             "INSERT INTO impact_runs VALUES (?,?,?,?,?)",
             (event_id, model, "market-impact-v8", completed, outcome),
@@ -74,6 +75,11 @@ def test_end_to_end_local_stages_from_first_seen_to_model_checkpoint(tmp_path: P
     setup(path)
     insert_event(path, event_id=1)
     insert_checkpoint(path, 1)
+    # Flush fixture writes before comparing physical database bytes.
+    # Connection context managers commit but do not close SQLite connections;
+    # deferred WAL checkpointing can otherwise change the main file during audit.
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
     original = path.read_bytes()
     report = audit_event_lifecycle(path, as_of=NOW)
     source = report["sources"][0]
