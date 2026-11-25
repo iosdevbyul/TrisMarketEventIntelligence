@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -41,7 +41,7 @@ def save(
     db: sqlite3.Connection, source: str, series: str, payload: dict,
     rows: list[tuple[str, str, str, str]],
 ) -> int:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     digest = hashlib.sha256(raw.encode()).hexdigest()
     with db:
