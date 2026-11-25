@@ -9,6 +9,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -84,6 +86,10 @@ def economic_job(args):
 
 def run_job(args, job):
     started = utc_now()
+    _write_status(args.output_dir / (job + "-running.json"), {
+        "job": job, "startedAt": started, "status": "RUNNING",
+        "analysisPerformed": False, "modelCalls": 0,
+    })
     try:
         if job == "news":
             report = news_job(args.news_db, args.batches)
@@ -97,6 +103,7 @@ def run_job(args, job):
     record = {"job": job, "startedAt": started, "finishedAt": utc_now(), **report,
               "analysisPerformed": False, "modelCalls": 0}
     _write_status(args.output_dir / (job + "-latest.json"), record)
+    (args.output_dir / (job + "-running.json")).unlink(missing_ok=True)
     print(json.dumps(record, ensure_ascii=False), flush=True)
     return record
 
@@ -125,24 +132,43 @@ def main():
     if len({p.resolve() for p in paths}) != len(paths):
         parser.error("Distinct database and report paths required")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = args.news_db.with_name(args.news_db.name + ".unified-collection.lock")
-    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    with os.fdopen(fd, "w") as lock:
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            parser.exit(2, "Unified collector already running\n")
-        jobs = tuple(dict.fromkeys(args.job or ("news", "sec", "economic")))
-        intervals = {"news": 300, "sec": 900, "economic": 3600}
-        due = dict.fromkeys(jobs, 0.0)
-        while True:
+    jobs = tuple(dict.fromkeys(args.job or ("news", "sec", "economic")))
+    with ExitStack() as stack:
+        for job in sorted(jobs):
+            lock_path = args.news_db.resolve().with_name(
+                args.news_db.resolve().name + ".unified-" + job + ".lock"
+            )
+            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            lock = stack.enter_context(os.fdopen(fd, "w"))
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                parser.exit(2, "Collection job already running: " + job + "\\n")
+        for job in jobs:
+            marker = args.output_dir / (job + "-running.json")
+            if marker.exists():
+                _write_status(args.output_dir / (job + "-interrupted.json"), {
+                    "job": job, "status": "INTERRUPTED_PREVIOUS_RUN",
+                    "detectedAt": utc_now(),
+                })
+                marker.unlink()
+        if not args.watch:
             for job in jobs:
-                if time.monotonic() >= due[job]:
-                    run_job(args, job)
-                    due[job] = time.monotonic() + intervals[job]
-            if not args.watch:
-                return
-            time.sleep(max(1, min(30, min(due.values()) - time.monotonic())))
+                run_job(args, job)
+            return
+        with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+            futures = [executor.submit(watch_job, args, job) for job in jobs]
+            for future in futures:
+                future.result()
+
+
+INTERVALS = {"news": 300, "sec": 900, "economic": 3600}
+
+
+def watch_job(args, job):
+    while True:
+        run_job(args, job)
+        time.sleep(INTERVALS[job])
 
 
 if __name__ == "__main__":
