@@ -8,6 +8,7 @@ from tris_market_event_intelligence.economic_collection_cli import (
     bls_collect,
     fred_collect,
     fred_csv_collect,
+    korea_world_bank_collect,
     save,
 )
 
@@ -79,3 +80,27 @@ def test_fred_csv_without_key_and_without_vintage():
         assert db.execute(
             "SELECT source, vintage_start, vintage_end, value FROM macro_observation"
         ).fetchone() == ("FRED_CSV", "", "", "10")
+
+
+def test_korea_world_bank_keyless_collection():
+    def handler(request):
+        assert "/country/KOR/indicator/X" in request.url.path
+        assert "api_key" not in request.url.params
+        page = int(request.url.params["page"])
+        return httpx.Response(200, json=[
+            {"page": page, "pages": 2, "total": 2},
+            [{
+                "countryiso3code": "KOR", "indicator": {"id": "X"},
+                "date": str(2020 + page), "value": 2.5 if page == 1 else None,
+            }],
+        ])
+
+    with sqlite3.connect(":memory:") as db:
+        db.executescript(SCHEMA)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            args = (client, db, "X", date(2020, 1, 1), date(2022, 12, 31))
+            assert korea_world_bank_collect(*args) == 1
+            assert korea_world_bank_collect(*args) == 0
+        assert db.execute(
+            "SELECT source, period, vintage_start, value FROM macro_observation"
+        ).fetchone() == ("WORLD_BANK_KOR", "2021-01-01", "", "2.5")
