@@ -22,6 +22,8 @@ from tris_market_event_intelligence.operational_news_price_bridge_cli import (
     _stored_articles,
 )
 
+from tris_market_event_intelligence.semantic_market_targets import block_equity
+
 DIRECTIONS = {"UP", "DOWN", "NEUTRAL", "UNCERTAIN"}
 ZONES = {
     "XKRX": "Asia/Seoul",
@@ -78,9 +80,9 @@ def _mappings(path: Path) -> dict[str, dict]:
         kind = (row.get("mapping_kind") or "DIRECT_EQUITY").strip()
         limitation = (row.get("proxy_limitation") or "").strip()
         evidence_url = (row.get("evidence_url") or "").strip()
-        if kind not in {"DIRECT_EQUITY", "SECTOR_ETF_PROXY"}:
+        if kind not in {"DIRECT_EQUITY", "SECTOR_ETF_PROXY", "MARKET_INDEX"}:
             raise ValueError("Unsupported mapping kind")
-        if kind == "SECTOR_ETF_PROXY" and (not limitation or not evidence_url):
+        if kind in {"SECTOR_ETF_PROXY", "MARKET_INDEX"} and (not limitation or not evidence_url):
             raise ValueError("Sector ETF proxy requires limitation and source evidence")
         result[target] = {
             "market": market, "symbol": symbol, "benchmark": benchmark,
@@ -210,6 +212,11 @@ def evaluate(
             mapping = mappings.get(target)
             if source_audit is not None and source_gate != "STORED_ORIGINAL_SHA_MATCHED":
                 item["status"] = "NEWS_SOURCE_NOT_ADMITTED"
+                for horizon in HORIZONS:
+                    summaries[f"{horizon}d:UNAVAILABLE"] += 1
+                    summaries[f"{horizon}d:relative:UNAVAILABLE"] += 1
+            elif mapping is not None and mapping["mappingKind"] == "DIRECT_EQUITY" and block_equity(target):
+                item["status"] = "AMBIGUOUS_TARGET_SEMANTICS"
                 for horizon in HORIZONS:
                     summaries[f"{horizon}d:UNAVAILABLE"] += 1
                     summaries[f"{horizon}d:relative:UNAVAILABLE"] += 1
