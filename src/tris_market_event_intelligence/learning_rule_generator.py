@@ -134,7 +134,7 @@ def validate_aliased_rules(
     if not isinstance(answer, dict) or set(answer) != {"rules"}:
         raise ValueError("Invalid rule envelope")
     if not isinstance(answer["rules"], list):
-        raise ValueError("Invalid rule list")
+        raise TypeError("Invalid rule list")
     resolved = deepcopy(answer)
     for rule in resolved["rules"]:
         if not isinstance(rule, dict) or set(rule) != set(FIELDS):
