@@ -23,7 +23,10 @@ from tris_market_event_intelligence.cross_event_validator import (
 )
 from tris_market_event_intelligence.experience_memory import ExperienceMemory, digest
 from tris_market_event_intelligence.experience_source_evidence import related_sources, story_overlap
-from tris_market_event_intelligence.learning_rule_generator import eligible_experiences, generate_rules
+from tris_market_event_intelligence.learning_rule_generator import (
+    eligible_experiences,
+    generate_rules,
+)
 from tris_market_event_intelligence.reflection_evidence_validator import review_reflection
 from tris_market_event_intelligence.self_reflection import reflect
 
