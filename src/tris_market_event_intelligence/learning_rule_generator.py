@@ -17,6 +17,8 @@ forecasts. Cite distinct supporting experiences and identify counterexamples.
 The rule must specify observable conditions available before a new prediction,
 an analysis action, and when the rule should not apply. Do not use realized
 returns, article IDs, future facts, or outcome labels as application conditions.
+Evidence reviews are model assessments, not independently verified facts.
+Do not use contradicted hypotheses as established evidence.
 Prior descriptive evaluation is not causal evidence; use it to reconsider the\nprevious research strategy, not as a proven explanation.\nDo not invent evidence. If there is no defensible candidate, return no rules.
 Return JSON only. Rules are experiments, never approved trading instructions."""
 
@@ -74,7 +76,7 @@ def eligible_experiences(records: list[dict], cutoff: str) -> list[dict]:
                 raise ValueError("Conflicting observations for one commitment")
             continue
         selected[key] = item
-    return sorted(selected.values(), key=lambda x: x["id"])
+    return sorted(selected.values(), key=lambda x: (x["outcome"]["exitDay"], x["id"]))
 
 
 def validate_rules(answer: dict, experiences: list[dict], cutoff: str) -> list[dict]:
@@ -142,6 +144,10 @@ def generate_rules(
         "verdict": x["outcome"]["verdict"],
         "relativeVerdict": x["outcome"]["relativeVerdict"],
         "horizon": x["outcome"]["horizonSessions"],
+        "evidenceReview": {
+            k: str(x["reflection"].get("evidenceReview", {}).get(k, ""))[:400]
+            for k in ("verdict", "reason", "missing_evidence")
+        },
         "reflection": {
             k: str(x["reflection"].get(k, ""))[:400]
             for k in ("category", "hypothesis", "missing_evidence", "falsification")
