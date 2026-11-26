@@ -22,8 +22,8 @@ from tris_market_event_intelligence.cross_event_validator import (
     seal_pair,
 )
 from tris_market_event_intelligence.experience_memory import ExperienceMemory, digest
-from tris_market_event_intelligence.learning_rule_generator import generate_rules
 from tris_market_event_intelligence.experience_source_evidence import related_sources, story_overlap
+from tris_market_event_intelligence.learning_rule_generator import eligible_experiences, generate_rules
 from tris_market_event_intelligence.reflection_evidence_validator import review_reflection
 from tris_market_event_intelligence.self_reflection import reflect
 
@@ -58,6 +58,9 @@ def run_cycle(
     rules = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(rules_dir.glob("*.json"))]
     # Freeze candidate for the cycle; no outcome is passed to the prediction function.
     active = max(rules, key=lambda rule: rule['researchCutoff']) if rules else None
+    existing_pairs = [
+        json.loads(p.read_text(encoding="utf-8")) for p in sorted(pairs_dir.glob("*.json"))
+    ]
     new_experiences = sealed = 0
     failures = []
     with closing(sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
@@ -87,12 +90,13 @@ def run_cycle(
                     rationale=commit["rationale"],
                     observed_at=commit["original_body_observed_at"],
                 )
+                reflection["relatedSources"] = related_sources(
+                    db, row["articleId"], row["sealedAt"],
+                )
                 reflection["evidenceReview"] = review_reflection(
                     client, model, reflection, body=source["body"],
                     body_sha256=row["bodySha256"], rationale=commit["rationale"],
-                )
-                reflection["relatedSources"] = related_sources(
-                    db, row["articleId"], row["sealedAt"],
+                    related=reflection["relatedSources"],
                 )
                 memory.record(row, report, reflection)
                 known.add(key)
@@ -129,6 +133,14 @@ def run_cycle(
                         "benchmark": commit["benchmark"], "market": commit["market"],
                         "horizonSessions": commit["horizon_sessions"],
                     }
+                    # Stop enrolling once the fixed per-horizon cohort is full.
+                    enrolled = {
+                        p["event"]["articleId"] for p in existing_pairs
+                        if p["ruleId"] == active["ruleId"]
+                        and p["event"]["horizonSessions"] == event["horizonSessions"]
+                    }
+                    if len(enrolled) >= 10 or event["articleId"] in enrolled:
+                        continue
                     name = hashlib.sha256(json.dumps(
                         [active["ruleId"], event], sort_keys=True,
                     ).encode()).hexdigest()
@@ -139,7 +151,9 @@ def run_cycle(
                         "SELECT body FROM article_full_text WHERE article_id=?",
                         (event["articleId"],),
                     ).fetchone()
-                    seal_pair(client, model, active, event, source["body"], path)
+                    existing_pairs.append(
+                        seal_pair(client, model, active, event, source["body"], path)
+                    )
                     sealed += 1
                 except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
                     failures.append({"stage": "pair", "error": type(exc).__name__})
@@ -151,7 +165,7 @@ def run_cycle(
     evaluation_path = evaluations / (comparison_key + ".json")
     if not evaluation_path.exists():
         _write_once(evaluation_path, comparison)
-    records = memory.records()
+    records = eligible_experiences(memory.records(), datetime.now(UTC).isoformat())
     prior_ids = set(active["trainingExperienceIds"]) if active else set()
     fresh_articles = {
         x["outcome"]["articleId"] for x in records
@@ -178,7 +192,7 @@ def run_cycle(
         )
     )
     generated = []
-    if ready and (new_experiences or active is not None):
+    if ready and records:
         # A new candidate receives prior comparison as descriptive feedback,
         # never as verified causal evidence or an approved production rule.
         try:
