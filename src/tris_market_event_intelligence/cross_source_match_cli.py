@@ -155,7 +155,7 @@ def metric_facts(item):
                     periods = period_cues(title, item, series == "GDP")
                 if len({p[0] for p in periods}) != 1:
                     continue
-                period = sorted(periods, key=lambda p: not p[1])[0]
+                period = min(periods, key=lambda p: not p[1])
                 # Multiple indicators in a sentence are ambiguous unless individually segmented.
                 other = [k for k, (pat, _) in SERIES.items()
                          if k != series and re.search(pat, sentence, re.IGNORECASE)]
