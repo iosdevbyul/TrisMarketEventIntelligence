@@ -108,17 +108,36 @@ def critique_and_revise(
     review = review_rule(client, model, packet(rule), evidence)
     revised = None
     second = None
+    revision_errors = []
     if review["effectiveVerdict"] == "REVISE":
         schema = deepcopy(RULE_SCHEMA)
         for field in FIELDS[4:]:
             schema["properties"]["rules"]["items"]["properties"][field]["items"]["enum"] = list(
                 aliases
             )
-        answer = _ask(client, model, SYSTEM + (
-            " Revise the rejected candidate using the critique. Never condition on realized "
-            "market response. Return no rules if evidence cannot justify revision."
-        ), {"candidate": packet(rule), "critique": review, "experiences": evidence}, schema)
-        candidates = validate_aliased_rules(answer, aliases, selected, rule["researchCutoff"])
+        fields = schema["properties"]["rules"]["items"]["properties"]
+        for field in FIELDS[4:]:
+            fields[field]["uniqueItems"] = True
+            fields[field]["maxItems"] = len(aliases)
+        fields["supporting_ids"]["minItems"] = 2
+        candidates = []
+        for _attempt in range(2):
+            try:
+                answer = _ask(client, model, SYSTEM + (
+                    " Revise using the critique. Use each exact R alias at most once, "
+                    "never in both lists. Cite two different articles. Do not copy hashes. "
+                    "Never condition on realized market response. Return no rules if "
+                    "evidence cannot justify revision."
+                ), {
+                    "candidate": packet(rule), "critique": review, "experiences": evidence,
+                    "previousValidationErrors": revision_errors,
+                }, schema)
+                candidates = validate_aliased_rules(
+                    answer, aliases, selected, rule["researchCutoff"],
+                )
+                break
+            except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+                revision_errors.append(str(exc)[:300])
         if candidates:
             revised = candidates[0]
             revised.pop("ruleId")
@@ -127,12 +146,16 @@ def critique_and_revise(
                 "historicalResearchOnly": True, "parentRuleId": rule["ruleId"],
             })
             revised["ruleId"] = digest(revised)
-            second = review_rule(client, model, packet(revised), evidence)
+            try:
+                second = review_rule(client, model, packet(revised), evidence)
+            except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+                revision_errors.append(str(exc)[:300])
     effective = second or review
     accepted = revised if second else rule
     return {
         "originalRuleId": rule["ruleId"], "initialReview": review,
         "revisedRule": revised, "revisionReview": second,
+        "revisionErrors": revision_errors,
         "candidateForFurtherResearch": (
             accepted["ruleId"] if effective["effectiveVerdict"] == "PASS_CANDIDATE" else None
         ),
