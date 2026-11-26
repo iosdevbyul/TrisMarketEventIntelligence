@@ -54,13 +54,15 @@ def _clock(raw: str) -> datetime:
     return value.astimezone(UTC)
 
 
-def eligible_experiences(records: list[dict], cutoff: str) -> list[dict]:
+def eligible_experiences(records: list[dict], cutoff: str, *, historical: bool = False) -> list[dict]:
     """Exclude unfinished outcomes and deduplicate by original commitment."""
     at = _clock(cutoff)
     selected: dict[str, dict] = {}
     for item in records:
         row = item["outcome"]
-        if row.get("status") != "OBSERVED_UNAUTHENTICATED_PRECOMMITMENT":
+        expected = ("RETROSPECTIVE_UNSEALED_OBSERVATION" if historical
+                    else "OBSERVED_UNAUTHENTICATED_PRECOMMITMENT")
+        if row.get("status") != expected:
             continue
         if row.get("verdict") not in {"CORRECT", "INCORRECT"}:
             continue
@@ -68,9 +70,9 @@ def eligible_experiences(records: list[dict], cutoff: str) -> list[dict]:
         # complete UTC date. This does not establish provider availability.
         if (at.date() - datetime.fromisoformat(row["exitDay"]).date()).days < 2:
             continue
-        if _clock(row["sealedAt"]) >= at:
+        if _clock(row["processedAt"] if historical else row["sealedAt"]) >= at:
             continue
-        key = row["commitmentSha256"]
+        key = item["id"] if historical else row["commitmentSha256"]
         if key in selected:
             if selected[key]["outcome"] != row:
                 raise ValueError("Conflicting observations for one commitment")
@@ -125,10 +127,11 @@ def validate_rules(answer: dict, experiences: list[dict], cutoff: str) -> list[d
 def generate_rules(
     client: httpx.Client, model: str, records: list[dict], *,
     cutoff: str, limit: int = 12, prior_evaluation: dict | None = None,
+    historical: bool = False,
 ) -> list[dict]:
     if not MODEL_PATTERN.fullmatch(model) or not 2 <= limit <= 12:
         raise ValueError("Invalid model or experience limit")
-    eligible = eligible_experiences(records, cutoff)
+    eligible = eligible_experiences(records, cutoff, historical=historical)
     # Balance outcome classes so successes are not discarded.
     selected = []
     for verdict in ("CORRECT", "INCORRECT"):
@@ -168,4 +171,11 @@ def generate_rules(
     result = response.json()
     if result.get("done_reason") == "length":
         raise ValueError("Truncated rule generation")
-    return validate_rules(json.loads(result["message"]["content"]), selected, cutoff)
+    rules = validate_rules(json.loads(result["message"]["content"]), selected, cutoff)
+    if historical:
+        for rule in rules:
+            rule.pop("ruleId")
+            rule["status"] = "HISTORICAL_RESEARCH_CANDIDATE"
+            rule["historicalResearchOnly"] = True
+            rule["ruleId"] = digest(rule)
+    return rules
