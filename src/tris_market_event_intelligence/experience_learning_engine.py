@@ -23,6 +23,7 @@ from tris_market_event_intelligence.cross_event_validator import (
 )
 from tris_market_event_intelligence.experience_memory import ExperienceMemory, digest
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
+from tris_market_event_intelligence.reflection_evidence_validator import review_reflection
 from tris_market_event_intelligence.self_reflection import reflect
 
 
@@ -84,6 +85,10 @@ def run_cycle(
                     client, model, row, body=source["body"],
                     rationale=commit["rationale"],
                     observed_at=commit["original_body_observed_at"],
+                )
+                reflection["evidenceReview"] = review_reflection(
+                    client, model, reflection, body=source["body"],
+                    body_sha256=row["bodySha256"], rationale=commit["rationale"],
                 )
                 memory.record(row, report, reflection)
                 known.add(key)
