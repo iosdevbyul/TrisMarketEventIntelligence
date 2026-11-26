@@ -18,7 +18,7 @@ def test_reflection_citation_does_not_establish_causality():
     result = validate_reflection(
         answer, {"E1": "Rate changed"},
         observed_at="2026-01-01T00:00:00+00:00",
-        sealed_at="2026-01-01T01:00:00+00:00",
+        sealed_at="2026-01-01T15:00:00+00:00",
     )
     assert result["causalStatus"] == "UNVERIFIED"
     assert not result["semanticEntailmentVerified"]
@@ -61,12 +61,12 @@ def test_title_overlap():
 def test_paired_score_and_digest():
     event = {
         "articleId": 1, "bodySha256": "body", "publisherStatedAt": "2026-01-01T01:00:00+00:00",
-        "target": "Example", "symbol": "EX", "benchmark": "SPY", "market": "US",
+        "target": "Example", "symbol": "EX", "benchmark": "SPY", "market": "XNYS",
         "horizonSessions": 1,
     }
     payload = {
         "schemaVersion": "experience_paired_forecast_v1", "event": event,
-        "ruleId": "rule", "sealedAt": "2026-01-01T02:00:00+00:00",
+        "ruleId": "rule", "sealedAt": "2026-01-01T16:00:00+00:00",
         "baseline": {"direction": "DOWN"}, "candidate": {"direction": "UP"},
     }
     pair = {**payload, "pairSha256": digest(payload)}
