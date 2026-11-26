@@ -1,0 +1,7 @@
+# Cross-source expansion and event timeline bridge
+
+PR #284 after one actual cross-source match (NVIDIA CEO return / Doosan news). v2 adds SEC debt, dividend, acquisition and executive-change cues, and per-source metric extraction rejection counters. Matching remains candidate-only and bounded; metric coverage remains limited. No actual new positive asserted.
+
+The read-only event_timeline_bridge_cli consumes a specific scan ID and pinned candidate/review rows; rechecks exact source spans and retains publisher, acceptance, observation and action-date cues separately. Relative dates are candidates; conflicting dates block any claim of verified chronology. News price-reaction passages and mentioned target codes are separate evidence, never fed into an earlier forecast. Candidate target codes are not approved mappings. With --prices and optional --price-manifest, reuse the existing committed_forecast_market_outcomes_cli evaluator, then attach only results for exact article ID and body hash. This does NOT generate a new commitment, backdate an old one, or claim event causality. Missing commitments remain explicit. Date cues and reaction cues are limited regex heuristics, not independent verification. Multiple model reviews may appear separately. No source database changes.
+
+Run cross_source_match_cli with same args as v1; use returned scanId with event_timeline_bridge_cli --news-db --event-db --run-id --scan-id --output [new JSON path] [--prices existing adjusted daily CSV] [--price-manifest existing manifest]. No automated operation.

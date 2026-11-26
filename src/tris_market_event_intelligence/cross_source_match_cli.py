@@ -29,7 +29,7 @@ from tris_market_event_intelligence.semantic_event_integration_cli import pinned
 from tris_market_event_intelligence.source_aware_event_cli import anchor, extract_facts
 from tris_market_event_intelligence.unified_event_integration_cli import clock, digest, encode
 
-VERSION = "cross_source_match_v1"
+VERSION = "cross_source_match_v2"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cross_source_match_runs (
     scan_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, processed_at TEXT NOT NULL,
@@ -59,9 +59,9 @@ KR = re.compile(r"\b(?:Bank of Korea|South Korea)\b|한국은행|한국|국내",
 PERCENT = re.compile(r"(?<![\d.])([+-]?\d+(?:\.\d+)?)\s*(?:percent\b|%)(?!\s*(?:points?|포인트))",
                      re.IGNORECASE)
 POINT = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:로|으로|기록|points?\b)", re.IGNORECASE)
-YOY = re.compile(r"from (?:a |the previous )?year (?:ago)?|over the (?:past |last )?12 months|"
+YOY = re.compile(r"from (?:a |the previous )?year (?:ago)?|from the same month (?:a year|last year) ago|over the (?:past |last )?12 months|"
                  r"year.over.year|year.ago|전년\s*(?:동월|동기)?\s*대비", re.IGNORECASE)
-MOM = re.compile(r"from (?:the )?(?:previous|prior) month|month.over.month|전월\s*대비", re.IGNORECASE)
+MOM = re.compile(r"from (?:the )?(?:previous|prior) month|month.over.month|전월\s*대비|전달\s*대비", re.IGNORECASE)
 ANNUAL = re.compile(r"annual(?:ized)? rate|annualized|연율", re.IGNORECASE)
 CORE = re.compile(r"excluding food and energy|less food and energy|core\b|근원|"
                   r"에너지와 식료품을 제외", re.IGNORECASE)
@@ -77,6 +77,10 @@ QUARTER_RE = re.compile(
 SEC_EVENT = {
     "EARNINGS": r"announc(?:ed|ing|es) (?:its |financial )?results|quarterly results|"
                 r"results for the quarter|실적\s*(?:발표|공개)|분기\s*실적",
+    "DEBT_OFFERING": r"(?:offer(?:ing|ed)|issu(?:ance|ed)).{0,90}(?:senior notes|debt securities|bonds)|채권\s*발행|회사채\s*발행",
+    "DIVIDEND": r"(?:declared|approved|announced).{0,90}(?:cash dividend|stock dividend)|배당\s*(?:결정|발표|승인)",
+    "ACQUISITION": r"(?:entered into|completed|announced).{0,120}(?:acquisition|merger agreement)|인수\s*(?:계약|완료|발표)|합병\s*(?:계약|완료)",
+    "EXECUTIVE_CHANGE": r"(?:appointed|resigned|retired).{0,90}(?:chief executive|chief financial|CEO|CFO)|(?:CEO|CFO|최고경영자).{0,40}(?:선임|사임|사퇴)",
     "EXECUTIVE_REINSTATEMENT": r"reinstated.{0,100}(?:chief executive|president|CEO)|"
                                r"(?:CEO|최고경영자|젠슨 황).{0,60}복귀|복귀.{0,60}(?:CEO|최고경영자)",
 }
@@ -131,7 +135,8 @@ def sentences(doc):
         yield start, len(text), text[start:]
 
 
-def metric_facts(item):
+def metric_facts(item, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else Counter()
     title = item["title"]
     result = []
     seen = set()
@@ -146,42 +151,55 @@ def metric_facts(item):
             title_country = True
         for doc in item["documents"]:
             for start, _, sentence in sentences(doc):
-                if len(sentence) > 1600 or not re.search(pattern, sentence, re.IGNORECASE):
+                if not re.search(pattern, sentence, re.IGNORECASE):
+                    continue
+                diagnostics["indicatorSentences"] += 1
+                if len(sentence) > 1600:
+                    diagnostics["longSentence"] += 1
                     continue
                 if not title_country and not (KR if country == "KR" else US).search(sentence):
+                    diagnostics["countryMissing"] += 1
                     continue
                 periods = period_cues(sentence, item, series == "GDP")
                 if not periods:
                     periods = period_cues(title, item, series == "GDP")
                 if len({p[0] for p in periods}) != 1:
+                    diagnostics["periodMissingOrAmbiguous"] += 1
                     continue
                 period = min(periods, key=lambda p: not p[1])
                 # Multiple indicators in a sentence are ambiguous unless individually segmented.
                 other = [k for k, (pat, _) in SERIES.items()
                          if k != series and re.search(pat, sentence, re.IGNORECASE)]
                 if other:
+                    diagnostics["mixedIndicators"] += 1
                     continue
                 variant = "CORE" if CORE.search(sentence) else "HEADLINE"
                 matches = list((POINT if country == "KR" else PERCENT).finditer(sentence))
+                if not matches:
+                    diagnostics["noNumericValue"] += 1
                 for i, value in enumerate(matches):
                     prev = matches[i - 1].end() if i else 0
                     nxt = matches[i + 1].start() if i + 1 < len(matches) else len(sentence)
                     segment = sentence[prev:nxt]
                     # Ambiguous actual/forecast combinations abstain rather than match.
                     if EXPECT.search(segment):
+                        diagnostics["forecastOrMixed"] += 1
                         continue
                     modes = [k for k, regex in (
                         ("YOY", YOY), ("MOM", MOM), ("ANNUALIZED", ANNUAL))
                              if regex.search(segment)]
                     if country == "KR":
-                        modes = ["INDEX_LEVEL"] if len(matches) == 1 else []
+                        modes = ["INDEX_LEVEL"] if len(matches) == 1 and re.search(
+                            r"\d+(?:\.\d+)?\s*(?:로|으로|기록)", value.group()) else []
                     if len(modes) != 1:
+                        diagnostics["basisMissingOrAmbiguous"] += 1
                         continue
                     # Do not infer direction from unrelated comparisons.
                     number = Decimal(value[1])
                     if country == "US":
                         down, up = bool(DOWN.search(segment)), bool(UP.search(segment))
                         if down and up or not (down or up or value[1].startswith(("+", "-"))):
+                            diagnostics["directionMissingOrAmbiguous"] += 1
                             continue
                         if down:
                             number = -abs(number)
@@ -189,6 +207,7 @@ def metric_facts(item):
                     if key in seen:
                         continue
                     seen.add(key)
+                    diagnostics["factsExtracted"] += 1
                     result.append({"key": list(key), "periodExplicit": period[1],
                                    "evidence": anchor(doc, start + prev, start + nxt)})
     return result
@@ -197,7 +216,7 @@ def metric_facts(item):
 def sec_facts(item):
     result = []
     if item["kind"] == "SEC":
-        if item.get("secForm") not in {"8-K", "8-K/A"}:
+        if item.get("secForm") not in {"8-K", "8-K/A", "424B2", "424B5", "S-3", "S-3ASR"}:
             return result
         issuers = {x["tickerCandidate"] for x in item.get("issuers", []) if x["tickerCandidate"]}
     elif item["kind"] == "NEWS":
@@ -225,13 +244,14 @@ def discover(items):
     index = defaultdict(list)
     metrics = {}
     securities = {}
+    diagnostic_counts = defaultdict(Counter)
     for item in items:
         facts = extract_facts(item)
         if facts["marketRelevance"] == "LOW_PRIORITY_TITLE_CUE":
             continue
         if item.get("claimKind") in {"FORECAST", "RUMOR"}:
             continue
-        metrics[item["eventId"]] = metric_facts(item)
+        metrics[item["eventId"]] = metric_facts(item, diagnostic_counts[item["kind"]])
         securities[item["eventId"]] = sec_facts(item)
         if item["kind"] in {"SEC", "ECONOMIC_RELEASE"}:
             for fact in metrics[item["eventId"]] + securities[item["eventId"]]:
@@ -270,7 +290,8 @@ def discover(items):
                     best[pair] = candidate
     ranked = sorted(best.values(), key=lambda r: (-r["score"], r["leftId"], r["rightId"]))
     return ranked, {"metricFacts": sum(map(len, metrics.values())),
-                    "securityFacts": sum(map(len, securities.values()))}
+                    "securityFacts": sum(map(len, securities.values())),
+                    "metricDiagnostics": {k: dict(v) for k, v in diagnostic_counts.items()}}
 
 
 def review_passage(fact):
