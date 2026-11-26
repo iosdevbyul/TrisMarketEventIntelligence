@@ -58,7 +58,7 @@ def run(
         raise ValueError("Expected experience limit 1..100")
     output.mkdir(parents=True, exist_ok=True)
     report = evaluate_automatic_outcomes(
-        db_path, mappings, prices, model=model, price_source=price_source,
+        db_path, mappings, prices, model=model, price_source=price_source, full_scan=True,
     )
     rows = historical_rows(report)
     records = []
