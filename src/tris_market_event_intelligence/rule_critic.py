@@ -36,7 +36,7 @@ def leakage_flags(rule: dict) -> list[str]:
         r"\b(?:market|stock|price)\s+(?:reaction|response|movement|return)s?"
         r"\s+(?:is|are|was|were|turns|becomes)\s+(?:positive|negative|neutral)"
     )
-    return ["OUTCOME_CONDITIONED_EXCEPTION"] if re.search(pattern, text, re.I) else []
+    return ["OUTCOME_CONDITIONED_EXCEPTION"] if re.search(pattern, text, re.IGNORECASE) else []
 
 
 def _ask(client: httpx.Client, model: str, system: str, packet: dict, schema: dict) -> dict:
