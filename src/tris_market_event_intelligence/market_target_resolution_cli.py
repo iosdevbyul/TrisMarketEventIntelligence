@@ -10,11 +10,14 @@ from collections import Counter
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import httpx
+
 from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
     evaluate_automatic_outcomes,
 )
 from tris_market_event_intelligence.historical_experience_learning import historical_rows
 from tris_market_event_intelligence.listed_equity_price_coverage_cli import sha, write_csv
+from tris_market_event_intelligence.market_instrument_master import acquire_master
 from tris_market_event_intelligence.market_outcome_validation_cli import _csv, _mappings
 from tris_market_event_intelligence.market_price_collection_cli import collect_prices
 from tris_market_event_intelligence.market_price_recovery_cli import FIELDS, _observations
@@ -42,7 +45,9 @@ def normalize(name: str) -> str:
     return re.sub(r"\s+(?:incorporated|inc|corporation|corp|limited|ltd)\.?$", "", value)
 
 
-def expand_aliases(mappings: Path, report: dict) -> tuple[list[dict], dict]:
+def expand_aliases(
+    mappings: Path, report: dict, master: dict | None = None,
+) -> tuple[list[dict], dict]:
     _mappings(mappings)
     rows = [
         {key: row.get(key, "") or "" for key in CSV_FIELDS}
@@ -57,6 +62,13 @@ def expand_aliases(mappings: Path, report: dict) -> tuple[list[dict], dict]:
         names = (row["target"], *ALIASES.get((row["market"], row["symbol"]), ()))
         for name in names:
             index.setdefault(normalize(name), []).append(row)
+    master_index: dict[str, list[dict]] = {}
+    if master is not None:
+        for instrument in master["instruments"]:
+            market, symbol = instrument["market"], instrument["symbol"]
+            names = (instrument["name"], *ALIASES.get((market, symbol), ()))
+            for name in names:
+                master_index.setdefault(normalize(name), []).append(instrument)
     counts = Counter()
     unresolved = Counter()
     added = []
@@ -76,6 +88,29 @@ def expand_aliases(mappings: Path, report: dict) -> tuple[list[dict], dict]:
             continue
         matches = index.get(name, [])
         identities = {(r["market"], r["symbol"], r["benchmark"]) for r in matches}
+        if not identities and master is not None:
+            candidates = master_index.get(name, [])
+            options = {(x["market"], x["symbol"]) for x in candidates}
+            if len(options) == 1:
+                instrument = candidates[0]
+                rows.append({
+                    "target": target, "market": instrument["market"],
+                    "symbol": instrument["symbol"], "benchmark": instrument["benchmark"],
+                    "verified_at": now, "mapping_kind": "DIRECT_EQUITY",
+                    "proxy_limitation": "", "evidence_url": instrument["source"],
+                })
+                added.append({
+                    "target": target, "anchorTarget": instrument["name"],
+                    "symbol": instrument["symbol"], "impacts": count,
+                    "evidenceUrl": instrument["source"],
+                    "resolutionClass": "CURRENT_LISTING_RESEARCH_CANDIDATE",
+                })
+                counts["RESOLVED_CURRENT_LISTING_CANDIDATE"] += count
+                continue
+            if len(options) > 1:
+                counts["AMBIGUOUS"] += count
+                unresolved[target] += count
+                continue
         if len(identities) != 1:
             counts["AMBIGUOUS" if identities else "UNRESOLVED"] += count
             unresolved[target] += count
@@ -98,7 +133,7 @@ def expand_aliases(mappings: Path, report: dict) -> tuple[list[dict], dict]:
 
 def run(
     db: Path, mappings: Path, prices: Path, output: Path, *,
-    model: str, fetch: bool, end: date,
+    model: str, fetch: bool, end: date, fetch_master: bool = False,
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise ValueError("Output already exists")
@@ -108,9 +143,13 @@ def run(
         db, mappings, prices, model=model, full_scan=True,
         price_source="Existing observed adjusted daily prices",
     )
-    rows, resolution = expand_aliases(mappings, before)
     output.mkdir()
-    mapped = output / "reviewed-alias-mappings.csv"
+    master = None
+    if fetch_master:
+        with httpx.Client(timeout=30, trust_env=False) as client:
+            master = acquire_master(output / "listing-snapshot", client)
+    rows, resolution = expand_aliases(mappings, before, master)
+    mapped = output / ("research-mappings.csv" if fetch_master else "reviewed-alias-mappings.csv")
     write_csv(mapped, CSV_FIELDS, rows)
     old = _observations(prices)
     merged = old.copy()
@@ -144,6 +183,11 @@ def run(
     )
     result = {
         "status": "COMPLETED", "resolution": resolution, "collection": collection,
+        "instrumentMaster": ({
+            "observedAt": master["observedAt"], "sources": master["sources"],
+            "failures": master["failures"], "instrumentCount": len(master["instruments"]),
+            "historicalListingVerified": False,
+        } if master is not None else None),
         "before": coverage_diagnostics(before, historical_rows(before)),
         "after": coverage_diagnostics(after, historical_rows(after)),
         "mappingSha256": sha(mapped), "pricesSha256": sha(expanded),
@@ -162,11 +206,12 @@ def main() -> None:
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--fetch-prices", action="store_true")
+    parser.add_argument("--fetch-master", action="store_true")
     parser.add_argument("--end", type=date.fromisoformat, required=True)
     args = parser.parse_args()
     result = run(
         args.db, args.mappings, args.prices, args.output_dir,
-        model=args.model, fetch=args.fetch_prices, end=args.end,
+        model=args.model, fetch=args.fetch_prices, end=args.end, fetch_master=args.fetch_master,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
