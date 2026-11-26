@@ -23,6 +23,7 @@ from tris_market_event_intelligence.cross_event_validator import (
 )
 from tris_market_event_intelligence.experience_memory import ExperienceMemory, digest
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
+from tris_market_event_intelligence.experience_source_evidence import related_sources, story_overlap
 from tris_market_event_intelligence.reflection_evidence_validator import review_reflection
 from tris_market_event_intelligence.self_reflection import reflect
 
@@ -90,6 +91,9 @@ def run_cycle(
                     client, model, reflection, body=source["body"],
                     body_sha256=row["bodySha256"], rationale=commit["rationale"],
                 )
+                reflection["relatedSources"] = related_sources(
+                    db, row["articleId"], row["sealedAt"],
+                )
                 memory.record(row, report, reflection)
                 known.add(key)
                 new_experiences += 1
@@ -112,6 +116,8 @@ def run_cycle(
                     if abs((datetime.now(UTC).date() - published.date()).days) > 1:
                         continue
                     if _source_identity(db, commit) is not None:
+                        continue
+                    if story_overlap(db, commit["article_id"], active["trainingArticleIds"]):
                         continue
                     event = {
                         "articleId": commit["article_id"],
