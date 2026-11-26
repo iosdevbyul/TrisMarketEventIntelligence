@@ -121,7 +121,7 @@ def evaluate(
     articles_dir: Path, mappings_csv: Path, prices_csv: Path, *,
     price_source_description: str,
     news_db: Path | None = None,
-    price_manifest: Path | None = None,
+    price_manifest: Path | None = None, full_scan: bool = False,
 ) -> dict:
     """Generate a descriptive backtest; never represent retrospective runs as live forecasts."""
     if not price_source_description.strip():
@@ -137,7 +137,9 @@ def evaluate(
                 or provenance.get("mappingsSha256") != _sha(mappings_csv)):
             raise ValueError("Price recovery manifest SHA mismatch")
         price_manifest_verified = True
-    source_audit = inspect_live_news(news_db, limit=3000) if news_db else None
+    source_audit = (
+        inspect_live_news(news_db, limit=3000, full_scan=full_scan) if news_db else None
+    )
     if source_audit and source_audit["truncated"]:
         raise ValueError("Operational news source audit truncated")
     source_rows = _stored_articles(news_db) if news_db else {}
