@@ -96,9 +96,9 @@ def candidates_for(item, mappings, facts):
             continue
         market_country = "KR" if mapping["market"] == "XKRX" else (
             "US" if mapping["market"] in {"XNAS", "XNYS"} else None)
-        if market_country == country and MACRO[country].search(name):
-            if re.search(r"market|economy|equities|증시|시장|경제", name, re.IGNORECASE):
-                names.append(name)
+        if (market_country == country and MACRO[country].search(name)
+                and re.search(r"market|economy|equities|증시|시장|경제", name, re.IGNORECASE)):
+            names.append(name)
     return sorted(set(names))[:12]
 
 
