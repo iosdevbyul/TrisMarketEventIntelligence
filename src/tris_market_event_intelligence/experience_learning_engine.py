@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+import time
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +21,7 @@ from tris_market_event_intelligence.cross_event_validator import (
     compare_observed_pairs,
     seal_pair,
 )
-from tris_market_event_intelligence.experience_memory import ExperienceMemory
+from tris_market_event_intelligence.experience_memory import ExperienceMemory, digest
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
 from tris_market_event_intelligence.self_reflection import reflect
 
@@ -54,7 +55,7 @@ def run_cycle(
     pairs_dir.mkdir(exist_ok=True)
     rules = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(rules_dir.glob("*.json"))]
     # Freeze candidate for the cycle; no outcome is passed to the prediction function.
-    active = rules[-1] if rules else None
+    active = max(rules, key=lambda rule: rule['researchCutoff']) if rules else None
     new_experiences = sealed = 0
     failures = []
     with closing(sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
@@ -131,20 +132,63 @@ def run_cycle(
                     sealed += 1
                 except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
                     failures.append({"stage": "pair", "error": type(exc).__name__})
-    generated = []
-    if new_experiences and active is None:
-        generated = generate_rules(
-            client, model, memory.records(), cutoff=datetime.now(UTC).isoformat(),
-        )
-        for rule in generated:
-            _write_once(rules_dir / (rule["ruleId"] + ".json"), rule)
     pairs = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(pairs_dir.glob("*.json"))]
     comparison = compare_observed_pairs(pairs, report)
+    evaluations = research_dir / "evaluations"
+    evaluations.mkdir(exist_ok=True)
+    comparison_key = digest(comparison)
+    evaluation_path = evaluations / (comparison_key + ".json")
+    if not evaluation_path.exists():
+        _write_once(evaluation_path, comparison)
+    records = memory.records()
+    prior_ids = set(active["trainingExperienceIds"]) if active else set()
+    fresh_articles = {
+        x["outcome"]["articleId"] for x in records
+        if x["id"] not in prior_ids
+        and (active is None or x["outcome"]["articleId"] not in active["trainingArticleIds"])
+    }
+    # A bounded research rotation, not a statistical acceptance threshold.
+    # Wait for at least ten distinct observed articles per horizon represented
+    # by the active rule before retiring it from new pair creation.
+    active_metrics = [
+        value for key, value in comparison["metrics"].items()
+        if active is not None and key.startswith(active["ruleId"] + ":")
+    ]
+    ready = active is None or (
+        len(active_metrics) == 2
+        and all(m["distinctArticles"] >= 10 for m in active_metrics)
+        and len(fresh_articles) >= 3
+        and not any(
+            pair["ruleId"] == active["ruleId"]
+            and pair["pairSha256"] not in {
+                row["pairSha256"] for row in comparison["rows"]
+            }
+            for pair in pairs
+        )
+    )
+    generated = []
+    if ready and (new_experiences or active is not None):
+        # A new candidate receives prior comparison as descriptive feedback,
+        # never as verified causal evidence or an approved production rule.
+        try:
+            generated = generate_rules(
+                client, model, records, cutoff=datetime.now(UTC).isoformat(),
+                prior_evaluation=(
+                    {"ruleId": active["ruleId"], "metrics": active_metrics}
+                    if active else None
+                ),
+            )
+            for rule in generated:
+                _write_once(rules_dir / (rule["ruleId"] + ".json"), rule)
+        except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+            failures.append({"stage": "rule_generation", "error": type(exc).__name__})
     return {
         "status": "PARTIAL" if failures else "CYCLE_COMPLETED",
         "newExperiences": new_experiences, "totalExperiences": len(memory.records()),
         "newRules": len(generated), "newPairs": sealed,
         "comparison": comparison, "failures": failures,
+        "ruleRotationReady": ready, "freshTrainingArticles": len(fresh_articles),
+        "evaluationArtifact": str(evaluation_path),
         "productionDatabaseModified": False, "promotionAllowed": False,
         "weightTrainingPerformed": False,
     }
@@ -158,13 +202,21 @@ def main() -> None:
     parser.add_argument("--research-dir", required=True, type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--watch", action="store_true")
+    parser.add_argument("--interval", type=int, default=900)
     args = parser.parse_args()
+    if args.interval < 60:
+        parser.error("interval must be at least 60 seconds")
     with httpx.Client(timeout=300, trust_env=False) as client:
-        result = run_cycle(
-            args.db, args.prices, args.research_dir, client,
-            model=args.model, limit=args.limit, manifest=args.price_manifest,
-        )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+        while True:
+            result = run_cycle(
+                args.db, args.prices, args.research_dir, client,
+                model=args.model, limit=args.limit, manifest=args.price_manifest,
+            )
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+            if not args.watch:
+                break
+            time.sleep(args.interval)
 
 
 if __name__ == "__main__":
