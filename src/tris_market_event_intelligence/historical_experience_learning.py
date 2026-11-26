@@ -63,6 +63,8 @@ def run(
     rows = historical_rows(report)
     records = []
     failures = []
+    new_count = 0
+    reused_count = 0
     # Alternate correct and incorrect observations to avoid a one-sided sample.
     groups = [[r for r in rows if r["verdict"] == v] for v in ("CORRECT", "INCORRECT")]
     ordered = [
@@ -71,8 +73,6 @@ def run(
     with closing(sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
         for row in ordered:
-            if len(records) >= limit:
-                break
             source = db.execute(
                 """SELECT f.body, f.body_sha256, f.observed_at, n.analysis_json
                    FROM article_full_text f JOIN automatic_news_analyses n
@@ -98,7 +98,13 @@ def run(
                 key = digest(row)
                 path = output / (key + ".experience.json")
                 if path.exists():
-                    records.append(json.loads(path.read_text(encoding="utf-8")))
+                    cached = json.loads(path.read_text(encoding="utf-8"))
+                    if cached["id"] != key or cached["outcome"] != row:
+                        raise ValueError("Cached experience identity mismatch")
+                    records.append(cached)
+                    reused_count += 1
+                    continue
+                if new_count >= limit:
                     continue
                 passages = evidence_passages(body)
                 response = client.post("http://127.0.0.1:11434/api/chat", json={
@@ -133,11 +139,20 @@ def run(
                 with path.open("x", encoding="utf-8") as stream:
                     json.dump(record, stream, ensure_ascii=False, indent=2)
                 records.append(record)
+                new_count += 1
             except (ValueError, KeyError, TypeError, IndexError, httpx.HTTPError) as exc:
                 failures.append({"articleId": row["articleId"], "error": str(exc)[:300]})
-    rules = generate_rules(
-        client, model, records, cutoff=datetime.now(UTC).isoformat(), historical=True,
-    )
+    rules = []
+    rule_status = "NO_CANDIDATE"
+    try:
+        rules = generate_rules(
+            client, model, records, cutoff=datetime.now(UTC).isoformat(), historical=True,
+        )
+        if rules:
+            rule_status = "CANDIDATE_GENERATED"
+    except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+        rule_status = "REJECTED_OR_FAILED"
+        failures.append({"stage": "rule_generation", "error": str(exc)[:300]})
     for rule in rules:
         path = output / (rule["ruleId"] + ".rule.json")
         if not path.exists():
@@ -146,6 +161,9 @@ def run(
     return {
         "status": "PARTIAL" if failures else "COMPLETED",
         "historicalScorableRows": len(rows), "experiences": len(records),
+        "newExperiences": new_count, "reusedExperiences": reused_count,
+        "distinctExperienceArticles": len({r["outcome"]["articleId"] for r in records}),
+        "ruleGenerationStatus": rule_status,
         "rules": rules, "failures": failures, "historicalResearchOnly": True,
         "prospectivePredictionAccuracy": None, "promotionAllowed": False,
     }
