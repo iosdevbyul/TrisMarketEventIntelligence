@@ -12,17 +12,22 @@ from tris_market_event_intelligence.committed_forecast_market_outcomes_cli impor
 from tris_market_event_intelligence.event_integration_relations import MONTHS
 from tris_market_event_intelligence.semantic_event_integration_cli import pinned_articles
 from tris_market_event_intelligence.source_aware_event_cli import anchor
-from tris_market_event_intelligence.unified_event_integration_cli import clock, digest, encode, readonly
+from tris_market_event_intelligence.unified_event_integration_cli import (
+    clock,
+    digest,
+    encode,
+    readonly,
+)
 
 VERSION = "event_timeline_bridge_v1"
 POSITIVE = {"SAME_EVENT", "REPRINT", "FOLLOW_UP", "CORRECTION"}
-DATE_EN = re.compile(r"\b(" + "|".join(MONTHS) + r")\s+(\d{1,2}),?\s+(\d{4})\b", re.I)
+DATE_EN = re.compile(r"\b(" + "|".join(MONTHS) + r")\s+(\d{1,2}),?\s+(\d{4})\b", re.IGNORECASE)
 DATE_KR = re.compile(r"(?:(\d{4})년\s*)?(?:(\d{1,2})월\s*)?(\d{1,2})일")
-ACTION = re.compile(r"reinstat|board meeting|이사회|복귀|승인|announc|발표", re.I)
+ACTION = re.compile(r"reinstat|board meeting|이사회|복귀|승인|announc|발표", re.IGNORECASE)
 REACTION = re.compile(
     r"(?:주가|거래되고|거래됐다|전 거래일|shares|stock price|trading at|증시).{0,140}"
     r"(?:\d+(?:\.\d+)?\s*%|상승|하락)|"
-    r"\d+(?:\.\d+)?\s*%.{0,100}(?:상승|하락|거래되고|shares|stock)", re.I
+    r"\d+(?:\.\d+)?\s*%.{0,100}(?:상승|하락|거래되고|shares|stock)", re.IGNORECASE
 )
 TICKER_KR = re.compile(r"([가-힣A-Za-z][가-힣A-Za-z0-9 ]{0,25})\((\d{6})\)")
 
