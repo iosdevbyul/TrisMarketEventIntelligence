@@ -1,0 +1,7 @@
+# Source-aware hybrid diagnostic
+
+PR #284, after real profile v1 failure (29 schema-valid of 30, zero pairs; Form 4 D interpreted as acquisition). This opt-in module materializes immutable versioned source facts for admitted pinned articles. SEC document forms and explicit XML-derived A/D fields are extracted without model calls. A/D is not a purchase/sale code; counts are not associated with transactions by proximity. Official release title indicators are cues, not verified original values. Photo title cues are priority hints only, not deletion. Full source pin and previous ledgers remain intact.
+
+Four controls derived from the actual supplied logs are available only for the known snapshot: one identical-original BOK pair and three different-event pairs. Expected labels are kept outside the model packet. This is a diagnostic, not independent accuracy validation; no independent positive cross-source pair is established yet. A missing pinned document is reported rather than replaced. No automated positive search or market outcome integration is claimed by this module. Prioritize obtaining independently reviewed cross-source positives and then evaluating retrieval before scaling. Existing collectors unchanged.
+
+Run source_aware_event_cli with --news-db, --event-db, --run-id, --model gemma4:e2b, --limit 4, --execute. Without execute, preview only, no writes or model calls. With execute, source facts and bounded diagnostic responses are stored in separate ledger tables.
