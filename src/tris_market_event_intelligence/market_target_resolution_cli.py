@@ -23,6 +23,7 @@ from tris_market_event_intelligence.market_price_collection_cli import collect_p
 from tris_market_event_intelligence.market_price_recovery_cli import FIELDS, _observations
 from tris_market_event_intelligence.market_proxy_cohort_cli import CSV_FIELDS
 from tris_market_event_intelligence.research_strategy import coverage_diagnostics
+from tris_market_event_intelligence.semantic_market_targets import block_equity, typed_mapping
 
 # Identity hints only: a matching existing reviewed equity is mandatory.
 ALIASES = {
@@ -53,6 +54,9 @@ def expand_aliases(
         {key: row.get(key, "") or "" for key in CSV_FIELDS}
         for row in _csv(mappings, set(CSV_FIELDS[:5]))
     ]
+    quarantined = [row for row in rows if row["mapping_kind"] in {"", "DIRECT_EQUITY"}
+                   and block_equity(row["target"])]
+    rows = [row for row in rows if row not in quarantined]
     existing = {row["target"] for row in rows}
     index: dict[str, list[dict]] = {}
     for row in rows:
@@ -74,10 +78,20 @@ def expand_aliases(
     added = []
     now = datetime.now(UTC).isoformat()
     targets = Counter(
-        item["target"] for item in report["items"] if item["status"] == "UNMAPPED"
+        item["target"] for item in report["items"] if item["status"] in {"UNMAPPED", "AMBIGUOUS_TARGET_SEMANTICS"}
     )
     for target, count in targets.items():
         if target in existing:
+            continue
+        typed = typed_mapping(target)
+        if typed is not None:
+            rows.append(typed)
+            counts["RESOLVED_TYPED_MARKET_TARGET"] += count
+            added.append({**typed, "impacts": count})
+            continue
+        if block_equity(target):
+            counts["SEMANTIC_REVIEW_REQUIRED"] += count
+            unresolved[target] += count
             continue
         name = normalize(target)
         if name in INVALID:
@@ -125,6 +139,7 @@ def expand_aliases(
         counts["RESOLVED_REVIEWED_ALIAS"] += count
     return rows, {
         "counts": dict(counts), "addedAliases": added,
+        "quarantinedMappings": quarantined,
         "unresolvedTargets": dict(unresolved.most_common()),
         "newSecurityIdentitiesApproved": False,
         "retrospectiveOnly": True,
