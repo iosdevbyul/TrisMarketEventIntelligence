@@ -24,13 +24,13 @@ MAX_AUTOMATIC_ARTICLES = 3000
 
 
 def _automatically_analyzed(
-    news_db: Path, model: str, *, limit: int,
+    news_db: Path, model: str, *, limit: int, full_scan: bool = False,
 ) -> tuple[list[dict], dict]:
     if not MODEL_PATTERN.fullmatch(model) or not 1 <= limit <= MAX_AUTOMATIC_ARTICLES:
         raise ValueError("Invalid model name or bounded article limit")
     if not news_db.is_file() or news_db.is_symlink():
         raise ValueError("Expected real local news.sqlite3 source")
-    audit = inspect_live_news(news_db, limit=MAX_AUTOMATIC_ARTICLES)
+    audit = inspect_live_news(news_db, limit=MAX_AUTOMATIC_ARTICLES, full_scan=full_scan)
     if audit["truncated"]:
         raise ValueError("News DB audit truncated; refusing partial source coverage")
     status = {row["articleId"]: row for row in audit["rows"]}
@@ -128,10 +128,10 @@ def _automatically_analyzed(
 def evaluate_automatic_outcomes(
     news_db: Path, mappings: Path, prices: Path, *,
     model: str, limit: int = MAX_AUTOMATIC_ARTICLES,
-    price_source: str, price_manifest: Path | None = None,
+    price_source: str, price_manifest: Path | None = None, full_scan: bool = False,
 ) -> dict:
     """Compare recorded original Gemma impacts with real daily market data."""
-    reports, coverage = _automatically_analyzed(news_db, model, limit=limit)
+    reports, coverage = _automatically_analyzed(news_db, model, limit=limit, full_scan=full_scan)
     if not reports:
         raise ValueError("No source-admissible completed automatic Gemma articles")
     with tempfile.TemporaryDirectory(prefix="tmie-automatic-outcomes-") as temp:
@@ -143,7 +143,7 @@ def evaluate_automatic_outcomes(
             directory, mappings, prices,
             price_source_description=price_source,
             news_db=news_db,
-            price_manifest=price_manifest,
+            price_manifest=price_manifest, full_scan=full_scan,
         )
     result.update({
         "schemaVersion": "automatic_gemma_daily_outcomes_v1",
