@@ -17,7 +17,9 @@ Reject circular logic, hindsight, unsupported causal claims and unfalsifiable
 exceptions. Only information available before prediction may be an input.
 Check support and counterexamples against the supplied experiences. An
 absence of counterexamples is not proof. Return PASS_CANDIDATE only if no
-specific issue is found, otherwise REVISE or REJECT. Never approve deployment."""
+specific issue is found, otherwise REVISE or REJECT. Always give a concise reason.
+For REVISE give an actionable instruction; for other verdicts it may be empty.
+Never approve deployment."""
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -35,6 +37,9 @@ def leakage_flags(rule: dict) -> list[str]:
     pattern = (
         r"\b(?:market|stock|price)\s+(?:reaction|response|movement|return)s?"
         r"\s+(?:is|are|was|were|turns|becomes)\s+(?:positive|negative|neutral)"
+        r"|\b(?:stock\s+price|share\s+price|price|stock)\s+"
+        r"(?:does\s+not|fails\s+to|did\s+not|will\s+not)\s+"
+        r"(?:decline|fall|rise|increase|decrease|drop|recover)\b"
     )
     return ["OUTCOME_CONDITIONED_EXCEPTION"] if re.search(pattern, text, re.IGNORECASE) else []
 
@@ -64,8 +69,16 @@ def review_rule(client: httpx.Client, model: str, rule: dict, evidence: list[dic
         raise ValueError("Invalid critic fields")
     if answer["verdict"] not in SCHEMA["properties"]["verdict"]["enum"]:
         raise ValueError("Invalid critic verdict")
-    if any(not isinstance(v, str) or not v.strip() or len(v) > 2000 for v in answer.values()):
-        raise ValueError("Invalid critic text")
+    for field in ("reason", "revision_instruction"):
+        value = answer[field]
+        if not isinstance(value, str):
+            raise TypeError(f"Invalid critic field type: {field}")
+        if len(value) > 2000:
+            raise ValueError(f"Critic field too long: {field}")
+    if not answer["reason"].strip():
+        raise ValueError("Empty critic reason")
+    if answer["verdict"] == "REVISE" and not answer["revision_instruction"].strip() and not flags:
+        raise ValueError("Empty critic revision instruction")
     return {
         **answer, "effectiveVerdict": "REVISE" if flags else answer["verdict"],
         "deterministicFlags": flags, "reviewedRuleId": rule["ruleId"],
@@ -105,7 +118,26 @@ def critique_and_revise(
             result[field] = [reverse[i] for i in result[field]]
         return {**result, "ruleId": candidate["ruleId"]}
 
-    review = review_rule(client, model, packet(rule), evidence)
+    review_errors = []
+    review = None
+    for _attempt in range(2):
+        try:
+            review = review_rule(client, model, packet(rule), evidence)
+            break
+        except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+            review_errors.append(str(exc)[:300])
+    if review is None:
+        flags = leakage_flags(rule)
+        review = {
+            "verdict": "UNAVAILABLE", "effectiveVerdict": "REVISE" if flags else "REJECT",
+            "reason": "AI review unavailable; deterministic flags remain binding.",
+            "revision_instruction": (
+                "Replace outcome-dependent exceptions with pre-prediction source conditions."
+                if flags else ""
+            ),
+            "deterministicFlags": flags, "reviewedRuleId": rule["ruleId"],
+            "independentVerification": False, "promotionAllowed": False,
+        }
     revised = None
     second = None
     revision_errors = []
@@ -155,7 +187,7 @@ def critique_and_revise(
     return {
         "originalRuleId": rule["ruleId"], "initialReview": review,
         "revisedRule": revised, "revisionReview": second,
-        "revisionErrors": revision_errors,
+        "revisionErrors": revision_errors, "initialReviewErrors": review_errors,
         "candidateForFurtherResearch": (
             accepted["ruleId"] if effective["effectiveVerdict"] == "PASS_CANDIDATE" else None
         ),
