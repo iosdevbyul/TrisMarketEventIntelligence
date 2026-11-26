@@ -17,6 +17,7 @@ from tris_market_event_intelligence.gemma_original_article_batch_cli import MODE
 from tris_market_event_intelligence.market_outcome_validation_cli import evaluate
 from tris_market_event_intelligence.news_content_quality import media_page
 from tris_market_event_intelligence.operational_news_pit_readiness_cli import (
+    _stamp,
     inspect_live_news,
 )
 
@@ -64,10 +65,18 @@ def _automatically_analyzed(
         invalid = []
         dual_excluded = []
         media_excluded = []
+        clock_excluded = []
         for row in selected:
             article_id = row["id"]
             if media_page(row["url"]):
                 media_excluded.append(article_id)
+                continue
+            published = _stamp(row["published_at"])
+            detected = _stamp(row["detected_at"])
+            processed = _stamp(row["processed_at"])
+            if (published is None or detected is None or processed is None
+                    or not published <= detected <= processed):
+                clock_excluded.append(article_id)
                 continue
             source = status.get(article_id)
             body = row["body"]
@@ -119,6 +128,7 @@ def _automatically_analyzed(
         "excludedCorruptSourceIds": invalid,
         "excludedDualForecastArticleIds": dual_excluded,
         "excludedAudioVideoArticleIds": media_excluded,
+        "excludedInvalidClockArticleIds": clock_excluded,
         "sourceArticleCount": audit["totalArticlesAtScan"],
         "sourceBlockerCounts": audit["blockerCounts"],
         "truncated": len(rows) > limit,
