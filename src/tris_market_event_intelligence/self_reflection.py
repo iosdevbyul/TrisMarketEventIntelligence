@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from datetime import datetime
 
 import httpx
@@ -38,6 +39,12 @@ SCHEMA = {
         "category", "hypothesis", "evidence_id", "missing_evidence", "falsification",
     ],
 }
+
+
+def reflection_schema(passages: list[dict]) -> dict:
+    schema = deepcopy(SCHEMA)
+    schema["properties"]["evidence_id"]["enum"] = ["", *[p["id"] for p in passages]]
+    return schema
 
 
 def validate_reflection(
@@ -89,7 +96,7 @@ def reflect(
         "model": model,
         "stream": False,
         "think": False,
-        "format": SCHEMA,
+        "format": reflection_schema(passages),
         "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 1024},
         "messages": [
             {"role": "system", "content": SYSTEM},
