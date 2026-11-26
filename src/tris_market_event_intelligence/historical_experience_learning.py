@@ -17,6 +17,7 @@ from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
 from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.gemma_original_article_batch_cli import evidence_passages
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
+from tris_market_event_intelligence.rule_critic import critique_and_revise
 from tris_market_event_intelligence.self_reflection import (
     SYSTEM,
     reflection_schema,
@@ -146,6 +147,7 @@ def run(
                 new_count += 1
             except (ValueError, KeyError, TypeError, IndexError, httpx.HTTPError) as exc:
                 failures.append({"articleId": row["articleId"], "error": str(exc)[:300]})
+    reviews = []
     rules = []
     rule_status = "NO_CANDIDATE"
     try:
@@ -162,13 +164,24 @@ def run(
         if not path.exists():
             with path.open("x", encoding="utf-8") as stream:
                 json.dump(rule, stream, ensure_ascii=False, indent=2)
+    for rule in rules:
+        try:
+            review = critique_and_revise(client, model, rule, records)
+            review_path = output / (digest(review) + ".review.json")
+            if not review_path.exists():
+                with review_path.open("x", encoding="utf-8") as stream:
+                    json.dump(review, stream, ensure_ascii=False, indent=2)
+            reviews.append(review)
+        except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+            failures.append({"stage": "rule_critique", "error": str(exc)[:300]})
     return {
         "status": "PARTIAL" if failures else "COMPLETED",
         "historicalScorableRows": len(rows), "experiences": len(records),
         "newExperiences": new_count, "reusedExperiences": reused_count,
         "distinctExperienceArticles": len({r["outcome"]["articleId"] for r in records}),
         "ruleGenerationStatus": rule_status,
-        "rules": rules, "failures": failures, "historicalResearchOnly": True,
+        "rules": rules, "ruleReviews": reviews,
+        "failures": failures, "historicalResearchOnly": True,
         "prospectivePredictionAccuracy": None, "promotionAllowed": False,
     }
 
