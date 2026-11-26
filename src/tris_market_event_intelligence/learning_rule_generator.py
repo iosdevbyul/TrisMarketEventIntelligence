@@ -17,7 +17,7 @@ forecasts. Cite distinct supporting experiences and identify counterexamples.
 The rule must specify observable conditions available before a new prediction,
 an analysis action, and when the rule should not apply. Do not use realized
 returns, article IDs, future facts, or outcome labels as application conditions.
-Do not invent evidence. If there is no defensible candidate, return no rules.
+Prior descriptive evaluation is not causal evidence; use it to reconsider the\nprevious research strategy, not as a proven explanation.\nDo not invent evidence. If there is no defensible candidate, return no rules.
 Return JSON only. Rules are experiments, never approved trading instructions."""
 
 FIELDS = (
@@ -122,7 +122,7 @@ def validate_rules(answer: dict, experiences: list[dict], cutoff: str) -> list[d
 
 def generate_rules(
     client: httpx.Client, model: str, records: list[dict], *,
-    cutoff: str, limit: int = 12,
+    cutoff: str, limit: int = 12, prior_evaluation: dict | None = None,
 ) -> list[dict]:
     if not MODEL_PATTERN.fullmatch(model) or not 2 <= limit <= 12:
         raise ValueError("Invalid model or experience limit")
@@ -152,7 +152,10 @@ def generate_rules(
         "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 1536},
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": json.dumps(evidence, ensure_ascii=False)},
+            {"role": "user", "content": json.dumps({
+                "experiences": evidence,
+                "priorDescriptiveEvaluation": prior_evaluation,
+            }, ensure_ascii=False)},
         ],
     })
     response.raise_for_status()
