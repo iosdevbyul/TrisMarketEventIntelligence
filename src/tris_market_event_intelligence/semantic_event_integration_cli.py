@@ -19,7 +19,12 @@ from tris_market_event_intelligence.llm_runtime import (
     LLMSettings,
 )
 from tris_market_event_intelligence.news_content_quality import classify
-from tris_market_event_intelligence.unified_event_integration_cli import clock, digest, encode, readonly
+from tris_market_event_intelligence.unified_event_integration_cli import (
+    clock,
+    digest,
+    encode,
+    readonly,
+)
 
 VERSION = "semantic_event_v1"
 RELATIONS = ("SAME_EVENT", "REPRINT", "FOLLOW_UP", "CORRECTION", "UNRELATED", "UNCERTAIN")
@@ -54,7 +59,7 @@ STOP = {"that", "this", "with", "from", "have", "said", "will", "their", "about"
 
 
 def hints(text):
-    return {key for key, pattern in ALIASES.items() if re.search(pattern, text, re.I)}
+    return {key for key, pattern in ALIASES.items() if re.search(pattern, text, re.IGNORECASE)}
 
 
 def tokens(text):
