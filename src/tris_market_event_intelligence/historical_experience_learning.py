@@ -17,7 +17,11 @@ from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
 from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.gemma_original_article_batch_cli import evidence_passages
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
-from tris_market_event_intelligence.self_reflection import SCHEMA, SYSTEM, validate_reflection
+from tris_market_event_intelligence.self_reflection import (
+    SYSTEM,
+    reflection_schema,
+    validate_reflection,
+)
 
 
 def historical_rows(report: dict) -> list[dict]:
@@ -108,7 +112,7 @@ def run(
                     continue
                 passages = evidence_passages(body)
                 response = client.post("http://127.0.0.1:11434/api/chat", json={
-                    "model": model, "stream": False, "think": False, "format": SCHEMA,
+                    "model": model, "stream": False, "think": False, "format": reflection_schema(passages),
                     "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 1024},
                     "messages": [
                         {"role": "system", "content": SYSTEM + (
