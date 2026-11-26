@@ -17,6 +17,12 @@ from tris_market_event_intelligence.automatic_gemma_market_outcomes_cli import (
 from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.gemma_original_article_batch_cli import evidence_passages
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
+from tris_market_event_intelligence.research_strategy import (
+    choose_strategy,
+    coverage_diagnostics,
+    fingerprint,
+    rejected_history,
+)
 from tris_market_event_intelligence.rule_critic import critique_and_revise
 from tris_market_event_intelligence.self_reflection import (
     SYSTEM,
@@ -149,37 +155,70 @@ def run(
                 failures.append({"articleId": row["articleId"], "error": str(exc)[:300]})
     reviews = []
     rules = []
+    history = rejected_history(output)
+    strategy = choose_strategy(history, records)
     rule_status = "NO_CANDIDATE"
-    try:
-        rules = generate_rules(
-            client, model, records, cutoff=datetime.now(UTC).isoformat(), historical=True,
-        )
-        if rules:
-            rule_status = "CANDIDATE_GENERATED"
-    except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
-        rule_status = "REJECTED_OR_FAILED"
-        failures.append({"stage": "rule_generation", "error": str(exc)[:300]})
-    for rule in rules:
-        path = output / (rule["ruleId"] + ".rule.json")
-        if not path.exists():
-            with path.open("x", encoding="utf-8") as stream:
-                json.dump(rule, stream, ensure_ascii=False, indent=2)
-    for rule in rules:
-        try:
-            review = critique_and_revise(client, model, rule, records)
-            review_path = output / (digest(review) + ".review.json")
-            if not review_path.exists():
-                with review_path.open("x", encoding="utf-8") as stream:
-                    json.dump(review, stream, ensure_ascii=False, indent=2)
-            reviews.append(review)
-        except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
-            failures.append({"stage": "rule_critique", "error": str(exc)[:300]})
+    attempts = []
+    diagnostics = coverage_diagnostics(report, rows)
+    # A rejected hypothesis is feedback, not evidence of the opposite direction.
+    if strategy != "ACQUIRE_MORE_EXPERIENCES":
+        for _attempt in range(2):
+            try:
+                proposed = generate_rules(
+                    client, model, records, cutoff=datetime.now(UTC).isoformat(),
+                    historical=True,
+                    prior_evaluation={
+                        "strategy": strategy,
+                        "rejectedHypotheses": history[-3:],
+                        "instruction": (
+                            "Explore a different testable mechanism from the source evidence. "
+                            "Do not repeat rejected conditions or outcome-based exceptions. "
+                            "Return no rules when evidence is insufficient."
+                        ),
+                    },
+                )
+                if not proposed:
+                    attempts.append({"status": "NO_DEFENSIBLE_CANDIDATE"})
+                    break
+                rule = proposed[0]
+                key = fingerprint(rule)
+                if any(item["fingerprint"] == key for item in history):
+                    attempts.append({
+                        "status": "REPEATED_REJECTED_HYPOTHESIS", "ruleId": rule["ruleId"],
+                    })
+                    continue
+                path = output / (rule["ruleId"] + ".rule.json")
+                if not path.exists():
+                    with path.open("x", encoding="utf-8") as stream:
+                        json.dump(rule, stream, ensure_ascii=False, indent=2)
+                rules.append(rule)
+                review = critique_and_revise(client, model, rule, records)
+                review_path = output / (digest(review) + ".review.json")
+                if not review_path.exists():
+                    with review_path.open("x", encoding="utf-8") as stream:
+                        json.dump(review, stream, ensure_ascii=False, indent=2)
+                reviews.append(review)
+                if review["candidateForFurtherResearch"] is not None:
+                    rule_status = "REVIEWED_RESEARCH_CANDIDATE"
+                    attempts.append({"status": rule_status, "ruleId": rule["ruleId"]})
+                    break
+                attempts.append({"status": "REJECTED_AFTER_REVIEW", "ruleId": rule["ruleId"]})
+                history = rejected_history(output)
+                strategy = "EXPLORE_ALTERNATIVE_HYPOTHESIS"
+            except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
+                failures.append({"stage": "research_attempt", "error": str(exc)[:300]})
+                attempts.append({"status": "FAILED_VALIDATION"})
+    if rule_status != "REVIEWED_RESEARCH_CANDIDATE":
+        rule_status = "NEEDS_MORE_EVIDENCE_OR_NEW_HYPOTHESIS"
+
     return {
         "status": "PARTIAL" if failures else "COMPLETED",
         "historicalScorableRows": len(rows), "experiences": len(records),
         "newExperiences": new_count, "reusedExperiences": reused_count,
         "distinctExperienceArticles": len({r["outcome"]["articleId"] for r in records}),
         "ruleGenerationStatus": rule_status,
+        "researchStrategy": strategy, "researchAttempts": attempts,
+        "rejectedHypothesesRemembered": len(history), "coverageDiagnostics": diagnostics,
         "rules": rules, "ruleReviews": reviews,
         "failures": failures, "historicalResearchOnly": True,
         "prospectivePredictionAccuracy": None, "promotionAllowed": False,
