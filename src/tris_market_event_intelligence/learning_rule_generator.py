@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import httpx
@@ -126,6 +127,28 @@ def validate_rules(answer: dict, experiences: list[dict], cutoff: str) -> list[d
     return output
 
 
+def validate_aliased_rules(
+    answer: dict, aliases: dict[str, str], experiences: list[dict], cutoff: str,
+) -> list[dict]:
+    """Resolve only exact request-local aliases; never guess a citation."""
+    if not isinstance(answer, dict) or set(answer) != {"rules"}:
+        raise ValueError("Invalid rule envelope")
+    if not isinstance(answer["rules"], list):
+        raise ValueError("Invalid rule list")
+    resolved = deepcopy(answer)
+    for rule in resolved["rules"]:
+        if not isinstance(rule, dict) or set(rule) != set(FIELDS):
+            raise ValueError("Invalid rule fields")
+        for field in FIELDS[4:]:
+            ids = rule[field]
+            if not isinstance(ids, list) or any(
+                not isinstance(i, str) or i not in aliases for i in ids
+            ):
+                raise ValueError("Invalid experience alias")
+            rule[field] = [aliases[i] for i in ids]
+    return validate_rules(resolved, experiences, cutoff)
+
+
 def generate_rules(
     client: httpx.Client, model: str, records: list[dict], *,
     cutoff: str, limit: int = 12, prior_evaluation: dict | None = None,
@@ -146,8 +169,13 @@ def generate_rules(
         return []
     if len({x["outcome"]["articleId"] for x in selected}) < 3:
         return []
+    aliases = {f"R{i}": x["id"] for i, x in enumerate(selected, 1)}
+    schema = deepcopy(SCHEMA)
+    fields = schema["properties"]["rules"]["items"]["properties"]
+    for field in FIELDS[4:]:
+        fields[field]["items"]["enum"] = list(aliases)
     evidence = [{
-        "id": x["id"],
+        "id": alias,
         "articleId": x["outcome"]["articleId"],
         "target": x["outcome"]["target"],
         "direction": x["outcome"]["direction"],
@@ -162,9 +190,9 @@ def generate_rules(
             k: str(x["reflection"].get(k, ""))[:400]
             for k in ("category", "hypothesis", "missing_evidence", "falsification")
         },
-    } for x in selected]
+    } for alias, x in zip(aliases, selected, strict=True)]
     response = client.post("http://127.0.0.1:11434/api/chat", json={
-        "model": model, "stream": False, "think": False, "format": SCHEMA,
+        "model": model, "stream": False, "think": False, "format": schema,
         "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 1536},
         "messages": [
             {"role": "system", "content": SYSTEM},
@@ -178,7 +206,8 @@ def generate_rules(
     result = response.json()
     if result.get("done_reason") == "length":
         raise ValueError("Truncated rule generation")
-    rules = validate_rules(json.loads(result["message"]["content"]), selected, cutoff)
+    answer = json.loads(result["message"]["content"])
+    rules = validate_aliased_rules(answer, aliases, selected, cutoff)
     if historical:
         for rule in rules:
             rule.pop("ruleId")
