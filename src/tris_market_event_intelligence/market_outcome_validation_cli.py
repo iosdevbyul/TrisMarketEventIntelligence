@@ -21,7 +21,6 @@ from tris_market_event_intelligence.operational_news_price_bridge_cli import (
     ADMISSION_BLOCKERS,
     _stored_articles,
 )
-
 from tris_market_event_intelligence.semantic_market_targets import block_equity
 
 DIRECTIONS = {"UP", "DOWN", "NEUTRAL", "UNCERTAIN"}

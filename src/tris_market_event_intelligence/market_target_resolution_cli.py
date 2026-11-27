@@ -188,6 +188,7 @@ def run(
             ):
                 continue
             merged[symbol] = group
+        collection["retainedPreviousSymbols"] = sorted(set(collection["missingSymbols"]) & set(old))
     expanded = output / "expanded-adjusted-daily.csv"
     write_csv(expanded, FIELDS, [
         row for symbol in sorted(merged) for row in merged[symbol]
@@ -197,7 +198,8 @@ def run(
         price_source="Observed Yahoo adjusted daily whole-symbol series",
     )
     result = {
-        "status": "COMPLETED", "resolution": resolution, "collection": collection,
+        "status": "PARTIAL" if collection and collection["missingSymbols"] else "COMPLETED",
+        "resolution": resolution, "collection": collection,
         "instrumentMaster": ({
             "observedAt": master["observedAt"], "sources": master["sources"],
             "failures": master["failures"], "instrumentCount": len(master["instruments"]),
