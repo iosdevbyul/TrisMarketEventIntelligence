@@ -26,6 +26,7 @@ from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.gemma_original_article_batch_cli import evidence_passages
 from tris_market_event_intelligence.market_outcome_validation_cli import ZONES, _direction, _prices
 from tris_market_event_intelligence.market_target_resolution_cli import ALIASES, normalize
+from tris_market_event_intelligence.meaning_first_resolution import classify, match_entities, substantive
 from tris_market_event_intelligence.semantic_market_targets import INDEXES, SECTORS, typed_mapping
 
 SYSTEM = """Identify the exact economic target of the ORIGINAL forecast, not a new forecast.
@@ -209,9 +210,8 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
                 continue
             if item["status"] not in {"UNMAPPED", "AMBIGUOUS_TARGET_SEMANTICS"}:
                 continue
-            options = candidates(item["target"], item["title"], item["reason"], master)
-            if not options:
-                counts["NO_CANDIDATES"] += 1
+            if item["prediction"] == "UNCERTAIN":
+                counts["ORIGINAL_FORECAST_ABSTAINED"] += 1
                 continue
             source = db.execute(
                 "SELECT body, body_sha256 FROM article_full_text WHERE article_id=? "
@@ -226,13 +226,18 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
             packet = {
                 "target": item["target"], "title": item["title"],
                 "direction": item["prediction"], "originalRationale": item["reason"],
-                "originalEvidence": item["evidence"], "sourcePassages": evidence_passages(source[0]),
+                "originalEvidence": item["evidence"], "sourcePassages": [
+                    p for p in evidence_passages(source[0]) if substantive(p["text"])
+                ],
             }
+            if not packet["sourcePassages"]:
+                counts["NO_SUBSTANTIVE_PASSAGES"] += 1
+                continue
             identity = {
                 "articleId": item["articleId"], "impactIndex": item["impactIndex"],
                 "bodySha256": source[1], "predictionSourceSha256": item["predictionSourceSha256"],
                 "model": args.model, "masterSha256": master_hash, "packet": packet,
-                "options": options, "resolverVersion": 1,
+                "resolverVersion": 2,
             }
             key = digest(identity)
             path = args.output_dir / (key + ".resolution.json")
@@ -251,17 +256,22 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
                         counts["DEFERRED"] += 1
                         continue
                     attempted += 1
-                    choices = resolve(client, args.model, packet, options)
+                    classification = classify(client, args.model, packet)
+                    choices = match_entities(classification, packet, master)
                     record = {
                         "id": key, "identity": identity, "articleId": item["articleId"],
                         "impactIndex": item["impactIndex"], "target": item["target"],
                         "direction": item["prediction"], "publishedAt": item["publishedAt"],
-                        "choices": choices, "historicalResearchOnly": True,
+                        "choices": choices, "classification": classification,
+                        "historicalResearchOnly": True,
                     }
                     record["recordSha256"] = digest(record)
                     with path.open("x", encoding="utf-8") as stream:
                         json.dump(record, stream, ensure_ascii=False, indent=2)
                 decisions.append(record)
+                counts["KIND_" + record["classification"]["kind"]] += 1
+                if not record["choices"] and record["classification"]["entities"]:
+                    counts["IDENTITY_NOT_VERIFIED"] += 1
                 counts["RESOLVED" if record["choices"] else "ABSTAINED"] += 1
                 if len(record["choices"]) > 1:
                     counts["MULTI_TARGET"] += 1
