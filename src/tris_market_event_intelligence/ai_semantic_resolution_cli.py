@@ -26,7 +26,11 @@ from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.gemma_original_article_batch_cli import evidence_passages
 from tris_market_event_intelligence.market_outcome_validation_cli import ZONES, _direction, _prices
 from tris_market_event_intelligence.market_target_resolution_cli import ALIASES, normalize
-from tris_market_event_intelligence.meaning_first_resolution import classify, match_entities, substantive
+from tris_market_event_intelligence.meaning_first_resolution import (
+    classify,
+    match_entities,
+    substantive,
+)
 from tris_market_event_intelligence.semantic_market_targets import INDEXES, SECTORS, typed_mapping
 
 SYSTEM = """Identify the exact economic target of the ORIGINAL forecast, not a new forecast.
