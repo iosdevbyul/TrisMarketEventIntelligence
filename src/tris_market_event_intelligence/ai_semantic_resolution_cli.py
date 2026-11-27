@@ -168,7 +168,12 @@ def score_choices(decisions: list[dict], prices: Path) -> list[dict]:
                     "UNAVAILABLE" if actual is None else "ABSTAINED" if predicted == "UNCERTAIN"
                     else "CORRECT" if actual == predicted else "INCORRECT"
                 )
+                relative_verdict = (
+                    "UNAVAILABLE" if relative is None else "ABSTAINED" if predicted == "UNCERTAIN"
+                    else "CORRECT" if relative == predicted else "INCORRECT"
+                )
                 rows.append({
+                    "relativeVerdict": relative_verdict,
                     "decisionId": decision["id"], "articleId": decision["articleId"],
                     "impactIndex": decision["impactIndex"], "target": decision["target"],
                     "symbol": choice["symbol"], "mappingKind": choice["mappingKind"],
@@ -186,8 +191,9 @@ def score_choices(decisions: list[dict], prices: Path) -> list[dict]:
 def run(args: argparse.Namespace, client: httpx.Client) -> dict:
     if not 1 <= args.limit <= 100:
         raise ValueError("Resolution limit must be 1..100")
-    master = json.loads(args.master.read_text(encoding="utf-8"))
-    master_hash = hashlib.sha256(args.master.read_bytes()).hexdigest()
+    master_raw = args.master.read_bytes()
+    master = json.loads(master_raw)
+    master_hash = hashlib.sha256(master_raw).hexdigest()
     report = evaluate_automatic_outcomes(
         args.db, args.mappings, args.prices, model=args.model, full_scan=True,
         price_source="Existing observed adjusted daily prices",
@@ -235,6 +241,10 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
                     record = json.loads(path.read_text(encoding="utf-8"))
                     if record["id"] != key or record["identity"] != identity:
                         raise ValueError("Cached resolution identity mismatch")
+                    if record.get("recordSha256") != digest({
+                        k: v for k, v in record.items() if k != "recordSha256"
+                    }):
+                        raise ValueError("Cached resolution digest mismatch")
                     counts["REUSED"] += 1
                 else:
                     if attempted >= args.limit:
@@ -248,6 +258,7 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
                         "direction": item["prediction"], "publishedAt": item["publishedAt"],
                         "choices": choices, "historicalResearchOnly": True,
                     }
+                    record["recordSha256"] = digest(record)
                     with path.open("x", encoding="utf-8") as stream:
                         json.dump(record, stream, ensure_ascii=False, indent=2)
                 decisions.append(record)
@@ -262,6 +273,7 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
         "status": "PARTIAL" if failures else "COMPLETED", "counts": dict(counts),
         "attempted": attempted, "failures": failures, "decisions": decisions,
         "marketRows": rows, "marketStatusCounts": dict(Counter(r["verdict"] for r in rows)),
+        "relativeMarketStatusCounts": dict(Counter(r["relativeVerdict"] for r in rows)),
         "missingPriceSymbols": sorted({
             r["symbol"] for r in rows if r["dataStatus"] == "NO_ENTRY_SESSION"
         }),
