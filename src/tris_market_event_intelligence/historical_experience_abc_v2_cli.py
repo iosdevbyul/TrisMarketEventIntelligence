@@ -186,7 +186,14 @@ def generate_rule_v2(client: httpx.Client, model: str, experiences: list[dict],
     unique: dict[int, dict] = {}
     for item in sorted_rows:
         unique.setdefault(item["outcome"]["articleId"], item)
-    selected = list(unique.values())[:12]
+    groups = {
+        verdict: [x for x in unique.values() if x["outcome"]["verdict"] == verdict]
+        for verdict in ("CORRECT", "INCORRECT")
+    }
+    selected = [
+        group[i] for i in range(max(map(len, groups.values()), default=0))
+        for group in groups.values() if i < len(group)
+    ][:12]
     if (len(selected) < 3 or
             {x["outcome"]["verdict"] for x in selected} != {"CORRECT", "INCORRECT"}):
         return [], [{"reason": "INSUFFICIENT_DISTINCT_MIXED_EXPERIENCES"}]
@@ -345,7 +352,26 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
             and len(terms & t) / len(terms | t) >= .65
             for t in train_texts
         )
-    holdout = [r for r in candidates if not overlaps(r)][:args.limit]
+    # Holdout must be later than at least one matured training outcome.
+    # The retrospective creation timestamp is never interpreted as historic availability.
+    earliest_exit = min(
+        (datetime.fromisoformat(x["outcome"]["exitDay"]).date() for x in memories
+         if x["outcome"].get("exitDay")), default=None
+    )
+    holdout = [
+        r for r in candidates if not overlaps(r)
+        and earliest_exit is not None
+        and _date(r["identity"]["packet"]["publishedAt"]).date() > earliest_exit
+    ][:args.limit]
+    first_holdout = min(
+        (_date(r["identity"]["packet"]["publishedAt"]).date() for r in holdout),
+        default=None,
+    )
+    rule_training = [
+        x for x in memories if first_holdout is not None
+        and x["outcome"].get("exitDay")
+        and datetime.fromisoformat(x["outcome"]["exitDay"]).date() < first_holdout
+    ]
     args.output_dir.mkdir(parents=True, exist_ok=True)
     # Rules are derived ONLY from the provided training memory, never holdout outcomes.
     rule_path = args.output_dir / "candidate-rule-v2.json"
@@ -355,15 +381,15 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
     if rule_path.exists():
         saved = json.loads(rule_path.read_text(encoding="utf-8"))
         rules, rule_errors, review = saved["rules"], saved["errors"], saved["review"]
-        if saved["trainingDigest"] != digest(memories):
+        if saved["trainingDigest"] != digest(rule_training):
             raise ValueError("Rule-training memory changed after research started")
-    elif memories:
+    elif rule_training:
         rules, rule_errors = generate_rule_v2(
-            client, args.model, memories, datetime.now(UTC).isoformat())
+            client, args.model, rule_training, datetime.now(UTC).isoformat())
         if rules:
-            review = critique_and_revise(client, args.model, rules[0], memories)
+            review = critique_and_revise(client, args.model, rules[0], rule_training)
         _sealed(rule_path, {"rules": rules, "errors": rule_errors, "review": review,
-                            "trainingDigest": digest(memories)})
+                            "trainingDigest": digest(rule_training)})
     approved_rule = None
     if rules and review and review.get("candidateForFurtherResearch"):
         identifier = review["candidateForFurtherResearch"]
@@ -375,6 +401,7 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
     for item in holdout:
         identity = item["identity"]
         packet = identity["packet"]
+        # Exclude every experience derived from an event that matures after this article.
         related = retrieve(packet, identity["articleId"], identity["bodySha256"], memories)
         path = args.output_dir / (item["id"] + ".abc.json")
         if path.exists():
@@ -391,7 +418,11 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
                 "A": predict(client, args.model, packet),
                 "B": predict(client, args.model, packet, experience=related),
             }
-            if approved_rule and identity["articleId"] not in approved_rule["trainingArticleIds"]:
+            if (approved_rule
+                    and identity["articleId"] not in approved_rule["trainingArticleIds"]
+                    and all(datetime.fromisoformat(x["outcome"]["exitDay"]).date()
+                            < _date(packet["publishedAt"]).date()
+                            for x in rule_training)):
                 arms["C"] = predict(client, args.model, packet, rule=approved_rule)
             artifact = _sealed(path, {
                 "schemaVersion": "historical_experience_abc_v2",
@@ -409,7 +440,7 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
     evaluation = compare(artifacts, args.prices)
     report = {
         "status": "PARTIAL" if failures else "COMPLETED",
-        "trainingExperiences": len(memories), "holdoutArticles": len(holdout),
+        "trainingExperiences": len(memories), "chronologicallyEligibleRuleExperiences": len(rule_training), "holdoutArticles": len(holdout),
         "evaluatedArticles": len(artifacts), "ruleCandidateCount": len(rules),
         "ruleValidationErrors": rule_errors, "ruleReview": review,
         "comparison": evaluation, "failures": failures,
