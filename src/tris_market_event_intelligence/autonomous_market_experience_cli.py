@@ -5,8 +5,8 @@ import argparse
 import hashlib
 import json
 import sqlite3
-from contextlib import closing
 from bisect import bisect_left, bisect_right
+from contextlib import closing
 from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
