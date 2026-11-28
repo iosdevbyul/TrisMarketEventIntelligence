@@ -35,7 +35,9 @@ def _tables(db: sqlite3.Connection) -> set[str]:
     return {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
-def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
+def inspect_live_news(
+    db_path: Path, *, limit: int = 1000, full_scan: bool = False,
+) -> dict[str, object]:
     """Only inspect real DB facts. Existing production tables are untouched."""
     if not 1 <= limit <= MAX_ARTICLES:
         raise ValueError("Article audit bound must be 1..3000")
@@ -83,6 +85,7 @@ def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
             if has_automatic else
             ", NULL AS model_rows, NULL AS completed_models"
         )
+        db.execute("BEGIN")
         total = db.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
         rows = db.execute(
             "SELECT a.id, a.source, a.url, a.published_at, a.detected_at, "
@@ -90,8 +93,8 @@ def inspect_live_news(db_path: Path, *, limit: int = 1000) -> dict[str, object]:
             + fields +
             " FROM articles a JOIN captures c ON c.id=a.capture_id "
             + fulltext_join + " " + story_join + " " + analysis_join +
-            " ORDER BY a.id LIMIT ?", (limit,),
-        ).fetchall()
+            " ORDER BY a.id LIMIT ?", (-1 if full_scan else limit,),
+        )
         output = []
         family_seen: dict[int, int] = {}
         url_seen: dict[str, int] = {}

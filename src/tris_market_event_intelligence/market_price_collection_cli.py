@@ -31,6 +31,7 @@ def collect_prices(
     })
     observations: dict[tuple[str, str], dict[str, str]] = {}
     missing: list[str] = []
+    rejected: list[dict[str, str]] = []
     for symbol in symbols:
         try:
             # auto_adjust=True means history Close has Yahoo's adjusted-close
@@ -50,21 +51,32 @@ def collect_prices(
         if frame is None or frame.empty or "Close" not in frame:
             missing.append(symbol)
             continue
-        for timestamp, close in frame["Close"].items():
-            day = (timestamp.date() if isinstance(timestamp, datetime) else timestamp).isoformat()
-            if not start.isoformat() <= day < end.isoformat():
-                continue
-            price = float(close)
-            if not isfinite(price) or price <= 0:
-                raise ValueError(f"Invalid adjusted price for {symbol} {day}")
-            key = symbol, day
-            if key in observations:
-                raise ValueError("Duplicate price date returned by data source")
-            observations[key] = {
-                "symbol": symbol, "date": day,
-                "adjusted_close": format(price, ".12g"),
-                "source": "Yahoo Finance via yfinance; daily auto_adjust=True",
-            }
+        series: dict[tuple[str, str], dict[str, str]] = {}
+        day = "unknown"
+        try:
+            for timestamp, close in frame["Close"].items():
+                day = (timestamp.date() if isinstance(timestamp, datetime) else timestamp).isoformat()
+                if not start.isoformat() <= day < end.isoformat():
+                    continue
+                price = float(close)
+                if not isfinite(price) or price <= 0:
+                    raise ValueError("Invalid adjusted price")
+                key = symbol, day
+                if key in series:
+                    raise ValueError("Duplicate price date returned by data source")
+                series[key] = {
+                    "symbol": symbol, "date": day,
+                    "adjusted_close": format(price, ".12g"),
+                    "source": "Yahoo Finance via yfinance; daily auto_adjust=True",
+                }
+        except (ValueError, TypeError, OverflowError, AttributeError) as exc:
+            missing.append(symbol)
+            rejected.append({"symbol": symbol, "date": day, "reason": str(exc)})
+            continue
+        if not series:
+            missing.append(symbol)
+            continue
+        observations.update(series)
     rows = [observations[key] for key in sorted(observations)]
     manifest = {
         "schemaVersion": "market_price_collection_v1",
@@ -75,6 +87,7 @@ def collect_prices(
         "periodEndExclusive": end.isoformat(),
         "requestedSymbols": symbols,
         "missingSymbols": missing,
+        "rejectedSeries": rejected,
         "priceRows": len(rows),
         "researchOnly": True,
         "pointInTimeArchive": False,

@@ -94,3 +94,29 @@ def test_invalid_interval_rejected(tmp_path: Path):
             mapping, start=date(2026, 1, 4), end=date(2026, 1, 1),
             client=FakeClient(),
         )
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), 0.0, -1.0, None])
+def test_invalid_series_is_atomic_and_other_symbols_continue(tmp_path: Path, invalid):
+    class InvalidTicker(FakeTicker):
+        def history(self, **kwargs):
+            if self.symbol == "BNS":
+                return FakeFrame({date(2026, 1, 2): 200.0, date(2026, 1, 3): invalid})
+            return super().history(**kwargs)
+
+    class InvalidClient:
+        def Ticker(self, symbol):
+            return InvalidTicker(symbol)
+
+    mapping = tmp_path / "mapping.csv"
+    with mapping.open("w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["target", "market", "symbol", "benchmark", "verified_at"])
+        writer.writerow(["Bank X", "XNYS", "BNS", "SPY", "2026-11-21T00:00:00+00:00"])
+    rows, manifest = collect_prices(
+        mapping, start=date(2026, 1, 1), end=date(2026, 1, 4),
+        client=InvalidClient(),
+    )
+    assert [row["symbol"] for row in rows] == ["SPY"]
+    assert manifest["missingSymbols"] == ["BNS"]
+    assert manifest["rejectedSeries"][0]["date"] == "2026-01-03"
