@@ -65,7 +65,7 @@ def rule_audit(run_dir: Path) -> dict:
 
 def run(run_dir: Path, seed: Path, prices: Path, output: Path) -> dict:
     prediction, rows = analyze(run_dir, prices)
-    reflection = audit(run_dir, seed, prices)
+    reflection = audit(run_dir, seed, prices, detail=rows)
     rules = rule_audit(run_dir)
     _safe_dir(output, exclude=[run_dir, seed, prices.parent])
     result = {
