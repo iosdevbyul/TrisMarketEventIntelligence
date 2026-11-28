@@ -98,6 +98,13 @@ def score(artifacts: list[dict], prices: Path) -> dict:
                 }],
             })
     outcomes = publication_rows(records, prices)
+    # The legacy evaluator needs a placeholder direction to compute outcomes.
+    # Remove placeholder predictions and verdicts before reporting observations.
+    outcomes = [
+        {k: v for k, v in row.items() if k not in {
+            "direction", "verdict", "relativeVerdict", "reason", "counterargument", "evidence",
+        }} for row in outcomes
+    ]
     lookup = {
         (a["identity"]["articleId"], f["instrument"]["symbol"], arm): f["direction"]
         for a in artifacts for arm, forecasts in a["arms"].items() for f in forecasts
@@ -138,7 +145,14 @@ def score(artifacts: list[dict], prices: Path) -> dict:
                             if population else None for label in LABELS
                         },
                     }
-    return {"metrics": result, "outcomes": outcomes, "forecasts": artifacts}
+    decisions = [
+        {**row, "arm": arm, "prediction": lookup.get(
+            (row["articleId"], row["symbol"], arm), "NOT_SELECTED"
+        )}
+        for row in outcomes for arm in ("A", "D")
+    ]
+    return {"metrics": result, "outcomes": outcomes, "decisions": decisions,
+            "forecasts": artifacts}
 
 
 def run(args: argparse.Namespace, client: httpx.Client) -> dict:
