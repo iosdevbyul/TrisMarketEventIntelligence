@@ -1,6 +1,9 @@
+from datetime import date
+
 import pytest
 
 from tris_market_event_intelligence.autonomous_market_experience_cli import (
+    covered_instruments,
     dated_articles,
     eligible_memory,
     read_sealed,
@@ -41,3 +44,15 @@ def test_dated_articles_reject_invalid_timestamps_before_sorting():
         {**valid, "detectedAt": "2024-12-31T11:00:00+00:00"},
     ]
     assert dated_articles([later, *invalid, valid]) == [valid, later]
+
+
+def test_coverage_requires_both_symbol_and_benchmark_full_windows():
+    instrument = {"market": "XNYS", "symbol": "ABC", "benchmark": "SPY"}
+    packet = {"publishedAt": "2025-01-06T15:00:00+00:00",
+              "instruments": [instrument]}
+    days = [date(2025, 1, d) for d in (3, 7, 8, 9, 10, 13)]
+    assert covered_instruments(packet, {"ABC": days, "SPY": days}) == [instrument]
+    assert covered_instruments(packet, {"ABC": days[:-1], "SPY": days}) == []
+    assert covered_instruments(packet, {"ABC": days, "SPY": days[:-1]}) == []
+    assert covered_instruments(packet, {"ABC": days[1:], "SPY": days}) == []
+    assert covered_instruments(packet, {"ABC": days}) == []
