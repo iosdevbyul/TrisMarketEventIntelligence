@@ -75,8 +75,11 @@ def paired_effect(rows: list[dict]) -> dict:
     return result
 
 
-def audit(run_dir: Path, seed_dir: Path, prices: Path) -> dict:
-    _, detail = analyze(run_dir, prices)
+def audit(
+    run_dir: Path, seed_dir: Path, prices: Path, *, detail: list[dict] | None = None,
+) -> dict:
+    if detail is None:
+        _, detail = analyze(run_dir, prices)
     cohort = read_sealed(run_dir / "cohort.json")
     report = read_sealed(run_dir / "report.json")
     seed = load_experiences(seed_dir)
