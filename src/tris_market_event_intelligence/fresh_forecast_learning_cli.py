@@ -72,12 +72,13 @@ def publication_rows(records: list[dict], prices: Path) -> list[dict]:
             for horizon in (1, 5):
                 exit_day = future[horizon - 1] if len(future) >= horizon else None
                 sr = mr = None
-                if entry is not None and exit_day is not None:
-                    # Avoid spanning stale data or suspended instruments silently.
-                    if (day - entry).days <= 7 and (exit_day - day).days <= horizon * 3 + 4:
-                        sr = stock[exit_day] / stock[entry] - 1
-                        if entry in market and exit_day in market:
-                            mr = market[exit_day] / market[entry] - 1
+                # Avoid spanning stale data or suspended instruments silently.
+                if (entry is not None and exit_day is not None
+                        and (day - entry).days <= 7
+                        and (exit_day - day).days <= horizon * 3 + 4):
+                    sr = stock[exit_day] / stock[entry] - 1
+                    if entry in market and exit_day in market:
+                        mr = market[exit_day] / market[entry] - 1
                 excess = sr - mr if sr is not None and mr is not None else None
                 actual = _direction(sr) if sr is not None else None
                 relative = _direction(excess) if excess is not None else None
