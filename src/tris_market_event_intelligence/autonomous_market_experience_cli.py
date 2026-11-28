@@ -57,6 +57,22 @@ def eligible_memory(memories: list[dict], packet: dict) -> list[dict]:
     ]
 
 
+def dated_articles(articles: list[dict]) -> list[dict]:
+    """Reject absent, malformed, naive or inconsistent timestamps before sorting."""
+    valid = []
+    for article in articles:
+        published = article.get("publishedAt")
+        detected = article.get("detectedAt")
+        if not isinstance(published, str) or not isinstance(detected, str):
+            continue
+        try:
+            if _date(published) <= _date(detected):
+                valid.append(article)
+        except ValueError:
+            continue
+    return sorted(valid, key=lambda a: (_date(a["publishedAt"]), a["articleId"]))
+
+
 def cohort(args: argparse.Namespace, originals: list[dict], memories: list[dict]) -> list[dict]:
     articles, _ = verified_articles(args.db, 10000)
     mappings = _mappings(args.mappings)
@@ -66,15 +82,11 @@ def cohort(args: argparse.Namespace, originals: list[dict], memories: list[dict]
     hashes.update(x["outcome"]["bodySha256"] for x in memories)
     selected = []
     with closing(sqlite3.connect(args.db.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        for article in sorted(articles, key=lambda a: (
-            _date(a["publishedAt"]), a["articleId"]
-        )):
+        for article in dated_articles(articles):
             if len(selected) >= args.limit:
                 break
             key, body_hash = article["articleId"], article["bodySha256"]
             if key in ids or body_hash in hashes:
-                continue
-            if _date(article["publishedAt"]) > _date(article["detectedAt"]):
                 continue
             if story_overlap(db, key, sorted(ids)):
                 continue
