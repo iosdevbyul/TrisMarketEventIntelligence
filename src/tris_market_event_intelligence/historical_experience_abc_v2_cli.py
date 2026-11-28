@@ -242,7 +242,6 @@ def _sealed(path: Path, payload: dict) -> dict:
 
 def compare(artifacts: list[dict], prices: Path) -> dict:
     """Evaluate all variants on the union of targets, counting every missing call."""
-    from tris_market_event_intelligence.fresh_forecast_learning_cli import publication_rows
     variants = ("A", "B", "C") if any("C" in a["arms"] for a in artifacts) else ("A", "B")
     synthetic = []
     keys = set()
