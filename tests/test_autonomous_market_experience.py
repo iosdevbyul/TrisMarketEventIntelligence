@@ -1,6 +1,7 @@
 import pytest
 
 from tris_market_event_intelligence.autonomous_market_experience_cli import (
+    dated_articles,
     eligible_memory,
     read_sealed,
 )
@@ -25,3 +26,18 @@ def test_checkpoint_rejects_mutation(tmp_path):
     path.write_text('{"value":2}', encoding="utf-8")
     with pytest.raises(ValueError, match="Invalid research checkpoint"):
         read_sealed(path)
+
+
+def test_dated_articles_reject_invalid_timestamps_before_sorting():
+    valid = {"articleId": 1, "publishedAt": "2025-01-01T10:00:00+00:00",
+             "detectedAt": "2025-01-01T11:00:00+00:00"}
+    later = {**valid, "articleId": 2, "publishedAt": "2025-01-01T10:30:00+00:00"}
+    invalid = [
+        {**valid, "publishedAt": None},
+        {**valid, "publishedAt": 1735725600},
+        {**valid, "publishedAt": "invalid"},
+        {**valid, "publishedAt": "2025-01-01"},
+        {**valid, "detectedAt": None},
+        {**valid, "detectedAt": "2024-12-31T11:00:00+00:00"},
+    ]
+    assert dated_articles([later, *invalid, valid]) == [valid, later]
