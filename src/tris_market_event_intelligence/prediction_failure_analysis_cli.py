@@ -105,6 +105,7 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
         raise ValueError("Duplicate cohort article IDs")
     detail = []
     forecast_records = []
+    selection = Counter()
     counts = Counter()
     for identity in identities:
         artifact = read_sealed(run_dir / (digest(identity) + ".abc.json"))
@@ -114,6 +115,10 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
             raise ValueError("Missing A/B predictions")
         if artifact.get("historicalResearchOnly") is not True:
             raise ValueError("Unexpected non-historical artifact")
+        available = {
+            (inst["market"], inst["symbol"])
+            for inst in identity["packet"]["instruments"]
+        }
         for arm in ("A", "B"):
             seen = set()
             for index, forecast in enumerate(artifact["arms"][arm]):
@@ -121,6 +126,8 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
                 key = (instrument["market"], instrument["symbol"])
                 if key in seen:
                     raise ValueError("Duplicate arm/article/instrument prediction")
+                if key not in available:
+                    raise ValueError("Forecast outside sealed article instrument universe")
                 seen.add(key)
                 if forecast["direction"] not in LABELS:
                     raise ValueError("Invalid direction")
@@ -134,6 +141,16 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
                     "comparisonArm": arm,
                     "retrieved": bool(artifact.get("retrievedExperienceIds")),
                 })
+            selection[f"selected_{arm}"] += len(seen)
+            selection[f"missing_{arm}"] += len(available - seen)
+        selection["instrumentArticleUniverse"] += len(available)
+        selection["commonSelected"] += len({
+            (f["instrument"]["market"], f["instrument"]["symbol"])
+            for f in artifact["arms"]["A"]
+        } & {
+            (f["instrument"]["market"], f["instrument"]["symbol"])
+            for f in artifact["arms"]["B"]
+        })
     evaluated = publication_rows(forecast_records, prices)
     if len(evaluated) != len(forecast_records) * 2:
         raise ValueError("Evaluation cardinality mismatch")
@@ -198,6 +215,25 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
                         "pricePolicy": row["policy"],
                         "priceSha256": row["pricesSha256"],
                     })
+    for identity in identities:
+        article_id = identity["articleId"]
+        for instrument in identity["packet"]["instruments"]:
+            market, symbol = instrument["market"], instrument["symbol"]
+            for horizon in HORIZONS:
+                labels = [
+                    lookup[(article_id, arm, symbol, market, horizon)][1]
+                    for arm in ("A", "B")
+                    if (article_id, arm, symbol, market, horizon) in lookup
+                ]
+                if len(labels) == 2 and any(
+                    labels[0][field] != labels[1][field]
+                    for field in (
+                        "actualDirection", "relativeActualDirection",
+                        "stockReturn", "benchmarkReturn", "excessReturn",
+                        "entryDay", "exitDay",
+                    )
+                ):
+                    raise ValueError("A/B price-outcome mismatch for same instrument")
     result = {
         "status": "RETROSPECTIVE_DIAGNOSTIC_ONLY",
         "historicalResearchOnly": True,
@@ -207,6 +243,7 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
         "priceSha256": price_sha,
         "thresholdAbsoluteReturn": NEUTRAL_THRESHOLD,
         "counts": dict(counts),
+        "selection": dict(selection),
         "evaluatedRows": len(detail),
         "definition": {
             "allSelected": "Only emitted forecasts; includes unpaired targets",
