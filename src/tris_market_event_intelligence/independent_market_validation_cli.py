@@ -56,7 +56,7 @@ def improved_predict(client: httpx.Client, model: str, packet: dict) -> list[dic
     error = ""
     for attempt in range(2):
         try:
-            answer = _ask(client, model, SYSTEM + "\n" + POLICY, {
+            answer = _ask(client, model, SYSTEM.replace("UP, DOWN or NEUTRAL", "UP, DOWN, NEUTRAL or UNCERTAIN") + "\n" + POLICY, {
                 **packet, "previousValidationError": error,
             }, schema, seed=20261128 + attempt)
             # Reuse the existing instrument and evidence validator, preserving abstentions.
@@ -143,6 +143,8 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
         raise ValueError("Expected 1..30 independent validation articles")
     if not args.exclude_run:
         raise ValueError("Development runs must be excluded")
+    if not all((p / "cohort.json").is_file() for p in args.exclude_run):
+        raise ValueError("Missing excluded cohort")
     out = args.output_dir.resolve()
     protected = [args.db.parent, args.forecasts, args.experiences, *args.exclude_run]
     if args.output_dir.is_symlink() or any(out == p.resolve() for p in protected):
