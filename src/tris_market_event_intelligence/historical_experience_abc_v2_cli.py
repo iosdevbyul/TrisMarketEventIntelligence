@@ -205,13 +205,24 @@ def generate_rule_v2(client: httpx.Client, model: str, experiences: list[dict],
         return [], [{"reason": "INSUFFICIENT_DISTINCT_MIXED_EXPERIENCES"}]
     aliases = {f"R{i}": x["id"] for i, x in enumerate(selected, 1)}
     schema = json.loads(json.dumps(SCHEMA))
+    fields = schema["properties"]["rules"]["items"]["properties"]
     for field in FIELDS[4:]:
-        schema["properties"]["rules"]["items"]["properties"][field]["items"]["enum"] = list(aliases)
+        fields[field]["items"]["enum"] = list(aliases)
+        fields[field]["uniqueItems"] = True
+        fields[field]["maxItems"] = len(aliases)
+    fields["supporting_ids"]["minItems"] = 2
     evidence = [{
         "id": alias, "articleId": x["outcome"]["articleId"],
         "target": x["outcome"]["target"], "direction": x["outcome"]["direction"],
+        "actualDirection": x["outcome"].get("actualDirection"),
         "verdict": x["outcome"]["verdict"],
-        "reflection": x["reflection"],
+        "originalRationale": str(x["outcome"].get("reason", ""))[:350],
+        "sourceQuote": str(x["outcome"].get("evidence", ""))[:350],
+        "reflection": {
+            field: str(x["reflection"].get(field, ""))[:300]
+            for field in ("category", "hypothesis", "missing_evidence", "falsification")
+        },
+        "semanticSupportVerified": False,
     } for alias, x in zip(aliases, selected, strict=True)]
     errors = []
     for attempt in range(3):
@@ -219,7 +230,9 @@ def generate_rule_v2(client: httpx.Client, model: str, experiences: list[dict],
             answer = _ask(client, model, RULE_SYSTEM, {
                 "experiences": evidence,
                 "previousValidationErrors": errors,
-                "requirement": "Each candidate cites two DIFFERENT articleIds. "
+                "requirement": "Use exact R aliases only, without repeats or overlap. "
+                               "Cite two DIFFERENT articleIds. Distinguish uncertainty "
+                               "from a prediction of small price movement. "
                                "Return empty rules if support is insufficient.",
             }, schema, seed=20261130 + attempt)
             rules = validate_aliased_rules(answer, aliases, selected, cutoff)
