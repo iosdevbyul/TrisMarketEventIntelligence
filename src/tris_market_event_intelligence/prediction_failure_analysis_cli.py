@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from tris_market_event_intelligence.autonomous_market_experience_cli import read_sealed
+from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.fresh_forecast_learning_cli import publication_rows
 from tris_market_event_intelligence.market_outcome_validation_cli import NEUTRAL_THRESHOLD
 
@@ -106,7 +107,6 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
     forecast_records = []
     counts = Counter()
     for identity in identities:
-        from tris_market_event_intelligence.experience_memory import digest
         artifact = read_sealed(run_dir / (digest(identity) + ".abc.json"))
         if artifact["identity"] != identity:
             raise ValueError("Checkpoint cohort identity mismatch")
@@ -151,10 +151,7 @@ def analyze(run_dir: Path, prices: Path) -> tuple[dict, list[dict]]:
             lookup[key] = (source, row)
     for identity in identities:
         article_id = identity["articleId"]
-        artifact = read_sealed(run_dir / (
-            __import__("tris_market_event_intelligence.experience_memory",
-                       fromlist=["digest"]).digest(identity) + ".abc.json"
-        ))
+        artifact = read_sealed(run_dir / (digest(identity) + ".abc.json"))
         instruments = {
             (fc["instrument"]["market"], fc["instrument"]["symbol"]):
             fc["instrument"]
