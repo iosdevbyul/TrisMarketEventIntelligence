@@ -139,9 +139,6 @@ def _ask(client: httpx.Client, model: str, system: str, prompt: dict, schema: di
 
 def predict(client: httpx.Client, model: str, packet: dict, *,
             experience: list[dict] | None = None, rule: dict | None = None) -> list[dict]:
-    from tris_market_event_intelligence.fresh_market_forecast_cli import infer
-    if experience is None and rule is None:
-        return infer(client, model, packet)
     options = packet["instruments"]
     passages = packet["sourcePassages"]
     schema = {
@@ -162,11 +159,10 @@ def predict(client: httpx.Client, model: str, packet: dict, *,
         "reporting or proof of causal direction. Source citations must point to the "
         "CURRENT article only; prior outcomes may guide questions, not dictate labels."
     )
-    context = {"historicalExperiences": experience} if experience is not None else {
-        "unvalidatedResearchRule": {
-            key: rule[key] for key in ("condition", "analysis_action", "exceptions")
-        }
-    }
+    context = ({"historicalExperiences": experience} if experience is not None
+               else {"unvalidatedResearchRule": {
+                   key: rule[key] for key in ("condition", "analysis_action", "exceptions")
+               }} if rule is not None else {})
     error = ""
     for attempt in range(2):
         try:
