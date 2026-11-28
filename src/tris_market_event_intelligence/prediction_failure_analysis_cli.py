@@ -65,7 +65,8 @@ def _matrix(rows: list[dict], *, actual_key: str) -> dict:
 def _summary(rows: list[dict], group_key: str, *, actual_key: str) -> dict:
     groups = defaultdict(list)
     for row in rows:
-        groups[str(row.get(group_key) or "UNKNOWN")].append(row)
+        value = row.get(group_key)
+        groups[str(value if value is not None and value != "" else "UNKNOWN")].append(row)
     return {
         name: {"count": len(group), "correct": sum(
             x["prediction"] == x[actual_key] for x in group
