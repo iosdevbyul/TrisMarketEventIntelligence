@@ -6,8 +6,10 @@ import hashlib
 import json
 import sqlite3
 from contextlib import closing
-from datetime import UTC, datetime
+from bisect import bisect_left, bisect_right
+from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -33,7 +35,7 @@ from tris_market_event_intelligence.historical_experience_abc_v2_cli import (
     predict,
     retrieve,
 )
-from tris_market_event_intelligence.market_outcome_validation_cli import _mappings
+from tris_market_event_intelligence.market_outcome_validation_cli import ZONES, _mappings, _prices
 from tris_market_event_intelligence.meaning_first_resolution import substantive
 from tris_market_event_intelligence.rule_critic import critique_and_revise
 
@@ -73,13 +75,45 @@ def dated_articles(articles: list[dict]) -> list[dict]:
     return sorted(valid, key=lambda a: (_date(a["publishedAt"]), a["articleId"]))
 
 
+def covered_instruments(packet: dict, calendars: dict[str, list[date]]) -> list[dict]:
+    """Only calendar availability enters selection, never prices or return labels."""
+    published = _date(packet["publishedAt"])
+    covered = []
+    for instrument in packet["instruments"]:
+        day = published.astimezone(ZoneInfo(ZONES[instrument["market"]])).date()
+        stock = calendars.get(instrument["symbol"], [])
+        market = calendars.get(instrument["benchmark"], [])
+        left, right = bisect_left(stock, day), bisect_right(stock, day)
+        if not left or right + 4 >= len(stock):
+            continue
+        entry, first, fifth = stock[left - 1], stock[right], stock[right + 4]
+        if (day - entry).days > 7 or (first - day).days > 7 or (fifth - day).days > 19:
+            continue
+        if any(bisect_left(market, d) == len(market)
+               or market[bisect_left(market, d)] != d for d in (entry, first, fifth)):
+            continue
+        covered.append(instrument)
+    return covered
+
+
 def cohort(args: argparse.Namespace, originals: list[dict], memories: list[dict]) -> list[dict]:
     articles, _ = verified_articles(args.db, 10000)
     mappings = _mappings(args.mappings)
+    calendars: dict[str, list[date]] = {}
+    for bar in _prices(args.prices):
+        calendars.setdefault(bar.symbol, []).append(bar.day)
+    for days in calendars.values():
+        days.sort()
+        if len(set(days)) != len(days):
+            raise ValueError("Duplicate price date")
     ids = {r["identity"]["articleId"] for r in originals}
     ids.update(x["outcome"]["articleId"] for x in memories)
     hashes = {r["identity"]["bodySha256"] for r in originals}
     hashes.update(x["outcome"]["bodySha256"] for x in memories)
+    for previous in args.exclude_run:
+        for identity in read_sealed(previous / "cohort.json")["identities"]:
+            ids.add(identity["articleId"])
+            hashes.add(identity["bodySha256"])
     selected = []
     with closing(sqlite3.connect(args.db.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         for article in dated_articles(articles):
@@ -87,8 +121,6 @@ def cohort(args: argparse.Namespace, originals: list[dict], memories: list[dict]
                 break
             key, body_hash = article["articleId"], article["bodySha256"]
             if key in ids or body_hash in hashes:
-                continue
-            if story_overlap(db, key, sorted(ids)):
                 continue
             passages = [
                 p for p in evidence_passages(article["body"]) if substantive(p["text"])
@@ -100,6 +132,9 @@ def cohort(args: argparse.Namespace, originals: list[dict], memories: list[dict]
                 "sourcePassages": passages, "instruments": universe(article, mappings),
                 "bodyTruncated": len(article["body"]) > 12000,
             }
+            packet["instruments"] = covered_instruments(packet, calendars)
+            if not packet["instruments"] or story_overlap(db, key, sorted(ids)):
+                continue
             selected.append({
                 "articleId": key, "bodySha256": body_hash, "model": args.model,
                 "packet": packet, "version": 1,
@@ -121,7 +156,8 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
     originals = load_forecasts(args.forecasts)
     seed = load_experiences(args.experiences)
     config = {
-        "model": args.model, "limit": args.limit,
+        "model": args.model, "limit": args.limit, "coveragePolicy": "calendar-only-v2",
+        "excludedRuns": [digest(read_sealed(p / "cohort.json")) for p in args.exclude_run],
         "pricesSha256": hashlib.sha256(args.prices.read_bytes()).hexdigest(),
         "mappingsSha256": hashlib.sha256(args.mappings.read_bytes()).hexdigest(),
         "seedDigest": digest(seed), "originalDigest": digest(originals),
@@ -136,6 +172,16 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
             "config": config, "identities": cohort(args, originals, seed),
             "historicalResearchOnly": True,
         })
+    print(json.dumps({
+        "event": "COVERAGE_PREFLIGHT", "requested": args.limit,
+        "eligibleArticles": len(plan["identities"]),
+        "eligibleInstrumentOptions": sum(
+            len(x["packet"]["instruments"]) for x in plan["identities"]
+        ),
+    }), flush=True)
+    if args.preflight or not plan["identities"]:
+        return {"status": "PREFLIGHT_ONLY" if plan["identities"] else "NO_PRICE_COVERAGE",
+                "eligibleArticles": len(plan["identities"]), "promotionAllowed": False}
     memories = list(seed)
     artifacts = []
     rule = None
@@ -182,8 +228,10 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
         else:
             arms = {
                 "A": predict(client, args.model, packet),
-                "B": predict(client, args.model, packet, experience=related),
+                "B": predict(client, args.model, packet, experience=related) if related else [],
             }
+            if not related:
+                arms["B"] = arms["A"]
             if rule:
                 arms["C"] = predict(client, args.model, packet, rule=rule)
             artifact = _sealed(path, {
@@ -218,7 +266,7 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
         print(json.dumps({
             "event": "ARTICLE_COMPLETED", "index": index + 1,
             "articleId": identity["articleId"], "memoryCount": len(memories),
-            "retrieved": len(related), "ruleApplied": bool(rule),
+            "retrieved": len(related), "eligibleMemory": len(past), "ruleApplied": bool(rule),
         }), flush=True)
     # C is compared only within its actual active cohort, never penalized for absence.
     paired = [{**a, "arms": {k: v for k, v in a["arms"].items() if k != "C"}}
@@ -259,6 +307,8 @@ def main() -> None:
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--exclude-run", type=Path, action="append", default=[])
+    parser.add_argument("--preflight", action="store_true")
     with httpx.Client(timeout=180) as client:
         print(json.dumps(run(parser.parse_args(), client), ensure_ascii=False, indent=2))
 
