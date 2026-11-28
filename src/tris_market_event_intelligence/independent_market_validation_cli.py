@@ -12,7 +12,10 @@ import httpx
 
 from tris_market_event_intelligence.autonomous_market_experience_cli import cohort, read_sealed
 from tris_market_event_intelligence.experience_memory import digest
-from tris_market_event_intelligence.fresh_forecast_learning_cli import load_forecasts, publication_rows
+from tris_market_event_intelligence.fresh_forecast_learning_cli import (
+    load_forecasts,
+    publication_rows,
+)
 from tris_market_event_intelligence.fresh_market_forecast_cli import SYSTEM, validate
 from tris_market_event_intelligence.gemma_original_article_batch_cli import MODEL_PATTERN
 from tris_market_event_intelligence.historical_experience_abc_v2_cli import (
@@ -135,7 +138,7 @@ def score(artifacts: list[dict], prices: Path) -> dict:
                             if population else None for label in LABELS
                         },
                     }
-    return {"metrics": result, "outcomes": outcomes}
+    return {"metrics": result, "outcomes": outcomes, "forecasts": artifacts}
 
 
 def run(args: argparse.Namespace, client: httpx.Client) -> dict:
@@ -174,7 +177,8 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
             "historicalResearchOnly": True,
         })
     if args.preflight or not plan["identities"]:
-        return {"status": "PREFLIGHT_ONLY", "articles": len(plan["identities"])}
+        return {"status": "PREFLIGHT_ONLY" if args.preflight else "NO_ELIGIBLE_ARTICLES",
+                "articles": len(plan["identities"])}
     artifacts = []
     for identity in plan["identities"]:
         path = out / (digest(identity) + ".validation.json")
