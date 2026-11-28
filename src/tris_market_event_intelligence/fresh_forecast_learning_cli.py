@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter
 from datetime import UTC, datetime
@@ -11,7 +12,6 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from tris_market_event_intelligence.experience_memory import digest
-from tris_market_event_intelligence.fresh_market_forecast_cli import infer
 from tris_market_event_intelligence.learning_rule_generator import generate_rules
 from tris_market_event_intelligence.market_outcome_validation_cli import ZONES, _direction, _prices
 from tris_market_event_intelligence.rule_critic import critique_and_revise
@@ -44,6 +44,7 @@ def load_forecasts(directory: Path) -> list[dict]:
 
 
 def publication_rows(records: list[dict], prices: Path) -> list[dict]:
+    price_hash = hashlib.sha256(prices.read_bytes()).hexdigest()
     series = {}
     for bar in _prices(prices):
         by_day = series.setdefault(bar.symbol, {})
@@ -73,7 +74,7 @@ def publication_rows(records: list[dict], prices: Path) -> list[dict]:
                 sr = mr = None
                 if entry is not None and exit_day is not None:
                     # Avoid spanning stale data or suspended instruments silently.
-                    if (day - entry).days <= 7:
+                    if (day - entry).days <= 7 and (exit_day - day).days <= horizon * 3 + 4:
                         sr = stock[exit_day] / stock[entry] - 1
                         if entry in market and exit_day in market:
                             mr = market[exit_day] / market[entry] - 1
@@ -95,7 +96,8 @@ def publication_rows(records: list[dict], prices: Path) -> list[dict]:
                     "exitDay": exit_day.isoformat() if exit_day else None,
                     "stockReturn": sr, "benchmarkReturn": mr, "excessReturn": excess,
                     "publishedAt": packet["publishedAt"], "processedAt": record["generatedAt"],
-                    "policy": POLICY, "status": "RETROSPECTIVE_UNSEALED_OBSERVATION",
+                    "policy": POLICY, "pricesSha256": price_hash,
+                    "status": "RETROSPECTIVE_UNSEALED_OBSERVATION",
                     "reason": forecast["mechanism"], "counterargument": forecast["counterargument"],
                     "evidence": forecast["evidenceQuote"],
                 })
@@ -201,6 +203,9 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
         rules = generate_rules(client, args.model, experiences,
                                cutoff=datetime.now(UTC).isoformat(), historical=True)
         if rules:
+            rule_path = args.output_dir / (rules[0]["ruleId"] + ".rule.json")
+            if not rule_path.exists():
+                store(rule_path, rules[0])
             review = critique_and_revise(client, args.model, rules[0], experiences)
             path = args.output_dir / (digest(review) + ".review.json")
             if not path.exists():
