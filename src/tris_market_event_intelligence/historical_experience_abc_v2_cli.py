@@ -18,14 +18,21 @@ import httpx
 
 from tris_market_event_intelligence.experience_memory import digest
 from tris_market_event_intelligence.fresh_forecast_learning_cli import (
-    load_forecasts, publication_rows,
+    load_forecasts,
+    publication_rows,
 )
 from tris_market_event_intelligence.fresh_market_forecast_cli import (
-    SYSTEM, validate,
+    SYSTEM,
+    validate,
 )
 from tris_market_event_intelligence.gemma_original_article_batch_cli import MODEL_PATTERN
 from tris_market_event_intelligence.learning_rule_generator import (
-    FIELDS, SCHEMA, SYSTEM as RULE_SYSTEM, validate_aliased_rules,
+    FIELDS,
+    SCHEMA,
+    validate_aliased_rules,
+)
+from tris_market_event_intelligence.learning_rule_generator import (
+    SYSTEM as RULE_SYSTEM,
 )
 from tris_market_event_intelligence.rule_critic import critique_and_revise
 
