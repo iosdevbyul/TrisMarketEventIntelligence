@@ -10,13 +10,16 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 from collections import Counter
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
 from tris_market_event_intelligence.experience_memory import digest
+from tris_market_event_intelligence.experience_source_evidence import story_overlap
 from tris_market_event_intelligence.fresh_forecast_learning_cli import (
     load_forecasts,
     publication_rows,
@@ -360,11 +363,14 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
         (datetime.fromisoformat(x["outcome"]["exitDay"]).date() for x in memories
          if x["outcome"].get("exitDay")), default=None
     )
-    holdout = [
-        r for r in candidates if not overlaps(r)
-        and earliest_exit is not None
-        and _date(r["identity"]["packet"]["publishedAt"]).date() > earliest_exit
-    ][:args.limit]
+    with closing(sqlite3.connect(args.db.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        db.execute("PRAGMA query_only=ON")
+        holdout = [
+            r for r in candidates if not overlaps(r)
+            and not story_overlap(db, r["identity"]["articleId"], sorted(training_ids))
+            and earliest_exit is not None
+            and _date(r["identity"]["packet"]["publishedAt"]).date() > earliest_exit
+        ][:args.limit]
     first_holdout = min(
         (_date(r["identity"]["packet"]["publishedAt"]).date() for r in holdout),
         default=None,
@@ -461,7 +467,7 @@ def run(args: argparse.Namespace, client: httpx.Client) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("forecasts", "experiences", "prices", "output-dir"):
+    for name in ("db", "forecasts", "experiences", "prices", "output-dir"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--limit", type=int, default=20)
